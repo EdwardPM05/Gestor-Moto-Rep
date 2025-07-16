@@ -59,7 +59,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         submenu: [
         { name: 'Lista de Productos', path: '/productos' }, // Esta ruta es para la lista principal
         { name: 'Modelos de Moto', path: '/productos/modelos' }, // Nueva ruta para modelos de moto
-        { name: 'Ubicaciones', path: '/productos/ubicaciones' } // Si es una página separada, si no, se maneja en Agregar Producto
+        { name: 'Ubicaciones', path: '/productos/ubicaciones' }
+         // Si es una página separada, si no, se maneja en Agregar Producto
         ]
     },
     {
@@ -70,7 +71,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         { name: 'Ingresos', path: '/inventario/ingresos' },
         { name: 'Salidas', path: '/inventario/salidas' },
         { name: 'Stock Actual', path: '/inventario/stock' },
-        { name: 'Productos Bajos', path: '/inventario/faltos' }
+        { name: 'Faltos', path: '/productos/faltos' } 
       ]
     },
     {
@@ -100,7 +101,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       adminOnly: false,
       submenu: [
         { name: 'Lista de Clientes', path: '/clientes' },
-        { name: 'Agregar Cliente', path: '/clientes/agregar' },
         { name: 'Clientes con Crédito', path: '/clientes/credito' }
       ]
     },
@@ -109,8 +109,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       icon: BuildingStorefrontIcon,
       adminOnly: false,
       submenu: [
-        { name: 'Lista de Proveedores', path: '/proveedores' },
-        { name: 'Agregar Proveedor', path: '/proveedores/agregar' }
+        { name: 'Lista de Proveedores', path: '/proveedores' }
       ]
     },
     {
