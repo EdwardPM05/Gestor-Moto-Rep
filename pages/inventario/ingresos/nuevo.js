@@ -1,5 +1,5 @@
 // pages/inventario/ingresos/nuevo.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'; // Importa useRef
 import { useRouter } from 'next/router';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
@@ -13,9 +13,9 @@ import {
   serverTimestamp,
   query,
   orderBy,
-  getDoc, // <--- ¡Asegúrate de que getDoc esté aquí!
+  getDoc,
 } from 'firebase/firestore';
-import { ArrowDownTrayIcon, PlusIcon, MinusCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, PlusIcon, MinusCircleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline'; // Agrega MagnifyingGlassIcon
 
 const NuevoIngresoPage = () => {
   const router = useRouter();
@@ -24,7 +24,8 @@ const NuevoIngresoPage = () => {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState([]); // Lista completa de productos
+  const [proveedores, setProveedores] = useState([]);
 
   // Estados para el formulario del INGRESO PRINCIPAL (Lote)
   const [ingresoPrincipalData, setIngresoPrincipalData] = useState({
@@ -34,9 +35,24 @@ const NuevoIngresoPage = () => {
 
   // Estados para los ITEMS del ingreso
   const [itemsIngreso, setItemsIngreso] = useState([
-    { productoId: '', nombreProducto: '', cantidad: '', precioCompraUnitario: '', lote: '', stockRestanteLote: '', subtotal: '' }
+    {
+      productoId: '',
+      nombreProducto: '',
+      cantidad: '',
+      precioCompraUnitario: '',
+      lote: '',
+      stockRestanteLote: '',
+      subtotal: '',
+      // Nuevos estados para el buscador de cada ítem
+      searchTerm: '', // Término de búsqueda para este ítem
+      searchResults: [], // Resultados filtrados para este ítem
+      showResults: false, // Controla la visibilidad de los resultados
+    }
   ]);
-  const [proveedores, setProveedores] = useState([]); // Para el select de proveedores
+
+  // Ref para manejar el click fuera de los resultados de búsqueda
+  const searchResultRefs = useRef([]);
+
 
   useEffect(() => {
     const fetchData = async () => {
@@ -75,6 +91,24 @@ const NuevoIngresoPage = () => {
     fetchData();
   }, [user, router]);
 
+  // Manejar clics fuera de los resultados de búsqueda para cerrarlos
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      searchResultRefs.current.forEach((ref, index) => {
+        if (ref && !ref.contains(event.target)) {
+          setItemsIngreso(prevItems => prevItems.map((item, i) =>
+            i === index ? { ...item, showResults: false } : item
+          ));
+        }
+      });
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [searchResultRefs]); // Depende de searchResultRefs para que se actualice si los refs cambian
+
   const handleIngresoPrincipalChange = (e) => {
     const { name, value } = e.target;
     setIngresoPrincipalData(prev => ({ ...prev, [name]: value }));
@@ -95,22 +129,54 @@ const NuevoIngresoPage = () => {
     setItemsIngreso(newItems);
   };
 
-  const handleProductSelect = (index, e) => {
-    const selectedProductId = e.target.value;
-    const selectedProduct = products.find(p => p.id === selectedProductId);
+  // Manejador para el cambio en el campo de búsqueda de producto
+  const handleProductSearchChange = (index, e) => {
+    const searchTerm = e.target.value;
     const newItems = [...itemsIngreso];
-    newItems[index].productoId = selectedProductId;
-    newItems[index].nombreProducto = selectedProduct ? selectedProduct.nombre : '';
-    newItems[index].precioCompraUnitario = selectedProduct ? selectedProduct.precioCompraDefault || '' : ''; // Autocompletar precio de compra
+    newItems[index].searchTerm = searchTerm;
+    newItems[index].showResults = true; // Mostrar resultados al escribir
+
+    if (searchTerm.length > 1) { // Empieza a buscar después de 1 caracter
+      const filtered = products.filter(p =>
+        p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.codigoTienda.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      newItems[index].searchResults = filtered;
+    } else {
+      newItems[index].searchResults = [];
+    }
+    setItemsIngreso(newItems);
+  };
+
+  // Manejador cuando se selecciona un producto de los resultados de búsqueda
+  const handleProductSelectFromSearch = (index, product) => {
+    const newItems = [...itemsIngreso];
+    newItems[index].productoId = product.id;
+    newItems[index].nombreProducto = product.nombre;
+    newItems[index].precioCompraUnitario = product.precioCompraDefault || ''; // Autocompletar precio de compra
+    newItems[index].searchTerm = product.nombre; // Opcional: mostrar el nombre completo del producto en el campo
+    newItems[index].searchResults = []; // Limpiar resultados
+    newItems[index].showResults = false; // Ocultar resultados
     setItemsIngreso(newItems);
   };
 
   const addItem = () => {
-    setItemsIngreso([...itemsIngreso, { productoId: '', nombreProducto: '', cantidad: '', precioCompraUnitario: '', lote: '', stockRestanteLote: '', subtotal: '' }]);
+    setItemsIngreso([...itemsIngreso, {
+      productoId: '',
+      nombreProducto: '',
+      cantidad: '',
+      precioCompraUnitario: '',
+      lote: '',
+      stockRestanteLote: '',
+      subtotal: '',
+      searchTerm: '',
+      searchResults: [],
+      showResults: false,
+    }]);
   };
 
   const removeItem = (index) => {
-    if (itemsIngreso.length > 1) { // No permitir eliminar el último ítem
+    if (itemsIngreso.length > 1) {
       const newItems = itemsIngreso.filter((_, i) => i !== index);
       setItemsIngreso(newItems);
     } else {
@@ -123,14 +189,12 @@ const NuevoIngresoPage = () => {
     setSaving(true);
     setError(null);
 
-    // Validar datos principales del ingreso
     if (!ingresoPrincipalData.proveedorId) {
       setError('Por favor, seleccione un proveedor.');
       setSaving(false);
       return;
     }
 
-    // Validar ítems
     const validItems = itemsIngreso.every(item =>
       item.productoId && parseFloat(item.cantidad) > 0 && parseFloat(item.precioCompraUnitario) > 0
     );
@@ -146,34 +210,30 @@ const NuevoIngresoPage = () => {
     });
 
     try {
-      // 1. Crear el documento principal del ingreso (el "lote")
       const ingresoDocRef = await addDoc(collection(db, 'ingresos'), {
         proveedorId: ingresoPrincipalData.proveedorId,
         observaciones: ingresoPrincipalData.observaciones || null,
         costoTotalLote: parseFloat(costoTotalLote.toFixed(2)),
         fechaIngreso: serverTimestamp(),
-        empleadoId: user.email || user.uid, // O user.displayName
+        empleadoId: user.email || user.uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
       console.log("Documento principal de ingreso creado con ID: ", ingresoDocRef.id);
 
-      // 2. Para cada ítem, agregarlo a la subcolección 'itemsIngreso' y actualizar el stock del producto
       for (const item of itemsIngreso) {
-        // Añadir el ítem a la subcolección
         await addDoc(collection(ingresoDocRef, 'itemsIngreso'), {
           productoId: item.productoId,
           nombreProducto: item.nombreProducto,
           cantidad: parseFloat(item.cantidad),
           precioCompraUnitario: parseFloat(item.precioCompraUnitario),
           lote: item.lote || null,
-          stockRestanteLote: parseFloat(item.cantidad), // Inicialmente el stock restante es la cantidad total ingresada
+          stockRestanteLote: parseFloat(item.cantidad),
           subtotal: parseFloat(item.subtotal),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
 
-        // Actualizar el stock del producto principal
         const productRef = doc(db, 'productos', item.productoId);
         const productSnap = await getDoc(productRef);
 
@@ -187,7 +247,6 @@ const NuevoIngresoPage = () => {
           console.log(`Stock de ${item.nombreProducto} actualizado a ${newStock}`);
         } else {
           console.warn(`Producto con ID ${item.productoId} no encontrado al intentar actualizar stock.`);
-          // Considerar una lógica de rollback o notificación de error más robusta aquí
         }
       }
 
@@ -274,28 +333,69 @@ const NuevoIngresoPage = () => {
                   className="absolute top-2 right-2 text-red-500 hover:text-red-700"
                   title="Eliminar este ítem"
                 >
-                  &times; {/* Una "X" para cerrar/eliminar */}
+                  <MinusCircleIcon className="h-6 w-6" /> {/* Icono de menos círculo */}
                 </button>
               )}
               <h3 className="text-md font-medium text-gray-700">Ítem #{index + 1}</h3>
+
+              {/* CAMBIO CLAVE: BUSCADOR DE PRODUCTOS */}
               <div>
-                <label htmlFor={`productoId-${index}`} className="block text-sm font-medium text-gray-700">Producto</label>
-                <select
-                  id={`productoId-${index}`}
-                  name="productoId"
-                  value={item.productoId}
-                  onChange={(e) => handleProductSelect(index, e)}
-                  required
-                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                >
-                  <option value="">Seleccione un producto</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.nombre} ({product.codigoTienda})
-                    </option>
-                  ))}
-                </select>
+                <label htmlFor={`product-search-${index}`} className="block text-sm font-medium text-gray-700">Buscar Producto</label>
+                <div className="relative" ref={el => searchResultRefs.current[index] = el}> {/* Asigna ref al contenedor */}
+                  <div className="mt-1 relative rounded-md shadow-sm">
+                    <input
+                      type="text"
+                      id={`product-search-${index}`}
+                      value={item.searchTerm}
+                      onChange={(e) => handleProductSearchChange(index, e)}
+                      onFocus={() => { // Mostrar resultados al enfocar si hay término de búsqueda
+                        const newItems = [...itemsIngreso];
+                        if (newItems[index].searchTerm.length > 1) {
+                          newItems[index].showResults = true;
+                        }
+                        setItemsIngreso(newItems);
+                      }}
+                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                      placeholder="Escribe para buscar un producto..."
+                      autoComplete="off" // Deshabilitar autocompletado del navegador
+                    />
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                    </div>
+                  </div>
+
+                  {item.showResults && item.searchResults.length > 0 && (
+                    <ul className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
+                      {item.searchResults.map((product) => (
+                        <li
+                          key={product.id}
+                          className="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-blue-50 text-gray-900"
+                          onClick={() => handleProductSelectFromSearch(index, product)}
+                        >
+                          <span className="font-normal block truncate">
+                            {product.nombre} ({product.codigoTienda})
+                          </span>
+                          {/* Opcional: mostrar precio o stock actual aquí */}
+                          {/* <span className="text-gray-500 block">Stock: {product.stockActual || 0}</span> */}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {item.showResults && item.searchTerm.length > 1 && item.searchResults.length === 0 && (
+                    <div className="absolute z-10 mt-1 w-full bg-white shadow-lg rounded-md py-2 px-3 text-sm text-gray-500">
+                      No se encontraron productos.
+                    </div>
+                  )}
+                </div>
+                {/* Mostrar el producto seleccionado si existe */}
+                {item.productoId && (
+                  <p className="mt-2 text-sm text-gray-600">
+                    Producto Seleccionado: <span className="font-medium">{item.nombreProducto}</span>
+                  </p>
+                )}
               </div>
+              {/* FIN CAMBIO CLAVE */}
+
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
