@@ -1,4 +1,3 @@
-// pages/inventario/salidas/nueva.js
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -31,11 +30,11 @@ const NuevaSalidaPage = () => {
 
   // Estado para la Salida Principal
   const [salidaPrincipalData, setSalidaPrincipalData] = useState({
-    clienteId: '', // Este será 'cliente-no-registrado' si se selecciona
+    clienteId: '',
     observaciones: '',
     tipoSalida: 'venta',
     metodoPago: 'efectivo',
-    esCotizacion: false, // Por defecto, NO es una cotización
+    esCotizacion: false,
   });
 
   // Estado para los ítems de Salida (productos a extraer)
@@ -47,18 +46,18 @@ const NuevaSalidaPage = () => {
       precioVentaUnitario: '',
       lotesDisponibles: [], // Lotes de ingreso cargados para este producto
       lotesSeleccionados: [], // Lotes específicos de los que se extraerá stock
-      subtotalVenta: '',
-      subtotalCosto: '',
-      searchTerm: '', // Término de búsqueda para el buscador de productos
-      searchResults: [], // Resultados de búsqueda para el buscador de productos
-      showSearchResults: false, // Controla la visibilidad de los resultados del buscador
+      subtotalVenta: '0.00', // Inicializa como string para toFixed
+      subtotalCosto: '0.00', // Inicializa como string para toFixed
+      searchTerm: '',
+      searchResults: [],
+      showSearchResults: false,
     }
   ]);
 
   // Referencias para cerrar el buscador de productos al hacer clic fuera
   const searchInputRefs = useRef([]);
 
-  // Cargar productos y clientes al inicio
+  // Cargar productos y clientes al inicio (solo se ejecuta una vez)
   useEffect(() => {
     const fetchData = async () => {
       if (!user) {
@@ -92,148 +91,62 @@ const NuevaSalidaPage = () => {
     };
 
     fetchData();
-  }, [user, router]);
+  }, [user, router]); // Dependencias estables, se ejecuta solo cuando user o router cambian
 
+  // Debounce para la búsqueda de productos
+  const debouncedFilterProducts = useRef([]); // Usar un array para cada campo de búsqueda
 
-  // Debounce para la búsqueda de productos - inicialización de refs
-  // Esto asegura que cada campo de búsqueda tenga su propio timer para el debounce.
-  const debouncedFilterProducts = useRef({});
-  useEffect(() => {
-      itemsSalida.forEach((_, index) => {
-          if (!debouncedFilterProducts.current[index]) {
-            debouncedFilterProducts.current[index] = setTimeout(() => {}, 0); // Inicializar si no existe
-          }
-      });
-  }, [itemsSalida.length]);
-
-
-  // Función para filtrar productos mientras se escribe (debounce para rendimiento)
+  // Función para filtrar productos mientras se escribe
   const filterProducts = useCallback((term, index) => {
-    const newItems = [...itemsSalida];
-    newItems[index].searchTerm = term;
-    newItems[index].showSearchResults = true;
+    setItemsSalida(prevItems => {
+        const newItems = [...prevItems];
+        const currentItem = { ...newItems[index] };
+        currentItem.searchTerm = term;
+        currentItem.showSearchResults = true;
 
-    if (term.length > 1) { // Empieza a buscar después de 1 carácter
-      const lowerCaseTerm = term.toLowerCase();
-      const results = products.filter(p =>
-        p.nombre.toLowerCase().includes(lowerCaseTerm) ||
-        (p.codigoTienda && p.codigoTienda.toLowerCase().includes(lowerCaseTerm))
-      ).slice(0, 10); // Limita a 10 resultados para no sobrecargar
-      newItems[index].searchResults = results;
-    } else {
-      newItems[index].searchResults = [];
-    }
-    setItemsSalida(newItems);
-  }, [products, itemsSalida]); // itemsSalida es una dependencia porque la función opera sobre una copia del estado
+        if (term.length > 1) {
+            const lowerCaseTerm = term.toLowerCase();
+            const results = products.filter(p =>
+                p.nombre.toLowerCase().includes(lowerCaseTerm) ||
+                (p.codigoTienda && p.codigoTienda.toLowerCase().includes(lowerCaseTerm))
+            ).slice(0, 10);
+            currentItem.searchResults = results;
+        } else {
+            currentItem.searchResults = [];
+        }
+        newItems[index] = currentItem;
+        return newItems;
+    });
+  }, [products]); // itemsSalida fue removida de las dependencias.
 
-
-  // Manejador de cambios para los datos de la Salida Principal (cliente, tipoSalida, etc.)
-  const handleSalidaPrincipalChange = (e) => {
+  // Manejador de cambios para los datos de la Salida Principal
+  const handleSalidaPrincipalChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     setSalidaPrincipalData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
-  };
-
-  // Manejador de cambios para los campos de cada ítem de producto (cantidad, precio)
-  const handleItemChange = (index, e) => {
-    const { name, value } = e.target;
-    const newItems = [...itemsSalida];
-    newItems[index][name] = value;
-
-    if (name === 'cantidadARetirar' || name === 'precioVentaUnitario') {
-      const cantidad = parseFloat(newItems[index].cantidadARetirar || 0);
-      const precioVenta = parseFloat(newItems[index].precioVentaUnitario || 0);
-      newItems[index].subtotalVenta = (cantidad * precioVenta).toFixed(2);
-    }
-    setItemsSalida(newItems);
-  };
-
-
-  // Función que se ejecuta cuando se selecciona un producto del buscador
-  const handleProductSelect = async (index, selectedProductData) => {
-    const selectedProductId = selectedProductData.id;
-    const newItems = [...itemsSalida];
-
-    newItems[index].productoId = selectedProductId;
-    newItems[index].nombreProducto = selectedProductData.nombre;
-    newItems[index].precioVentaUnitario = selectedProductData.precioVenta || ''; // Autocompletar precio de venta
-    newItems[index].searchTerm = selectedProductData.nombre; // Llenar el input con el nombre
-    newItems[index].searchResults = [];
-    newItems[index].showSearchResults = false; // Ocultar resultados
-
-    if (selectedProductId) {
-      const loadedLotes = [];
-      try {
-        // Obtenemos todos los documentos de ingresos para buscar los ítems de ingreso
-        const allIngresosRefs = collection(db, 'ingresos');
-        const querySnapshotIngresos = await getDocs(allIngresosRefs);
-
-        for (const docIngreso of querySnapshotIngresos.docs) {
-          const itemsIngresoCollectionRef = collection(db, 'ingresos', docIngreso.id, 'itemsIngreso');
-          const qItemsIngreso = query(
-            itemsIngresoCollectionRef,
-            where('productoId', '==', selectedProductId),
-            where('stockRestanteLote', '>', 0),
-            orderBy('createdAt', 'asc') // Ordenar por fecha de creación del item de ingreso (FIFO)
-          );
-          const querySnapshotItemsIngreso = await getDocs(qItemsIngreso);
-
-          querySnapshotItemsIngreso.docs.forEach(docItem => {
-            loadedLotes.push({
-              id: docItem.id, // ID del itemIngreso
-              lotePrincipalId: docIngreso.id, // ID del Ingreso principal
-              fechaIngreso: docIngreso.data().fechaIngreso?.toDate() || new Date(0), // Usar Date para ordenar
-              loteInterno: docItem.data().lote || 'N/A', // Campo lote en el itemIngreso
-              stockRestante: docItem.data().stockRestanteLote,
-              precioCompraUnitario: docItem.data().precioCompraUnitario,
-            });
-          });
-        }
-        // Ordenar por fecha real para asegurar FIFO (First-In, First-Out)
-        loadedLotes.sort((a, b) => a.fechaIngreso.getTime() - b.fechaIngreso.getTime());
-
-        newItems[index].lotesDisponibles = loadedLotes;
-        newItems[index].lotesSeleccionados = [];
-        newItems[index].cantidadARetirar = ''; // Resetear cantidad al cambiar de producto
-
-      } catch (err) {
-        console.error("Error al cargar lotes para el producto:", err);
-        setError("Error al cargar lotes para el producto. " + err.message);
-        newItems[index].lotesDisponibles = [];
-      }
-    } else {
-      newItems[index].lotesDisponibles = [];
-      newItems[index].lotesSeleccionados = [];
-      newItems[index].cantidadARetirar = '';
-    }
-    setItemsSalida(newItems);
-  };
+  }, []);
 
   // Función para asignar lotes automáticamente usando la estrategia FIFO
-  const assignLotesAutomatically = useCallback((itemIndex, requestedQuantity) => {
-    const newItems = [...itemsSalida];
-    const item = newItems[itemIndex];
-    item.lotesSeleccionados = []; // Reiniciar lotes seleccionados
+  // Ahora es una función pura que devuelve los lotes seleccionados y el costo
+  const calculateLotesAndCost = useCallback((productData, requestedQuantity, lotesDisponibles) => {
+    const selectedLotes = [];
     let remainingQuantityToAssign = parseFloat(requestedQuantity || 0);
     let totalCostoCalculado = 0;
-    let currentError = null;
 
-    if (!item.productoId || remainingQuantityToAssign <= 0) {
-        item.subtotalCosto = 0;
-        setItemsSalida(newItems);
-        return;
+    if (!productData || remainingQuantityToAssign <= 0 || !lotesDisponibles || lotesDisponibles.length === 0) {
+      return { lotes: [], costo: '0.00', error: null };
     }
 
-    const sortedLotes = [...item.lotesDisponibles].sort((a, b) => a.fechaIngreso.getTime() - b.fechaIngreso.getTime()); // FIFO
+    const sortedLotes = [...lotesDisponibles].sort((a, b) => a.fechaIngreso.getTime() - b.fechaIngreso.getTime()); // FIFO
 
     for (const lote of sortedLotes) {
       if (remainingQuantityToAssign <= 0) break;
 
       const qtyFromThisLote = Math.min(remainingQuantityToAssign, lote.stockRestante);
       if (qtyFromThisLote > 0) {
-        item.lotesSeleccionados.push({
+        selectedLotes.push({
           loteDocId: lote.id, // ID del itemIngreso
           lotePrincipalId: lote.lotePrincipalId, // ID del ingreso principal
           qty: qtyFromThisLote,
@@ -244,73 +157,180 @@ const NuevaSalidaPage = () => {
       }
     }
 
-    // Si aún queda cantidad por asignar, significa que no hay suficiente stock en los lotes
+    let currentError = null;
     if (remainingQuantityToAssign > 0) {
-      currentError = `No hay suficiente stock en los lotes disponibles para cubrir la cantidad solicitada del producto "${item.nombreProducto}". Faltan ${remainingQuantityToAssign} unidades.`;
+      currentError = `No hay suficiente stock en los lotes disponibles para cubrir la cantidad solicitada del producto "${productData.nombre}". Faltan ${remainingQuantityToAssign} unidades.`;
     }
 
-    item.subtotalCosto = totalCostoCalculado.toFixed(2);
-    setItemsSalida(newItems);
-    // Solo actualiza el error global si hay un problema con este ítem o si el error anterior era de stock y ya no lo es
-    if (currentError) {
-        setError(currentError);
-    } else if (error && error.includes("No hay suficiente stock")) { // Si no hay error o el error era de stock, limpiar
-        setError(null);
-    }
-  }, [itemsSalida, error]); // `itemsSalida` y `error` como dependencia para que useCallback tenga acceso al estado más reciente
+    return { lotes: selectedLotes, costo: totalCostoCalculado.toFixed(2), error: currentError };
+  }, []); // Sin dependencias de estado de la UI para que sea estable
 
 
-  // Trigger la asignación automática cuando la cantidad a retirar cambia (con debounce)
-  useEffect(() => {
-    itemsSalida.forEach((item, index) => {
-      // Solo si hay un producto seleccionado y una cantidad válida
-      if (item.productoId && parseFloat(item.cantidadARetirar) > 0) {
-        // Limpia cualquier debounce anterior para este índice
-        clearTimeout(debouncedFilterProducts.current[index]);
-        debouncedFilterProducts.current[index] = setTimeout(() => {
-          assignLotesAutomatically(index, item.cantidadARetirar);
-        }, 300); // 300ms de debounce
-      } else {
-         // Si la cantidad es 0 o vacía, resetear lotes seleccionados y costo
-         const newItems = [...itemsSalida];
-         if (newItems[index]) {
-             newItems[index].lotesSeleccionados = [];
-             newItems[index].subtotalCosto = '0.00';
-             setItemsSalida(newItems);
-         }
+  // Manejador de cambios para los campos de cada ítem de producto (cantidad, precio)
+  const handleItemChange = useCallback(async (index, e) => {
+    const { name, value } = e.target;
+    setItemsSalida(prevItems => {
+      const newItems = [...prevItems];
+      const currentItem = { ...newItems[index] }; // Copia el objeto para no mutar el estado directamente
+
+      currentItem[name] = value;
+
+      let newSubtotalVenta = parseFloat(currentItem.cantidadARetirar || 0) * parseFloat(currentItem.precioVentaUnitario || 0);
+      currentItem.subtotalVenta = newSubtotalVenta.toFixed(2);
+
+      // Si la cantidad o el precio cambia, recalcular lotes y costo
+      if (name === 'cantidadARetirar' && currentItem.productoId) {
+        // Ejecutar la lógica de asignación de lotes
+        // No llamamos a setError directamente aquí, sino que la función devuelve el error
+        // Esto evita actualizaciones de estado directas dentro de un callback de useState
+        const productData = products.find(p => p.id === currentItem.productoId);
+        const { lotes, costo, error: loteAssignmentError } = calculateLotesAndCost(productData, currentItem.cantidadARetirar, currentItem.lotesDisponibles);
+
+        currentItem.lotesSeleccionados = lotes;
+        currentItem.subtotalCosto = costo;
+
+        // Si hay un error de asignación de lotes, lo establecemos globalmente.
+        // Podrías considerar un estado de error por cada ítem si prefieres mensajes más granulares.
+        // Para simplificar, lo dejamos global por ahora, pero se gestiona para no buclear.
+        // El error real se valida en el submit.
+        setError(prev => {
+            if (loteAssignmentError) return loteAssignmentError;
+            // Si el error previo era de stock y ahora no hay, lo limpiamos
+            if (prev && prev.includes("No hay suficiente stock")) return null;
+            return prev;
+        });
+      } else if (name === 'cantidadARetirar' && parseFloat(value) === 0) {
+          // Si la cantidad se pone a 0, limpiar lotes y costo
+          currentItem.lotesSeleccionados = [];
+          currentItem.subtotalCosto = '0.00';
       }
+
+      newItems[index] = currentItem; // Asigna el objeto actualizado
+      return newItems;
     });
-  }, [itemsSalida.map(item => `${item.productoId}-${item.cantidadARetirar}`).join(','), assignLotesAutomatically]); // Dependencia más precisa para activar el efecto
+  }, [products, calculateLotesAndCost]); // Dependencias: products (para buscar el producto) y calculateLotesAndCost (la función de cálculo de lotes)
+
+
+  // Función que se ejecuta cuando se selecciona un producto del buscador
+  const handleProductSelect = useCallback(async (index, selectedProductData) => {
+    const selectedProductId = selectedProductData.id;
+
+    // Actualiza el estado de forma inmutable
+    setItemsSalida(prevItems => {
+        const newItems = [...prevItems];
+        const currentItem = { ...newItems[index] }; // Copia el objeto
+
+        currentItem.productoId = selectedProductId;
+        currentItem.nombreProducto = selectedProductData.nombre;
+        // Usa `precioVenta` si existe, de lo contrario, deja vacío
+        currentItem.precioVentaUnitario = selectedProductData.precioVenta !== undefined ? selectedProductData.precioVenta : '';
+        currentItem.searchTerm = selectedProductData.nombre;
+        currentItem.searchResults = [];
+        currentItem.showSearchResults = false;
+        currentItem.cantidadARetirar = ''; // Resetear cantidad al cambiar de producto
+
+        // Limpia los lotes y el costo hasta que se calcule la cantidad
+        currentItem.lotesDisponibles = [];
+        currentItem.lotesSeleccionados = [];
+        currentItem.subtotalVenta = '0.00';
+        currentItem.subtotalCosto = '0.00';
+
+        newItems[index] = currentItem;
+        return newItems;
+    });
+
+    // Cargar lotes de forma asíncrona después de actualizar el estado
+    if (selectedProductId) {
+      try {
+        const loadedLotes = [];
+        const allIngresosRefs = collection(db, 'ingresos');
+        const querySnapshotIngresos = await getDocs(allIngresosRefs);
+
+        for (const docIngreso of querySnapshotIngresos.docs) {
+          const itemsIngresoCollectionRef = collection(db, 'ingresos', docIngreso.id, 'itemsIngreso');
+          const qItemsIngreso = query(
+            itemsIngresoCollectionRef,
+            where('productoId', '==', selectedProductId),
+            where('stockRestanteLote', '>', 0),
+            orderBy('createdAt', 'asc')
+          );
+          const querySnapshotItemsIngreso = await getDocs(qItemsIngreso);
+
+          querySnapshotItemsIngreso.docs.forEach(docItem => {
+            loadedLotes.push({
+              id: docItem.id,
+              lotePrincipalId: docIngreso.id,
+              fechaIngreso: docIngreso.data().fechaIngreso?.toDate() || new Date(0),
+              loteInterno: docItem.data().lote || 'N/A',
+              stockRestante: docItem.data().stockRestanteLote,
+              precioCompraUnitario: docItem.data().precioCompraUnitario,
+            });
+          });
+        }
+        loadedLotes.sort((a, b) => a.fechaIngreso.getTime() - b.fechaIngreso.getTime());
+
+        // Actualiza el estado solo una vez con los lotes cargados
+        setItemsSalida(prevItems => {
+          const newItems = [...prevItems];
+          if (newItems[index] && newItems[index].productoId === selectedProductId) { // Asegura que el producto no haya cambiado mientras se cargaban los lotes
+              newItems[index].lotesDisponibles = loadedLotes;
+          }
+          return newItems;
+        });
+      } catch (err) {
+        console.error("Error al cargar lotes para el producto:", err);
+        setError("Error al cargar lotes para el producto. " + err.message);
+        setItemsSalida(prevItems => {
+          const newItems = [...prevItems];
+          if (newItems[index]) newItems[index].lotesDisponibles = [];
+          return newItems;
+        });
+      }
+    } else {
+        setItemsSalida(prevItems => {
+            const newItems = [...prevItems];
+            if (newItems[index]) newItems[index].lotesDisponibles = [];
+            return newItems;
+        });
+    }
+  }, []); // No depende de itemsSalida directamente para evitar bucles. Usa prevItems en setItemsSalida.
 
 
   // Función para añadir un nuevo ítem de producto al formulario
-  const addItem = () => {
-    setItemsSalida([...itemsSalida, {
+  const addItem = useCallback(() => {
+    setItemsSalida(prevItems => [...prevItems, {
       productoId: '', nombreProducto: '', cantidadARetirar: '', precioVentaUnitario: '',
-      lotesDisponibles: [], lotesSeleccionados: [], subtotalVenta: '', subtotalCosto: '',
+      lotesDisponibles: [], lotesSeleccionados: [], subtotalVenta: '0.00', subtotalCosto: '0.00',
       searchTerm: '', searchResults: [], showSearchResults: false
     }]);
-  };
+  }, []); // Sin dependencias
 
   // Función para eliminar un ítem de producto del formulario
-  const removeItem = (index) => {
-    if (itemsSalida.length > 1) { // Asegura que siempre haya al menos un ítem
-      const newItems = itemsSalida.filter((_, i) => i !== index);
-      setItemsSalida(newItems);
-      setError(null); // Limpiar cualquier error específico de ese ítem si se elimina
-    } else {
-      setError("Debe haber al menos un producto en la salida.");
-    }
-  };
+  const removeItem = useCallback((index) => {
+    setItemsSalida(prevItems => {
+      if (prevItems.length > 1) {
+        const newItems = prevItems.filter((_, i) => i !== index);
+        setError(null);
+        return newItems;
+      } else {
+        setError("Debe haber al menos un producto en la salida.");
+        return prevItems; // No permite eliminar el último ítem
+      }
+    });
+  }, []); // Sin dependencias
 
   // Manejar clics fuera del buscador de productos para ocultar resultados
   useEffect(() => {
     const handleClickOutside = (event) => {
       itemsSalida.forEach((item, index) => {
         if (item.showSearchResults && searchInputRefs.current[index] && !searchInputRefs.current[index].contains(event.target)) {
-          const newItems = [...itemsSalida];
-          newItems[index].showSearchResults = false;
-          setItemsSalida(newItems);
+          setItemsSalida(prevItems => {
+            const newItems = [...prevItems];
+            if (newItems[index]) { // Asegura que el índice exista
+              newItems[index].showSearchResults = false;
+            }
+            return newItems;
+          });
         }
       });
     };
@@ -319,8 +339,7 @@ const NuevaSalidaPage = () => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [itemsSalida]);
-
+  }, [itemsSalida]); // itemsSalida es una dependencia aquí para que la función handleClickOutside tenga acceso al estado más reciente de itemsSalida
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -328,8 +347,6 @@ const NuevaSalidaPage = () => {
     setError(null);
 
     // --- Validaciones Preliminares (antes de la transacción) ---
-    // Si es 'venta' y clienteId está vacío, lanzamos un error pidiendo un cliente
-    // o que elija la opción "Cliente de la Calle"
     if (salidaPrincipalData.tipoSalida === 'venta' && !salidaPrincipalData.clienteId) {
       setError('Para una salida de tipo "Venta", debe seleccionar un cliente o la opción "Cliente de la Calle".');
       setSaving(false);
@@ -387,7 +404,6 @@ const NuevaSalidaPage = () => {
     try {
       await runTransaction(db, async (transaction) => {
         // --- FASE 1: TODAS LAS LECTURAS ---
-        // Obtener referencias y datos actuales de todos los productos y lotes que se modificarán.
         const productRefs = {};
         const productSnaps = {};
         const itemIngresoRefs = {};
@@ -399,8 +415,8 @@ const NuevaSalidaPage = () => {
           for (const item of itemsSalida) {
             // Leer y validar el stock del producto principal
             const productRef = doc(db, 'productos', item.productoId);
-            productRefs[item.productoId] = productRef; // Guardar referencia para uso posterior
-            productSnaps[item.productoId] = await transaction.get(productRef); // Leer el documento
+            productRefs[item.productoId] = productRef;
+            productSnaps[item.productoId] = await transaction.get(productRef);
 
             if (!productSnaps[item.productoId].exists()) {
               throw new Error(`Producto con ID ${item.productoId} no encontrado.`);
@@ -414,8 +430,8 @@ const NuevaSalidaPage = () => {
             // Leer y validar los lotes de ingreso específicos de los que se extraerá stock
             for (const loteSelected of item.lotesSeleccionados) {
               const itemIngresoRef = doc(db, 'ingresos', loteSelected.lotePrincipalId, 'itemsIngreso', loteSelected.loteDocId);
-              itemIngresoRefs[loteSelected.loteDocId] = itemIngresoRef; // Guardar referencia
-              itemIngresoSnaps[loteSelected.loteDocId] = await transaction.get(itemIngresoRef); // Leer el documento
+              itemIngresoRefs[loteSelected.loteDocId] = itemIngresoRef;
+              itemIngresoSnaps[loteSelected.loteDocId] = await transaction.get(itemIngresoRef);
 
               if (!itemIngresoSnaps[loteSelected.loteDocId].exists()) {
                 throw new Error(`Lote de ingreso con ID ${loteSelected.loteDocId} no encontrado para el producto ${item.nombreProducto}.`);
@@ -437,7 +453,7 @@ const NuevaSalidaPage = () => {
         // 1. Crear el documento principal de la salida (siempre se crea)
         const salidaDocRef = doc(collection(db, 'salidas'));
         transaction.set(salidaDocRef, {
-          clienteId: salidaPrincipalData.clienteId || null, // Guardará 'cliente-no-registrado' o el ID real
+          clienteId: salidaPrincipalData.clienteId || null,
           observaciones: salidaPrincipalData.observaciones || null,
           tipoSalida: salidaPrincipalData.tipoSalida,
           metodoPago: salidaPrincipalData.metodoPago,
@@ -474,11 +490,11 @@ const NuevaSalidaPage = () => {
           // 3. Actualizar stock de productos y lotes (SOLO si NO es una cotización)
           if (!salidaPrincipalData.esCotizacion) {
             console.log(`Actualizando stock para producto "${item.nombreProducto}" (ID: ${item.productoId})`);
-            const productSnap = productSnaps[item.productoId]; // Usar el snapshot leído previamente en la Fase 1
+            const productSnap = productSnaps[item.productoId];
             const currentStock = parseFloat(productSnap.data().stockActual || 0);
             const newStock = currentStock - parseFloat(item.cantidadARetirar);
 
-            transaction.update(productRefs[item.productoId], { // Usar la referencia guardada
+            transaction.update(productRefs[item.productoId], {
               stockActual: newStock,
               updatedAt: serverTimestamp(),
             });
@@ -486,11 +502,11 @@ const NuevaSalidaPage = () => {
 
             for (const loteSelected of item.lotesSeleccionados) {
               console.log(`Actualizando stock de lote "${loteSelected.loteDocId}" para producto "${item.nombreProducto}"`);
-              const itemIngresoSnap = itemIngresoSnaps[loteSelected.loteDocId]; // Usar el snapshot leído previamente
+              const itemIngresoSnap = itemIngresoSnaps[loteSelected.loteDocId];
               const currentStockRestanteLote = parseFloat(itemIngresoSnap.data().stockRestanteLote || 0);
               const newStockRestanteLote = currentStockRestanteLote - loteSelected.qty;
 
-              transaction.update(itemIngresoRefs[loteSelected.loteDocId], { // Usar la referencia guardada
+              transaction.update(itemIngresoRefs[loteSelected.loteDocId], {
                 stockRestanteLote: newStockRestanteLote,
                 updatedAt: serverTimestamp(),
               });
@@ -567,14 +583,11 @@ const NuevaSalidaPage = () => {
                   name="clienteId"
                   value={salidaPrincipalData.clienteId}
                   onChange={handleSalidaPrincipalChange}
-                  // No se usa 'required' aquí en HTML, la validación se hace en JS
                   className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm rounded-md"
                 >
                   <option value="">Seleccione un cliente registrado...</option>
-                  <option value="cliente-no-registrado">Cliente de la Calle / No registrado</option> {/* Nueva opción para cliente no registrado */}
+                  <option value="cliente-no-registrado">Cliente de la Calle / No registrado</option>
                   {clientes.map((cli) => (
-                    // Excluir el cliente 'cliente-no-registrado' de la lista si ya se cargó,
-                    // para evitar duplicidad y asegurar que solo aparezca una vez explícitamente.
                     cli.id !== 'cliente-no-registrado' && (
                       <option key={cli.id} value={cli.id}>
                         {cli.nombre} {cli.apellido} ({cli.dni})
@@ -644,38 +657,56 @@ const NuevaSalidaPage = () => {
               {/* BUSCADOR DE PRODUCTOS */}
               <div className="relative" ref={el => searchInputRefs.current[index] = el}>
                 <label htmlFor={`searchTerm-${index}`} className="block text-sm font-medium text-gray-700">Buscar Producto</label>
-                <div className="mt-1 flex rounded-md shadow-sm">
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                  </div>
                   <input
                     type="text"
                     id={`searchTerm-${index}`}
                     name="searchTerm"
                     value={item.searchTerm}
                     onChange={(e) => {
-                      const newItems = [...itemsSalida];
-                      newItems[index].searchTerm = e.target.value;
-                      newItems[index].productoId = ''; // Resetear el producto seleccionado al cambiar el texto
-                      newItems[index].nombreProducto = '';
-                      newItems[index].precioVentaUnitario = '';
-                      newItems[index].lotesDisponibles = [];
-                      newItems[index].lotesSeleccionados = [];
-                      newItems[index].cantidadARetirar = '';
-                      setItemsSalida(newItems);
+                      const newTerm = e.target.value;
+                      // Actualizar searchTerm inmediatamente
+                      setItemsSalida(prevItems => {
+                        const updatedItems = [...prevItems];
+                        const currentItem = { ...updatedItems[index] };
+                        currentItem.searchTerm = newTerm;
+                        // Resetear producto seleccionado si el término no coincide
+                        if (currentItem.productoId && !newTerm.toLowerCase().includes(currentItem.nombreProducto.toLowerCase())) {
+                            currentItem.productoId = '';
+                            currentItem.nombreProducto = '';
+                            currentItem.precioVentaUnitario = '';
+                            currentItem.lotesDisponibles = [];
+                            currentItem.lotesSeleccionados = [];
+                            currentItem.cantidadARetirar = '';
+                            currentItem.subtotalVenta = '0.00';
+                            currentItem.subtotalCosto = '0.00';
+                        }
+                        updatedItems[index] = currentItem;
+                        return updatedItems;
+                      });
+
+                      // Debounce para la búsqueda
                       clearTimeout(debouncedFilterProducts.current[index]);
                       debouncedFilterProducts.current[index] = setTimeout(() => {
-                          filterProducts(e.target.value, index);
+                        filterProducts(newTerm, index);
                       }, 300);
                     }}
                     onFocus={() => {
-                        const newItems = [...itemsSalida];
-                        newItems[index].showSearchResults = true;
-                        setItemsSalida(newItems);
+                      setItemsSalida(prevItems => {
+                          const updatedItems = [...prevItems];
+                          if (updatedItems[index]) {
+                              updatedItems[index].showSearchResults = true;
+                          }
+                          return updatedItems;
+                      });
                     }}
                     placeholder="Escriba el nombre o código del producto..."
-                    className="flex-1 block w-full rounded-none rounded-l-md border-gray-300 focus:ring-red-500 focus:border-red-500 sm:text-sm"
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm"
+                    autoComplete="off"
                   />
-                  <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
-                    <MagnifyingGlassIcon className="h-5 w-5" />
-                  </span>
                 </div>
 
                 {item.showSearchResults && item.searchResults.length > 0 && (
@@ -713,7 +744,7 @@ const NuevaSalidaPage = () => {
                         value={item.cantidadARetirar}
                         onChange={(e) => handleItemChange(index, e)}
                         required
-                        min="1"
+                        min="0" // Permite 0 para borrar, la validación final es > 0
                         className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-red-500 focus:border-red-500 sm:text-sm"
                       />
                       {/* Advertencia visual si la cantidad excede el stock total */}
@@ -736,10 +767,11 @@ const NuevaSalidaPage = () => {
                     </div>
                   </div>
 
-                  {item.cantidadARetirar > 0 && (
+                  {/* Mostrar lotes solo si no es una cotización o si hay una cantidad > 0 */}
+                  {(!salidaPrincipalData.esCotizacion || parseFloat(item.cantidadARetirar) > 0) && (
                     <div className="border-t border-gray-200 pt-4 mt-4">
                       <h4 className="text-sm font-medium text-gray-700 mb-2">Lotes Seleccionados (Asignación Automática - FIFO):</h4>
-                      {error && error.includes("No hay suficiente stock") && ( // Mostrar el error específico de stock aquí
+                      {error && error.includes("No hay suficiente stock") && (
                         <p className="text-red-500 text-sm mb-2">{error}</p>
                       )}
                       {item.lotesSeleccionados.length > 0 ? (
