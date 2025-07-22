@@ -7,11 +7,11 @@ import {
   CubeIcon,
   ArrowRightOnRectangleIcon,
   ArrowLeftOnRectangleIcon,
+  Bars3Icon,
   UsersIcon,
   BuildingStorefrontIcon,
   DocumentTextIcon,
   BanknotesIcon,
-  ExclamationTriangleIcon,
   ChartBarIcon,
   UserGroupIcon,
   CreditCardIcon,
@@ -27,7 +27,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
   const router = useRouter();
   const [openSubmenu, setOpenSubmenu] = useState(null);
 
-  const isAdmin = user?.email === 'admin@gestormotorep.com'; // Puedes cambiar esto por un rol en la BD
+  const isAdmin = user?.email === 'admin@gestormotorep.com';
 
   const handleLogout = async () => {
     await logout();
@@ -40,28 +40,19 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
   const navigateTo = (path) => {
     router.push(path);
-    if (window.innerWidth < 1024) {
+    // Cerrar sidebar después de navegar
+    if (isOpen) {
       toggleSidebar();
     }
   };
 
   const menuItems = [
+    { name: 'Dashboard', icon: HomeIcon, path: '/dashboard', adminOnly: false },
     {
-      name: 'Dashboard',
-      icon: HomeIcon,
-      path: '/dashboard',
-      adminOnly: false
-    },
-    {
-        name: 'Productos',
-        icon: CubeIcon,
-        adminOnly: false,
-        submenu: [
-        { name: 'Lista de Productos', path: '/productos' }, // Esta ruta es para la lista principal
-        { name: 'Modelos de Moto', path: '/productos/modelos' }, // Nueva ruta para modelos de moto
-        { name: 'Ubicaciones', path: '/productos/ubicaciones' }
-         // Si es una página separada, si no, se maneja en Agregar Producto
-        ]
+      name: 'Productos',
+      icon: CubeIcon,
+      adminOnly: false,
+      path: '/productos'
     },
     {
       name: 'Inventario',
@@ -71,7 +62,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         { name: 'Ingresos', path: '/inventario/ingresos' },
         { name: 'Salidas', path: '/inventario/salidas' },
         { name: 'Stock Actual', path: '/inventario/stock' },
-        { name: 'Faltos', path: '/productos/faltos' } 
+        { name: 'Faltos', path: '/productos/faltos' }
       ]
     },
     {
@@ -108,9 +99,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Proveedores',
       icon: BuildingStorefrontIcon,
       adminOnly: false,
-      submenu: [
-        { name: 'Lista de Proveedores', path: '/proveedores' }
-      ]
+      path: '/proveedores'
     },
     {
       name: 'Créditos',
@@ -147,7 +136,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     }
   ];
 
-  // Solo mostrar si es admin
   if (isAdmin) {
     menuItems.push({
       name: 'Empleados',
@@ -163,27 +151,35 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
   return (
     <>
-      {/* Overlay para móvil */}
+      {/* Overlay: aparece cuando el sidebar está abierto, cubre todo excepto el sidebar */}
       {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40" // Z-index 40 para estar debajo del sidebar (z-50)
           onClick={toggleSidebar}
         />
       )}
-      
-      {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+
+      {/* Sidebar: Siempre fijo y se superpone */}
+      <div className={`
+        fixed inset-y-0 left-0
+        z-50                       /* Alto z-index para que siempre esté encima */
+        w-64 bg-gray-900 text-white
+        transform transition-transform duration-300 ease-in-out
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'} /* Controla si está visible o fuera de pantalla */
+      `}>
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-700">
           <h1 className="text-xl font-bold text-blue-400">GestorMoto</h1>
-          <button 
+          {/* Botón para cerrar el sidebar (siempre visible cuando el sidebar está abierto) */}
+          <button
             onClick={toggleSidebar}
-            className="lg:hidden p-2 rounded-md hover:bg-gray-800"
+            className="p-2 rounded-md hover:bg-gray-800"
+            title="Cerrar Menú"
           >
             <ArrowLeftOnRectangleIcon className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Usuario info */}
+        {/* User Info and Navigation (sin cambios) */}
         <div className="p-4 border-b border-gray-700">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
@@ -198,11 +194,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
           </div>
         </div>
 
-        {/* Menú */}
         <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => {
             if (item.adminOnly && !isAdmin) return null;
-            
+
             return (
               <div key={item.name}>
                 {item.submenu ? (
@@ -221,12 +216,11 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                         <ChevronRightIcon className="h-4 w-4" />
                       )}
                     </button>
-                    
-                    {/* Submenu */}
+
                     <div className={`mt-2 ml-8 space-y-1 overflow-hidden transition-all duration-200 ${openSubmenu === item.name ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
                       {item.submenu.map((subItem) => {
                         if (subItem.adminOnly && !isAdmin) return null;
-                        
+
                         return (
                           <button
                             key={subItem.name}
@@ -253,7 +247,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
           })}
         </nav>
 
-        {/* Logout */}
+        {/* Logout (sin cambios) */}
         <div className="p-4 border-t border-gray-700">
           <button
             onClick={handleLogout}

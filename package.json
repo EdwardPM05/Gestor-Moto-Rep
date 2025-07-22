@@ -9,11 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.4",
     "@heroicons/react": "^2.2.0",
     "firebase": "^10.7.1",
     "next": "14.0.3",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "react-select": "^5.10.2"
   },
   "devDependencies": {
     "autoprefixer": "^10.0.1",

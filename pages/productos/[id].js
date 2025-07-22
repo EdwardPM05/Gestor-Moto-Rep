@@ -10,9 +10,9 @@ import {
   getDoc,
   addDoc,
   updateDoc,
-  query,
-  getDocs,
-  orderBy,
+  // query, // Ya no necesitamos query ni getDocs para modelosMoto
+  // getDocs, // Ya no necesitamos getDocs para modelosMoto
+  // orderBy, // Ya no necesitamos orderBy para modelosMoto
   serverTimestamp,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -26,7 +26,7 @@ const AddEditProductoPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [modelosMoto, setModelosMoto] = useState([]); // Lista de todos los modelos de moto disponibles
+  // const [modelosMoto, setModelosMoto] = useState([]); // ¡ELIMINAMOS ESTE ESTADO!
 
   const DEFAULT_STOCK_UMBRAL = 4; // Valor por defecto para el umbral de stock bajo
 
@@ -41,14 +41,15 @@ const AddEditProductoPage = () => {
     precioCompraDefault: 0,
     precioVentaDefault: 0,
     stockActual: 0,
-    stockReferencialUmbral: DEFAULT_STOCK_UMBRAL, // Establecer el valor por defecto inicial aquí
+    stockReferencialUmbral: DEFAULT_STOCK_UMBRAL,
     ubicacion: '',
     imageUrl: '',
-    modelosCompatiblesIds: [], // Array de IDs de modelos compatibles
+    // CAMBIO CLAVE: Ahora es un string para texto libre
+    modelosCompatiblesTexto: '',
   });
 
-  const [selectedImageFile, setSelectedImageFile] = useState(null); // Para el archivo de imagen a subir
-  const [imagePreviewUrl, setImagePreviewUrl] = useState(''); // Para la previsualización de la imagen
+  const [selectedImageFile, setSelectedImageFile] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
 
   const isEditing = id !== 'nuevo';
 
@@ -63,14 +64,12 @@ const AddEditProductoPage = () => {
       setError(null);
 
       try {
-        // 1. Cargar todos los modelos de moto disponibles
-        const qModelos = query(collection(db, 'modelosMoto'), orderBy('marcaModelo', 'asc'));
-        const modelosSnapshot = await getDocs(qModelos);
-        const fetchedModelos = modelosSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setModelosMoto(fetchedModelos);
+        // ¡ELIMINAMOS LA CARGA DE MODELOS DE MOTO DE FIRESTORE AQUI!
+        // No necesitamos:
+        // const qModelos = query(collection(db, 'modelosMoto'), orderBy('marcaModelo', 'asc'));
+        // const modelosSnapshot = await getDocs(qModelos);
+        // const fetchedModelos = modelosSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // setModelosMoto(fetchedModelos); // ¡ELIMINAMOS ESTA LÍNEA!
 
         // 2. Si estamos editando, cargar los datos del producto
         if (isEditing) {
@@ -86,27 +85,25 @@ const AddEditProductoPage = () => {
               marca: productData.marca || '',
               codigoTienda: productData.codigoTienda || '',
               codigoProveedor: productData.codigoProveedor || '',
-              precioCompraDefault: productData.precioCompraDefault || 0, // Ya asumimos que es Number
-              precioVentaDefault: productData.precioVentaDefault || 0,   // Ya asumimos que es Number
+              precioCompraDefault: productData.precioCompraDefault || 0,
+              precioVentaDefault: productData.precioVentaDefault || 0,
               stockActual: productData.stockActual || 0,
-              // Usa el valor del documento, si no existe o es nulo, usa el DEFAULT_STOCK_UMBRAL
               stockReferencialUmbral: productData.stockReferencialUmbral ?? DEFAULT_STOCK_UMBRAL,
               ubicacion: productData.ubicacion || '',
               imageUrl: productData.imageUrl || '',
-              // Asegura que modelosCompatiblesIds sea un array, incluso si está vacío en Firestore
-              modelosCompatiblesIds: productData.modelosCompatiblesIds || [],
+              // CAMBIO CLAVE: Usamos el nuevo campo de texto libre
+              modelosCompatiblesTexto: productData.modelosCompatiblesTexto || '',
             });
-            setImagePreviewUrl(productData.imageUrl || ''); // Establecer la URL de previsualización
+            setImagePreviewUrl(productData.imageUrl || '');
           } else {
             setError('Producto no encontrado.');
-            router.push('/productos'); // Redirigir si el producto no existe
+            router.push('/productos');
           }
         } else {
-          // Si es un nuevo producto, asegúrate de que stockReferencialUmbral tenga el valor por defecto
-          // Esto ya se hace en la inicialización del useState, pero lo reaseguramos aquí si se reseteara.
           setFormData(prev => ({
             ...prev,
-            stockReferencialUmbral: DEFAULT_STOCK_UMBRAL
+            stockReferencialUmbral: DEFAULT_STOCK_UMBRAL,
+            modelosCompatiblesTexto: '', // Aseguramos que esté vacío para un nuevo producto
           }));
         }
       } catch (err) {
@@ -132,10 +129,10 @@ const AddEditProductoPage = () => {
     const file = e.target.files[0];
     if (file) {
       setSelectedImageFile(file);
-      setImagePreviewUrl(URL.createObjectURL(file)); // Crear URL para previsualización
+      setImagePreviewUrl(URL.createObjectURL(file));
     } else {
       setSelectedImageFile(null);
-      setImagePreviewUrl(formData.imageUrl || ''); // Volver a la URL original si no hay archivo nuevo
+      setImagePreviewUrl(formData.imageUrl || '');
     }
   };
 
@@ -145,27 +142,12 @@ const AddEditProductoPage = () => {
     setFormData((prev) => ({ ...prev, imageUrl: '' }));
   };
 
-  const handleModeloSelection = (e) => {
-    const { value, checked } = e.target;
-    setFormData((prev) => {
-      const currentModels = prev.modelosCompatiblesIds;
-      if (checked) {
-        return {
-          ...prev,
-          modelosCompatiblesIds: [...currentModels, value],
-        };
-      } else {
-        return {
-          ...prev,
-          modelosCompatiblesIds: currentModels.filter((modelId) => modelId !== value),
-        };
-      }
-    });
-  };
+  // ¡ELIMINAMOS handleModeloSelection YA NO ES NECESARIO!
+  // const handleModeloSelection = (e) => { /* ... */ };
+
 
   const uploadImage = async (file) => {
     if (!file) return null;
-    // Usa el ID del producto si estamos editando, o un timestamp si es nuevo
     const filePath = `productos/${id !== 'nuevo' ? id : Date.now()}-${file.name}`;
     const imageRef = storageRef(storage, filePath);
     await uploadBytes(imageRef, file);
@@ -191,44 +173,39 @@ const AddEditProductoPage = () => {
     try {
       let finalImageUrl = formData.imageUrl;
 
-      // Lógica de subida y eliminación de imágenes
       if (selectedImageFile) {
-        // Si hay una imagen existente y se está subiendo una nueva, eliminar la antigua
         if (isEditing && formData.imageUrl && formData.imageUrl !== imagePreviewUrl) {
           await handleDeleteOldImage(formData.imageUrl);
         }
         finalImageUrl = await uploadImage(selectedImageFile);
       } else if (isEditing && !imagePreviewUrl && formData.imageUrl) {
-        // Si se está editando y el preview está vacío pero antes había una imagen, eliminarla
         await handleDeleteOldImage(formData.imageUrl);
         finalImageUrl = '';
       }
 
-      // Preparar los datos a guardar. Asumimos que los campos numéricos ya son Number
       const productDataToSave = {
         ...formData,
         imageUrl: finalImageUrl,
+        // Eliminamos modelosCompatiblesIds y usamos el nuevo campo de texto libre
+        modelosCompatiblesIds: [], // Opcional: podrías guardarlo como un array vacío si quieres mantener el campo en Firestore
+        modelosCompatiblesTexto: formData.modelosCompatiblesTexto, // Guardamos el texto ingresado
         updatedAt: serverTimestamp(),
       };
 
-      // Si se está agregando un nuevo producto, añadir el timestamp de creación
       if (!isEditing) {
         productDataToSave.createdAt = serverTimestamp();
       }
 
       if (isEditing) {
-        // Editar producto existente
         await updateDoc(doc(db, 'productos', id), productDataToSave);
         console.log("Producto actualizado con ID: ", id);
       } else {
-        // Agregar nuevo producto
         const docRef = await addDoc(collection(db, 'productos'), productDataToSave);
         console.log("Producto agregado con ID: ", docRef.id);
       }
-      router.push('/productos'); // Redirigir a la lista después de guardar
+      router.push('/productos');
     } catch (err) {
       console.error("Error al guardar producto:", err);
-      // Incluir el mensaje de error de Firebase para depuración
       setError("Error al guardar el producto. Verifique los campos e intente de nuevo. Detalle: " + err.message);
       if (err.code === 'permission-denied') {
         setError('No tiene permisos para realizar esta acción. Contacte al administrador.');
@@ -325,30 +302,19 @@ const AddEditProductoPage = () => {
             </div>
           </div>
 
-          {/* Sección de Modelos Compatibles */}
+          {/* NUEVA SECCIÓN: Modelos Compatibles como texto libre */}
           <div>
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">Modelos Compatibles</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-md border border-gray-200 max-h-60 overflow-y-auto">
-              {modelosMoto.length > 0 ? (
-                modelosMoto.map((modelo) => (
-                  <div key={modelo.id} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id={`modelo-${modelo.id}`}
-                      value={modelo.id}
-                      checked={formData.modelosCompatiblesIds.includes(modelo.id)}
-                      onChange={handleModeloSelection}
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <label htmlFor={`modelo-${modelo.id}`} className="ml-2 text-sm text-gray-700">
-                      {modelo.marcaModelo} {modelo.nombreModelo}
-                    </label>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500 col-span-full">No hay modelos de moto registrados. <a onClick={() => router.push('/productos/modelos')} className="text-blue-600 hover:underline cursor-pointer">Crea uno aquí.</a></p>
-              )}
-            </div>
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">Modelos Compatibles (Texto Libre)</h2>
+            <p className="text-sm text-gray-500 mb-2">Ingrese los modelos compatibles, separados por comas o saltos de línea.</p>
+            <textarea
+              name="modelosCompatiblesTexto"
+              id="modelosCompatiblesTexto"
+              rows="4"
+              value={formData.modelosCompatiblesTexto}
+              onChange={handleChange}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              placeholder="Ej: Yamaha YBR125, Honda CB190R, Pulsar NS200"
+            ></textarea>
           </div>
 
           {/* Sección de Imagen del Producto */}
@@ -357,6 +323,7 @@ const AddEditProductoPage = () => {
             <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md relative">
               {imagePreviewUrl ? (
                 <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={imagePreviewUrl} alt="Previsualización del producto" className="max-h-48 max-w-full object-contain" />
                   <button
                     type="button"

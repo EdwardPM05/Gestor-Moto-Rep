@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
-import { PlusIcon, PencilIcon, TrashIcon, UserGroupIcon } from '@heroicons/react/24/outline'; // Añadido UserGroupIcon
+import { PlusIcon, PencilIcon, TrashIcon, UserGroupIcon, GiftIcon } from '@heroicons/react/24/outline'; // Añadido UserGroupIcon y GiftIcon
 import { useRouter } from 'next/router';
 
 const ClientesPage = () => {
@@ -29,7 +29,9 @@ const ClientesPage = () => {
         const querySnapshot = await getDocs(q);
         const clientesList = querySnapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...doc.data(),
+          // Asegurarse de que fechaNacimiento esté en un formato manejable si existe
+          fechaNacimiento: doc.data().fechaNacimiento || ''
         }));
         setClientes(clientesList);
         setFilteredClientes(clientesList);
@@ -57,6 +59,16 @@ const ClientesPage = () => {
     setFilteredClientes(filtered);
   }, [searchTerm, clientes]);
 
+  // Función para formatear la fecha de cumpleaños (solo día y mes)
+  const formatBirthday = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString + 'T00:00:00'); // Añadir T00:00:00 para evitar problemas de zona horaria
+    if (isNaN(date.getTime())) return 'N/A'; // Verificar si la fecha es válida
+    const day = date.getDate();
+    const month = date.toLocaleString('es-ES', { month: 'long' });
+    return `${day} de ${month}`;
+  };
+
   const handleDelete = async (clienteId) => {
     if (window.confirm('¿Estás seguro de que quieres eliminar este cliente? Esta acción es irreversible.')) {
       try {
@@ -77,98 +89,105 @@ const ClientesPage = () => {
 
   return (
     <Layout title="Gestión de Clientes">
-      <div className="max-w-7xl mx-auto p-4 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-          <UserGroupIcon className="h-7 w-7 text-green-500 mr-2" /> {/* Icono para Clientes */}
-          Clientes
-        </h1>
+      {/* Contenedor principal de la página, con margen horizontal */}
+      <div className="flex flex-col mx-4 py-4">
+        {/* Contenedor del card blanco */}
+        <div className="w-full p-4 bg-white rounded-lg shadow-md flex flex-col">
+          {/* Título de la página, similar al de Productos/Proveedores */}
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <span className="block sm:inline">{error}</span>
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+
+          {/* Sección de Búsqueda y Botón Agregar, con estilo de card */}
+          <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0 flex justify-between items-center">
+            <input
+              type="text"
+              placeholder="Buscar por nombre, DNI, teléfono, email o dirección..." 
+              className="flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <button
+              onClick={() => router.push('/clientes/nuevo')}
+              className="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            >
+              <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
+              Agregar Cliente
+            </button>
           </div>
-        )}
 
-        <div className="flex justify-between items-center mb-6">
-          <input
-            type="text"
-            placeholder="Buscar clientes..."
-            className="w-full md:w-1/3 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <button
-            onClick={() => router.push('/clientes/nuevo')} 
-            className="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-          >
-            <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
-            Agregar Cliente
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-          </div>
-        ) : filteredClientes.length === 0 ? (
-          <p className="text-gray-500">No se encontraron clientes.</p>
-        ) : (
-          <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table className="min-w-full divide-y divide-gray-300">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Nombre Completo</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">DNI</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Teléfono</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Email</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Crédito Actual</th>
-                  <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                    <span className="sr-only">Acciones</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {filteredClientes.map((cliente) => (
-                  <tr key={cliente.id}>
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">{cliente.nombre} {cliente.apellido}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{cliente.dni}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{cliente.telefono}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{cliente.email}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      {cliente.tieneCredito ? (
-                        <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
-                          S/. {parseFloat(cliente.montoCreditoActual || 0).toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
-                          No tiene crédito
-                        </span>
-                      )}
-                    </td>
-                    <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                      <div className="flex items-center space-x-2 justify-end">
-                        <button
-                          onClick={() => router.push(`/clientes/${cliente.id}`)}
-                          className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-gray-100"
-                          title="Editar Cliente"
-                        >
-                          <PencilIcon className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(cliente.id)}
-                          className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
-                          title="Eliminar Cliente"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </td>
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+            </div>
+          ) : filteredClientes.length === 0 ? (
+            <p className="p-4 text-center text-gray-500">No se encontraron clientes que coincidan con la búsqueda.</p>
+          ) : (
+            <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto">
+              <table className="min-w-full border-collapse"> {/* Añadido border-collapse para los bordes de celda */}
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    {/* Clases para los encabezados: border border-gray-300, px-3 py-2, text-center */}
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">NOMBRE COMPLETO</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">DNI</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TELEFONO</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">EMAIL</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CUMPLEAÑOS</th> {/* Nueva columna */}
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CREDITO ACTUAL</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody className="bg-white">
+                  {filteredClientes.map((cliente, index) => (
+                    <tr key={cliente.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}> {/* Fondo alternado */}
+                      {/* Clases para las celdas de datos: border border-gray-300, whitespace-nowrap px-3 py-2, text-sm text-black, text-center */}
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">{cliente.nombre} {cliente.apellido}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.dni || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.telefono || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.email || 'N/A'}</td>
+                      {/* Celda de Cumpleaños */}
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                        {formatBirthday(cliente.fechaNacimiento)}
+                      </td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                        {cliente.tieneCredito ? (
+                          <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
+                            S/. {parseFloat(cliente.montoCreditoActual || 0).toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
+                            No
+                          </span>
+                        )}
+                      </td>
+                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium">
+                        <div className="flex items-center space-x-2 justify-center">
+                          <button
+                            onClick={() => router.push(`/clientes/${cliente.id}`)}
+                            className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-gray-100"
+                            title="Editar Cliente"
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(cliente.id)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
+                            title="Eliminar Cliente"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </Layout>
   );

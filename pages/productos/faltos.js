@@ -1,11 +1,11 @@
-// pages/productos/faltos.js
+// pages/productos/faltantes.js
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { useRouter } from 'next/router';
-import { ExclamationTriangleIcon, ArchiveBoxIcon, MagnifyingGlassIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, ArchiveBoxIcon, MagnifyingGlassIcon, PencilIcon, EyeIcon, PhotoIcon } from '@heroicons/react/24/outline'; // Añadidos iconos para Acciones
 
 const ProductosFaltantesPage = () => {
   const router = useRouter();
@@ -49,13 +49,16 @@ const ProductosFaltantesPage = () => {
 
     const faltantes = productos.filter(producto => {
       // Condición principal: stockActual es menor o igual al stockReferencialUmbral
-      const isFaltante = producto.stockActual <= producto.stockReferencialUmbral;
+      // Asegurarse de que stockActual y stockReferencialUmbral son números válidos
+      const currentStock = typeof producto.stockActual === 'number' ? producto.stockActual : 0;
+      const thresholdStock = typeof producto.stockReferencialUmbral === 'number' ? producto.stockReferencialUmbral : 0;
+      const isFaltante = currentStock <= thresholdStock;
 
       // Condición de búsqueda: si el término de búsqueda coincide con algún campo
       const matchesSearch =
-        producto.nombre.toLowerCase().includes(lowerCaseSearchTerm) ||
-        producto.marca.toLowerCase().includes(lowerCaseSearchTerm) ||
-        producto.codigoTienda.toLowerCase().includes(lowerCaseSearchTerm) ||
+        (producto.nombre && producto.nombre.toLowerCase().includes(lowerCaseSearchTerm)) ||
+        (producto.marca && producto.marca.toLowerCase().includes(lowerCaseSearchTerm)) ||
+        (producto.codigoTienda && producto.codigoTienda.toLowerCase().includes(lowerCaseSearchTerm)) ||
         (producto.codigoProveedor && producto.codigoProveedor.toLowerCase().includes(lowerCaseSearchTerm)) ||
         (producto.ubicacion && producto.ubicacion.toLowerCase().includes(lowerCaseSearchTerm));
 
@@ -63,87 +66,102 @@ const ProductosFaltantesPage = () => {
     });
 
     setProductosFaltantes(faltantes);
-  }, [productos, searchTerm]); // Se ejecuta cuando 'productos' o 'searchTerm' cambian
+  }, [productos, searchTerm]);
 
   if (!user) {
-    return null; // O un spinner/mensaje de carga, la redirección ya está en useEffect
+    return null;
   }
 
   return (
     <Layout title="Productos Faltantes">
-      <div className="max-w-7xl mx-auto p-4 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-          <ExclamationTriangleIcon className="h-7 w-7 text-red-500 mr-2" />
-          Productos Faltantes
-        </h1>
+      <div className="flex flex-col mx-4 py-4">
+        <div className="w-full p-6 bg-white rounded-lg shadow-md flex flex-col">
+          <h1 className="text-2xl font-extrabold mb-6 text-gray-900 flex items-center">
+            <ExclamationTriangleIcon className="h-8 w-8 text-red-600 mr-3" />
+            Productos Faltantes
+          </h1>
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <span className="block sm:inline">{error}</span>
-          </div>
-        )}
+          {error && (
+            <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
+              <span className="block sm:inline font-medium">{error}</span>
+            </div>
+          )}
 
-        <div className="mb-6 flex">
-          <div className="relative w-full">
-            <input
-              type="text"
-              placeholder="Buscar productos faltantes..."
-              className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0 flex items-center">
+            <div className="relative flex-grow">
+              <input
+                type="text"
+                placeholder="Buscar por nombre, marca, código..."
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+              </div>
+            </div>
           </div>
-        </div>
 
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        ) : productosFaltantes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-500">
-            <ArchiveBoxIcon className="h-24 w-24 text-gray-300 mb-4" />
-            <p className="text-lg">¡No hay productos faltantes en este momento!</p>
-            <p className="text-sm">Todo tu inventario está por encima del umbral.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table className="min-w-full divide-y divide-gray-300">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Nombre</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Marca</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Código Tienda</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Stock Actual</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Umbral</th>
-                  <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                    <span className="sr-only">Acciones</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {productosFaltantes.map((producto) => (
-                  <tr key={producto.id} className="bg-red-50 hover:bg-red-100"> {/* Resalta las filas faltantes */}
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">{producto.nombre}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{producto.marca}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{producto.codigoTienda}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-red-600 font-semibold">{producto.stockActual}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{producto.stockReferencialUmbral}</td>
-                    <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                      <button
-                        onClick={() => router.push(`/productos/${producto.id}`)}
-                        className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-gray-100"
-                        title="Ver/Editar Producto"
-                      >
-                        <PencilIcon className="h-5 w-5" />
-                      </button>
-                    </td>
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            </div>
+          ) : productosFaltantes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-500 bg-gray-50 rounded-lg p-4 shadow-inner">
+              <ArchiveBoxIcon className="h-24 w-24 text-gray-300 mb-4" />
+              <p className="text-lg font-medium">¡No hay productos faltantes en este momento!</p>
+              <p className="text-sm text-gray-400">Todo tu inventario está por encima del umbral establecido.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[70vh]">
+              <table className="min-w-full border-collapse">
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Nombre</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Marca</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Código Tienda</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Cód. Proveedor</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Medida</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Ubicación</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Stock</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Umbral Mínimo</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Costo (S/.)</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-left">Venta (S/.)</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">Acciones</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody className="bg-white">
+                  {productosFaltantes.map((producto, index) => (
+                    <tr key={producto.id} className={index % 2 === 0 ? 'bg-white' : 'bg-red-50'}>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900 text-left">{producto.nombre || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{producto.marca || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{producto.codigoTienda || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{producto.codigoProveedor || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{producto.medida || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{producto.ubicacion || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-red-600 font-bold text-left">{producto.stockActual || 0}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{producto.stockReferencialUmbral || 0}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">S/. {parseFloat(producto.costo || 0).toFixed(2)}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">S/. {parseFloat(producto.precioVenta || 0).toFixed(2)}</td>
+                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
+                        <div className="flex items-center space-x-2 justify-center">
+                           {/* Botón para editar (el lápiz) */}
+                          <button
+                            onClick={() => router.push(`/productos/${producto.id}`)}
+                            className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                            title="Editar Producto"
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </Layout>
   );

@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
-import { PlusIcon, PencilIcon, TrashIcon, BuildingOfficeIcon } from '@heroicons/react/24/outline'; // Añadido BuildingOfficeIcon
+import { PlusIcon, PencilIcon, TrashIcon, BuildingOfficeIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
 
 const ProveedoresPage = () => {
@@ -61,6 +61,7 @@ const ProveedoresPage = () => {
       try {
         await deleteDoc(doc(db, 'proveedores', proveedorId));
         setProveedores(prevProveedores => prevProveedores.filter(p => p.id !== proveedorId));
+        setFilteredProveedores(prevFiltered => prevFiltered.filter(p => p.id !== proveedorId));
         alert('Proveedor eliminado con éxito.');
       } catch (err) {
         console.error("Error al eliminar proveedor:", err);
@@ -76,88 +77,89 @@ const ProveedoresPage = () => {
 
   return (
     <Layout title="Gestión de Proveedores">
-      <div className="max-w-7xl mx-auto p-4 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-          <BuildingOfficeIcon className="h-7 w-7 text-indigo-500 mr-2" />
-          Proveedores
-        </h1>
+      {/* Contenedor principal de la página, con margen horizontal */}
+      <div className="flex flex-col mx-4 py-4">
+        {/* Contenedor del card blanco */}
+        <div className="w-full p-4 bg-white rounded-lg shadow-md flex flex-col">
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <span className="block sm:inline">{error}</span>
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+
+          {/* Sección de Búsqueda y Botón Agregar */}
+          <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0 flex justify-between items-center">
+            <input
+              type="text"
+              placeholder="Buscar por nombre, contacto, RUC, email o teléfono..."
+              className="flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <button
+              onClick={() => router.push('/proveedores/nuevo')}
+              className="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+              <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
+              Agregar Proveedor
+            </button>
           </div>
-        )}
 
-        <div className="flex justify-between items-center mb-6">
-          <input
-            type="text"
-            placeholder="Buscar proveedores..."
-            className="w-full md:w-1/3 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <button
-            onClick={() => router.push('/proveedores/nuevo')}
-            className="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
-            Agregar Proveedor
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-          </div>
-        ) : filteredProveedores.length === 0 ? (
-          <p className="text-gray-500">No se encontraron proveedores.</p>
-        ) : (
-          <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table className="min-w-full divide-y divide-gray-300">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Empresa</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Contacto</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">RUC</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Teléfono</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Email</th>
-                  <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                    <span className="sr-only">Acciones</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {filteredProveedores.map((proveedor) => (
-                  <tr key={proveedor.id}>
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">{proveedor.nombreEmpresa}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{proveedor.contactoPrincipal}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{proveedor.ruc}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{proveedor.telefono}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{proveedor.email}</td>
-                    <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                      <div className="flex items-center space-x-2 justify-end">
-                        <button
-                          onClick={() => router.push(`/proveedores/${proveedor.id}`)}
-                          className="text-indigo-600 hover:text-indigo-900 p-1 rounded-full hover:bg-gray-100"
-                          title="Editar Proveedor"
-                        >
-                          <PencilIcon className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(proveedor.id)}
-                          className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
-                          title="Eliminar Proveedor"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      </div>
-                    </td>
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            </div>
+          ) : filteredProveedores.length === 0 ? (
+            <p className="p-4 text-center text-gray-500">No se encontraron proveedores que coincidan con la búsqueda.</p>
+          ) : (
+            <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto">
+              <table className="min-w-full border-collapse"> {/* Añadido border-collapse para los bordes de celda */}
+                <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    {/* Clases para los encabezados: border border-gray-300, px-3 py-2, text-center */}
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">NOMBRE DE EMPRESA</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CONTACTO</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">RUC</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TELEFONO</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">EMAIL</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody className="bg-white">
+                  {filteredProveedores.map((proveedor, index) => (
+                    <tr key={proveedor.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}> {/* Fondo alternado */}
+                      {/* Clases para las celdas de datos: border border-gray-300, whitespace-nowrap px-3 py-2, text-sm text-black, text-center */}
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">{proveedor.nombreEmpresa}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{proveedor.contactoPrincipal || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{proveedor.ruc || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{proveedor.telefono || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{proveedor.email || 'N/A'}</td>
+                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium">
+                        <div className="flex items-center space-x-2 justify-center">
+                          <button
+                            onClick={() => router.push(`/proveedores/${proveedor.id}`)}
+                            className="text-indigo-600 hover:text-indigo-900 p-1 rounded-full hover:bg-gray-100"
+                            title="Editar Proveedor"
+                          >
+                            <PencilIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(proveedor.id)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
+                            title="Eliminar Proveedor"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </Layout>
   );
