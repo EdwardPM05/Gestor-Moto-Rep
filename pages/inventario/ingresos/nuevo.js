@@ -9,11 +9,11 @@ import {
   getDocs,
   doc,
   addDoc,
-  updateDoc,
+  // updateDoc, // REMOVIDO: Ya no se actualizará stock aquí
   serverTimestamp,
   query,
   orderBy,
-  getDoc,
+  // getDoc, // REMOVIDO: Ya no se leerá stock aquí
 } from 'firebase/firestore';
 import { ArrowDownTrayIcon, PlusIcon, MagnifyingGlassIcon, TrashIcon } from '@heroicons/react/24/outline'; // Se remueven ChevronUpIcon, ChevronDownIcon
 
@@ -133,7 +133,7 @@ const NuevoIngresoPage = () => {
 
     if (!isNaN(cantidad) && !isNaN(precio)) {
       newItems[index].subtotal = (cantidad * precio).toFixed(2);
-      newItems[index].stockRestanteLote = cantidad;
+      newItems[index].stockRestanteLote = cantidad; // Inicializar stockRestanteLote con la cantidad ingresada
     } else {
       newItems[index].subtotal = '0.00';
       newItems[index].stockRestanteLote = 0;
@@ -180,7 +180,7 @@ const NuevoIngresoPage = () => {
         nombreProducto: selectedProductToAdd.nombre,
         cantidad: 1, // Cantidad inicial predeterminada
         precioCompraUnitario: selectedProductToAdd.precioCompraDefault ? selectedProductToAdd.precioCompraDefault.toFixed(2) : '0.00', // Formato a 2 decimales
-        stockRestanteLote: 1,
+        stockRestanteLote: 1, // El stock restante inicial de este lote es la cantidad ingresada
         subtotal: parseFloat((1 * (selectedProductToAdd.precioCompraDefault || 0)).toFixed(2)),
       }]);
       setCurrentSearchTerm('');
@@ -247,6 +247,7 @@ const NuevoIngresoPage = () => {
         costoTotalLote: parseFloat(costoTotalLote.toFixed(2)),
         fechaIngreso: serverTimestamp(),
         empleadoId: user.email || user.uid,
+        estado: 'pendiente', // ESTADO INICIAL: PENDIENTE
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -258,32 +259,17 @@ const NuevoIngresoPage = () => {
           nombreProducto: item.nombreProducto,
           cantidad: parseFloat(item.cantidad),
           precioCompraUnitario: parseFloat(item.precioCompraUnitario),
-          stockRestanteLote: parseFloat(item.cantidad),
+          stockRestanteLote: parseFloat(item.cantidad), // Inicialmente, el stock restante del lote es la cantidad total ingresada
           subtotal: parseFloat(item.subtotal),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-
-        const productRef = doc(db, 'productos', item.productoId);
-        const productSnap = await getDoc(productRef);
-
-        if (productSnap.exists()) {
-          const currentStock = parseFloat(productSnap.data().stockActual || 0);
-          const newStock = currentStock + parseFloat(item.cantidad);
-          await updateDoc(productRef, {
-            stockActual: newStock,
-            updatedAt: serverTimestamp(),
-          });
-          console.log(`Stock de ${item.nombreProducto} actualizado a ${newStock}`);
-        } else {
-          console.warn(`Producto con ID ${item.productoId} no encontrado al intentar actualizar stock.`);
-        }
       }
 
-      alert('Boleta de ingreso registrada y stock(s) actualizado(s) con éxito.');
+      alert('Boleta de ingreso registrada con éxito. El stock se actualizará al confirmar la recepción.');
       router.push('/inventario/ingresos');
     } catch (err) {
-      console.error("Error al registrar boleta de ingreso o actualizar stock:", err);
+      console.error("Error al registrar boleta de ingreso:", err);
       setError("Error al registrar el ingreso. " + err.message);
       if (err.code === 'permission-denied') {
         setError('No tiene permisos para realizar esta acción. Contacte al administrador.');

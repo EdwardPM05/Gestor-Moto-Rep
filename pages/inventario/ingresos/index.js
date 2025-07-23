@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
 import { db } from '../../../lib/firebase';
-import { collection, getDocs, query, orderBy, doc, deleteDoc } from 'firebase/firestore';
-import { PlusIcon, ArrowDownTrayIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { collection, getDocs, query, orderBy, doc, deleteDoc, runTransaction } from 'firebase/firestore';
+import { PlusIcon, ArrowDownTrayIcon, TrashIcon, EyeIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
 
 const IngresosPage = () => {
@@ -38,12 +38,13 @@ const IngresosPage = () => {
             fechaIngreso: docIngreso.data().fechaIngreso?.toDate().toLocaleDateString('es-ES', {
               year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
             }) || 'N/A',
+            // Asegurarse de que el estado esté presente
+            estado: docIngreso.data().estado || 'pendiente', // Valor por defecto 'pendiente'
           };
           loadedIngresos.push(ingresoData);
         }
 
         setIngresos(loadedIngresos);
-        setFilteredIngresos(loadedIngresos);
       } catch (err) {
         console.error("Error al cargar ingresos:", err);
         setError("Error al cargar la información de ingresos. Intente de nuevo.");
@@ -59,56 +60,168 @@ const IngresosPage = () => {
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
     const filtered = ingresos.filter(ingreso => {
       const numeroBoletaMatch = ingreso.numeroBoleta && typeof ingreso.numeroBoleta === 'string'
-                                ? ingreso.numeroBoleta.toLowerCase().includes(lowerCaseSearchTerm)
-                                : false;
+        ? ingreso.numeroBoleta.toLowerCase().includes(lowerCaseSearchTerm)
+        : false;
 
       const proveedorMatch = ingreso.proveedorNombre && typeof ingreso.proveedorNombre === 'string'
-                                ? ingreso.proveedorNombre.toLowerCase().includes(lowerCaseSearchTerm)
-                                : false;
+        ? ingreso.proveedorNombre.toLowerCase().includes(lowerCaseSearchTerm)
+        : false;
 
       const observacionesMatch = ingreso.observaciones && typeof ingreso.observaciones === 'string'
-                                  ? ingreso.observaciones.toLowerCase().includes(lowerCaseSearchTerm)
-                                  : false;
+        ? ingreso.observaciones.toLowerCase().includes(lowerCaseSearchTerm)
+        : false;
 
       const fechaIngresoMatch = ingreso.fechaIngreso && typeof ingreso.fechaIngreso === 'string'
-                                  ? ingreso.fechaIngreso.toLowerCase().includes(lowerCaseSearchTerm)
-                                  : false;
-      
-      const costoTotalMatch = ingreso.costoTotalLote && typeof ingreso.costoTotalLote === 'number'
-                               ? ingreso.costoTotalLote.toFixed(2).includes(lowerCaseSearchTerm)
-                               : false;
+        ? ingreso.fechaIngreso.toLowerCase().includes(lowerCaseSearchTerm)
+        : false;
 
-      return numeroBoletaMatch || proveedorMatch || observacionesMatch || fechaIngresoMatch || costoTotalMatch;
+      const costoTotalMatch = ingreso.costoTotalLote && typeof ingreso.costoTotalLote === 'number'
+        ? ingreso.costoTotalLote.toFixed(2).includes(lowerCaseSearchTerm)
+        : false;
+
+      const estadoMatch = ingreso.estado && typeof ingreso.estado === 'string'
+        ? ingreso.estado.toLowerCase().includes(lowerCaseSearchTerm)
+        : false;
+
+      return numeroBoletaMatch || proveedorMatch || observacionesMatch || fechaIngresoMatch || costoTotalMatch || estadoMatch;
     });
     setFilteredIngresos(filtered);
   }, [searchTerm, ingresos]);
 
-  const handleDeleteIngreso = async (ingresoId) => {
-    if (window.confirm('¿Estás seguro de que quieres eliminar esta boleta de ingreso COMPLETA? Esto eliminará todos los productos asociados y NO revertirá el stock de los productos. Para revertir el stock, deberás hacerlo manualmente o implementar una función de ajuste de inventario.')) {
-      setLoading(true);
-      setError(null);
-      try {
+  const handleConfirmarRecepcion = async (ingresoId) => {
+    if (!window.confirm('¿Estás seguro de que quieres CONFIRMAR la recepción de esta boleta de ingreso? Esto agregará los productos al stock actual.')) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const ingresoRef = doc(db, 'ingresos', ingresoId);
+        const ingresoSnap = await transaction.get(ingresoRef);
+
+        if (!ingresoSnap.exists()) {
+          throw new Error("Boleta de ingreso no encontrada.");
+        }
+
+        const currentIngresoData = ingresoSnap.data();
+        if (currentIngresoData.estado === 'recibido') {
+          throw new Error("Esta boleta de ingreso ya ha sido confirmada.");
+        }
+
+        // --- INICIO DE LECTURAS (TODAS ANTES DE CUALQUIER ESCRITURA) ---
+        // Obtener los ítems de ingreso asociados (fuera del transaction.get para items)
+        const itemsIngresoCollectionRef = collection(db, 'ingresos', ingresoId, 'itemsIngreso');
+        const itemsIngresoSnapshot = await getDocs(itemsIngresoCollectionRef); // getDocs NO es una operación de transacción
+                                                                                // pero necesitamos los datos antes de las escrituras.
+
+        if (itemsIngresoSnapshot.empty) {
+          throw new Error("No se encontraron productos asociados a esta boleta de ingreso.");
+        }
+
+        // Recopilar todas las referencias de productos y sus datos actuales para lecturas
+        const productoRefsAndData = [];
+        const productoPromises = itemsIngresoSnapshot.docs.map(async (itemDoc) => {
+          const itemData = itemDoc.data();
+          const productoRef = doc(db, 'productos', itemData.productoId);
+          const productoSnap = await transaction.get(productoRef); // ESTA ES LA LECTURA DENTRO DE LA TRANSACCIÓN
+
+          if (productoSnap.exists()) {
+            productoRefsAndData.push({
+              itemDocRef: itemDoc.ref, // Referencia al documento del item de ingreso
+              itemData: itemData,
+              productoRef: productoRef,
+              currentProductoData: productoSnap.data(),
+            });
+          } else {
+            console.warn(`Producto con ID ${itemData.productoId} no encontrado para actualizar stock. Se omitirá.`);
+          }
+        });
+        await Promise.all(productoPromises); // Esperar que todas las lecturas de productos se completen
+
+        // --- FIN DE LECTURAS ---
+
+        // --- INICIO DE ESCRITURAS ---
+        // Ahora que todas las lecturas están hechas, podemos proceder con las escrituras
+        for (const { itemDocRef, itemData, productoRef, currentProductoData } of productoRefsAndData) {
+          const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
+          const cantidadIngresada = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
+          const newStock = currentStock + cantidadIngresada;
+
+          // Actualizar stock actual del producto
+          transaction.update(productoRef, {
+            stockActual: newStock,
+            // Aquí podrías agregar lógica para actualizar el costo promedio del producto si lo manejas
+          });
+
+          // Actualizar stockRestanteLote en el itemIngreso (el lote específico)
+          transaction.update(itemDocRef, { // Usar itemDocRef aquí
+            stockRestanteLote: cantidadIngresada, // Al confirmar, el stock restante del lote es la cantidad ingresada
+          });
+        }
+
+        // Finalmente, actualizar el estado de la boleta de ingreso a 'recibido'
+        transaction.update(ingresoRef, { estado: 'recibido' });
+        // --- FIN DE ESCRITURAS ---
+      });
+
+      alert('Recepción de mercadería confirmada y stock actualizado con éxito.');
+      // Refrescar la lista de ingresos para reflejar el cambio de estado
+      setIngresos(prevIngresos =>
+        prevIngresos.map(ing =>
+          ing.id === ingresoId ? { ...ing, estado: 'recibido' } : ing
+        )
+      );
+    } catch (err) {
+      console.error("Error al confirmar recepción:", err);
+      setError("Error al confirmar la recepción. " + err.message);
+      alert('Hubo un error al confirmar la recepción: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteIngreso = async (ingresoId, estadoIngreso) => {
+    let confirmMessage = '¿Estás seguro de que quieres eliminar esta boleta de ingreso?';
+    if (estadoIngreso === 'recibido') {
+      confirmMessage += '\nADVERTENCIA: Esta boleta ya fue confirmada y sus productos se agregaron al stock. Eliminarla NO revertirá automáticamente el stock. Deberás ajustar el inventario manualmente si deseas corregir el stock.';
+    } else {
+      confirmMessage += '\nEsto eliminará todos los productos asociados y NO revertirá el stock de los productos (ya que aún no se habían agregado al stock).';
+    }
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const ingresoRef = doc(db, 'ingresos', ingresoId);
+        // Primero, obtener y eliminar los itemsIngreso
         const itemsRef = collection(db, 'ingresos', ingresoId, 'itemsIngreso');
-        const itemsSnapshot = await getDocs(itemsRef);
+        const itemsSnapshot = await getDocs(itemsRef); // getDocs está fuera de la transacción, no es un transaction.get
 
         const deleteItemsPromises = itemsSnapshot.docs.map(itemDoc =>
-          deleteDoc(doc(db, 'ingresos', ingresoId, 'itemsIngreso', itemDoc.id))
+          transaction.delete(doc(db, 'ingresos', ingresoId, 'itemsIngreso', itemDoc.id))
         );
         await Promise.all(deleteItemsPromises);
 
-        await deleteDoc(doc(db, 'ingresos', ingresoId));
+        // Luego, eliminar el documento de ingreso principal
+        transaction.delete(ingresoRef);
+      });
 
-        setIngresos(prevIngresos => prevIngresos.filter(ing => ing.id !== ingresoId));
-        alert('Boleta de ingreso eliminada con éxito.');
-      } catch (err) {
-        console.error("Error al eliminar boleta de ingreso:", err);
-        setError("Error al eliminar la boleta de ingreso. " + err.message);
-        alert('Hubo un error al eliminar la boleta de ingreso.');
-      } finally {
-        setLoading(false);
-      }
+      alert('Boleta de ingreso eliminada con éxito.');
+      setIngresos(prevIngresos => prevIngresos.filter(ing => ing.id !== ingresoId));
+    } catch (err) {
+      console.error("Error al eliminar boleta de ingreso:", err);
+      setError("Error al eliminar la boleta de ingreso. " + err.message);
+      alert('Hubo un error al eliminar la boleta de ingreso: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
+
 
   const handleViewDetails = (ingresoId) => {
     router.push(`/inventario/ingresos/${ingresoId}`);
@@ -120,10 +233,8 @@ const IngresosPage = () => {
 
   return (
     <Layout title="Registro de Ingresos de Mercadería">
-      {/* Contenedor principal de la página, con margen horizontal */}
-      <div className="flex flex-col mx-4 py-4"> {/* Mismos márgenes que clientes/index.js */}
-        {/* Contenedor del card blanco */}
-        <div className="w-full p-6 bg-white rounded-lg shadow-md flex flex-col"> {/* Mayor padding y sombra */}
+      <div className="flex flex-col mx-4 py-4">
+        <div className="w-full p-6 bg-white rounded-lg shadow-md flex flex-col">
 
           {error && (
             <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
@@ -131,12 +242,11 @@ const IngresosPage = () => {
             </div>
           )}
 
-          {/* Sección de Búsqueda y Botón Agregar, con estilo de card */}
           <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0 flex justify-between items-center">
-            <div className="relative flex-grow mr-4"> {/* Flex-grow y margen para el input */}
+            <div className="relative flex-grow mr-4">
               <input
                 type="text"
-                placeholder="Buscar por número de boleta, proveedor, observaciones o fecha..."
+                placeholder="Buscar por número de boleta, proveedor, observaciones, fecha o estado..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -167,15 +277,15 @@ const IngresosPage = () => {
               <p className="text-sm text-gray-400">¡Empieza registrando una nueva boleta de ingreso!</p>
             </div>
           ) : (
-            <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]"> {/* Ajustado para desbordamiento y altura máxima */}
-              <table className="min-w-full border-collapse"> {/* Añadido border-collapse para los bordes de celda */}
-                <thead className="bg-gray-50 sticky top-0 z-10"> {/* sticky top-0 para que la cabecera sea fija al hacer scroll */}
+            <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
+              <table className="min-w-full border-collapse">
+                <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr>
-                    {/* Clases para los encabezados: border border-gray-300, px-3 py-2, text-left */}
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">NUMERO DE BOLETA</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° BOLETA</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROVEEDOR</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE INGRESO</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO TOTAL</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">OBSERVACIONES</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">REGISTRADO POR</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
@@ -183,37 +293,56 @@ const IngresosPage = () => {
                 </thead>
                 <tbody className="bg-white">
                   {filteredIngresos.map((ingreso, index) => (
-                    <tr key={ingreso.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}> {/* Fondo alternado */}
-                      {/* Clases para las celdas de datos: border border-gray-300, whitespace-nowrap px-3 py-2, text-sm text-black, text-left */}
+                    <tr key={ingreso.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900 text-left">
-                        {ingreso.numeroBoleta || 'N/A'} {/* Muestra numeroBoleta, o 'N/A' si no existe */}
+                        {ingreso.numeroBoleta || 'N/A'}
                       </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.proveedorNombre}</td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.fechaIngreso}</td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium text-left">
                         S/. {parseFloat(ingreso.costoTotalLote || 0).toFixed(2)}
                       </td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                        {ingreso.estado === 'recibido' ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <CheckCircleIcon className="h-4 w-4 mr-1" /> Recibido
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <ExclamationCircleIcon className="h-4 w-4 mr-1" /> Pendiente
+                          </span>
+                        )}
+                      </td>
                       <td className="border border-gray-300 px-3 py-2 text-sm text-gray-700 text-left max-w-xs truncate" title={ingreso.observaciones || 'N/A'}>
                         {ingreso.observaciones || 'N/A'}
                       </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.empleadoId || 'Desconocido'}</td>
-                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center"> {/* Acciones centradas */}
-                          <div className="flex items-center space-x-2 justify-center">
+                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
+                        <div className="flex items-center space-x-2 justify-center">
+                          {ingreso.estado === 'pendiente' && (
                             <button
-                              onClick={() => handleViewDetails(ingreso.id)}
-                              className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
-                              title="Ver Detalles de la Boleta"
+                              onClick={() => handleConfirmarRecepcion(ingreso.id)}
+                              className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                              title="Confirmar Recepción de Mercadería"
                             >
-                              <EyeIcon className="h-5 w-5" />
+                              <CheckCircleIcon className="h-5 w-5" />
                             </button>
-                            <button
-                              onClick={() => handleDeleteIngreso(ingreso.id)}
-                              className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
-                              title="Eliminar Boleta de Ingreso Completa"
-                            >
-                              <TrashIcon className="h-5 w-5" />
-                            </button>
-                          </div>
+                          )}
+                          <button
+                            onClick={() => handleViewDetails(ingreso.id)}
+                            className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
+                            title="Ver Detalles de la Boleta"
+                          >
+                            <EyeIcon className="h-5 w-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteIngreso(ingreso.id, ingreso.estado)}
+                            className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
+                            title="Eliminar Boleta de Ingreso Completa"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

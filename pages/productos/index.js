@@ -334,12 +334,12 @@ const ProductosPage = () => {
                       key={producto.id}
                       className={`${producto.stockActual <= producto.stockReferencialUmbral ? 'bg-red-100 text-red-800' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')}`}
                     >
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-center">{producto.nombre}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">{producto.marca || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">{producto.codigoTienda}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">{producto.codigoProveedor || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">{producto.medida || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">{producto.ubicacion || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">{producto.nombre}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.marca || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.codigoTienda}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.codigoProveedor || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.medida || 'N/A'}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.ubicacion || 'N/A'}</td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-semibold text-center">
                         {producto.stockActual}
                       </td>

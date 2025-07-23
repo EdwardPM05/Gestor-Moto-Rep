@@ -60,7 +60,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       adminOnly: false,
       submenu: [
         { name: 'Ingresos', path: '/inventario/ingresos' },
-        { name: 'Salidas', path: '/inventario/salidas' },
         { name: 'Stock Actual', path: '/inventario/stock' },
         { name: 'Faltos', path: '/productos/faltos' }
       ]
@@ -70,8 +69,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       icon: DocumentTextIcon,
       adminOnly: false,
       submenu: [
-        { name: 'Nueva Cotización', path: '/cotizaciones/nueva' },
-        { name: 'Mis Cotizaciones', path: '/cotizaciones/mis-cotizaciones' },
+        { name: 'Mis Cotizaciones', path: '/cotizaciones' },
         { name: 'Todas las Cotizaciones', path: '/cotizaciones/todas', adminOnly: true },
         { name: 'Historial', path: '/cotizaciones/historial' }
       ]
@@ -81,7 +79,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       icon: BanknotesIcon,
       adminOnly: false,
       submenu: [
-        { name: 'Nueva Venta', path: '/ventas/nueva' },
+        { name: 'Ventas', path: '/ventas' },
         { name: 'Historial Ventas', path: '/ventas/historial' },
         { name: 'Ventas del Día', path: '/ventas/dia' }
       ]
