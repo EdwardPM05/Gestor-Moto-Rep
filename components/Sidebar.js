@@ -80,8 +80,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       adminOnly: false,
       submenu: [
         { name: 'Ventas', path: '/ventas' },
-        { name: 'Historial Ventas', path: '/ventas/historial' },
-        { name: 'Ventas del Día', path: '/ventas/dia' }
+        { name: 'Carrito de compras', path: '/ventas/pos' },
+        { name: 'Ventas del Día', path: '/ventas/ventas-del-dia' }
       ]
     },
     {
