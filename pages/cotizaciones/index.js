@@ -1,3 +1,5 @@
+// pages/cotizaciones/index.js
+
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
@@ -38,18 +40,18 @@ const CotizacionesIndexPage = () => {
 
         const loadedCotizaciones = [];
         for (const docCotizacion of querySnapshotCotizaciones.docs) {
+          const data = docCotizacion.data();
           const cotizacionData = {
             id: docCotizacion.id,
-            ...docCotizacion.data(),
-            fechaCreacion: docCotizacion.data().fechaCreacion?.toDate().toLocaleDateString('es-ES', {
+            ...data,
+            fechaCreacion: data.fechaCreacion?.toDate().toLocaleDateString('es-ES', {
               year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
             }) || 'N/A',
-            fechaExpiracion: docCotizacion.data().fechaExpiracion?.toDate().toLocaleDateString('es-ES', {
+            fechaExpiracion: data.fechaExpiracion?.toDate().toLocaleDateString('es-ES', {
               year: 'numeric', month: 'long', day: 'numeric'
             }) || 'N/A',
-            estado: docCotizacion.data().estado || 'pendiente',
-            // Añadido: Lee el campo metodoPago de Firebase
-            metodoPago: docCotizacion.data().metodoPago || 'N/A',
+            estado: data.estado,
+            metodoPago: data.metodoPago || 'N/A',
           };
           loadedCotizaciones.push(cotizacionData);
         }
@@ -85,7 +87,6 @@ const CotizacionesIndexPage = () => {
         ? cotizacion.estado.toLowerCase().includes(lowerCaseSearchTerm)
         : false;
 
-      // Añadido: Incluye metodoPago en la búsqueda
       const metodoPagoMatch = cotizacion.metodoPago && typeof cotizacion.metodoPago === 'string'
         ? cotizacion.metodoPago.toLowerCase().includes(lowerCaseSearchTerm)
         : false;
@@ -112,12 +113,13 @@ const CotizacionesIndexPage = () => {
         }
 
         const currentCotizacionData = cotizacionSnap.data();
+        // Allow confirming if estado is 'pendiente' or 'borrador'
         if (currentCotizacionData.estado === 'confirmada' || currentCotizacionData.estado === 'cancelada') {
           throw new Error("Esta cotización ya ha sido confirmada o cancelada.");
         }
 
         const itemsCotizacionCollectionRef = collection(db, 'cotizaciones', cotizacionId, 'itemsCotizacion');
-        const itemsCotizacionSnapshot = await getDocs(itemsCotizacionCollectionRef);
+        const itemsCotizacionSnapshot = await getDocs(itemsCotizacionCollectionRef); // This is fine here as it's a separate query
 
         if (itemsCotizacionSnapshot.empty) {
           throw new Error("No se encontraron productos asociados a esta cotización.");
@@ -158,7 +160,6 @@ const CotizacionesIndexPage = () => {
             empleadoId: user.email || user.uid,
             observaciones: currentCotizacionData.observaciones || 'Convertido de cotización',
             estado: 'completada',
-            // Añadido: Hereda el metodoPago y tipoVenta de la cotización
             metodoPago: currentCotizacionData.metodoPago || 'Efectivo',
             tipoVenta: currentCotizacionData.tipoVenta || 'cotizacionAprobada',
             createdAt: serverTimestamp(),
@@ -169,6 +170,9 @@ const CotizacionesIndexPage = () => {
             const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
             const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
             const newStock = currentStock - cantidadVendida;
+
+            // DEBUGGING LOG: Check stock values
+            console.log(`Producto: ${itemData.nombreProducto}, Stock Actual: ${currentStock}, Cantidad Vendida: ${cantidadVendida}, Nuevo Stock: ${newStock}`);
 
             transaction.update(productoRef, {
                 stockActual: newStock,
@@ -239,7 +243,7 @@ const CotizacionesIndexPage = () => {
       confirmMessage += '\nADVERTENCIA: Esta cotización ya fue confirmada y convertida en venta. Eliminarla NO revertirá la venta ni el stock. Deberás ajustar el inventario y ventas manualmente si deseas corregir.';
     } else if (estadoCotizacion === 'cancelada') {
         confirmMessage += '\nEsta cotización está cancelada. Eliminarla no tiene impacto en el stock.';
-    } else {
+    } else { // 'pendiente' or 'borrador'
       confirmMessage += '\nEsto eliminará todos los productos asociados y NO afectará el stock (ya que la cotización aún no había sido confirmada).';
     }
 
@@ -254,7 +258,7 @@ const CotizacionesIndexPage = () => {
             const cotizacionRef = doc(db, 'cotizaciones', cotizacionId);
 
             const itemsRef = collection(db, 'cotizaciones', cotizacionId, 'itemsCotizacion');
-            const itemsSnapshot = await getDocs(itemsRef);
+            const itemsSnapshot = await getDocs(itemsRef); // Get items outside transaction for iteration
 
             itemsSnapshot.docs.forEach(itemDoc => {
                 transaction.delete(doc(db, 'cotizaciones', cotizacionId, 'itemsCotizacion', itemDoc.id));
@@ -300,7 +304,7 @@ const CotizacionesIndexPage = () => {
             <div className="relative flex-grow mr-4">
               <input
                 type="text"
-                placeholder="Buscar por número, cliente, observaciones, estado, método de pago..." // Añadido placeholder
+                placeholder="Buscar por número, cliente, observaciones, estado, método de pago..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -309,13 +313,6 @@ const CotizacionesIndexPage = () => {
                 <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" fill="currentColor" />
               </div>
             </div>
-            <button
-              onClick={() => router.push('/cotizaciones/nueva')}
-              className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
-            >
-              <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
-              Nueva Cotización
-            </button>
           </div>
 
           {loading ? (
@@ -339,7 +336,6 @@ const CotizacionesIndexPage = () => {
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA EXPIRACIÓN</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TOTAL</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
-                    {/* Nueva Columna para Método de Pago */}
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MÉTODO DE PAGO</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">REGISTRADO POR</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
@@ -366,20 +362,20 @@ const CotizacionesIndexPage = () => {
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                             <XCircleIcon className="h-4 w-4 mr-1" /> Cancelada
                           </span>
-                        ) : (
+                        ) : ( // Covers 'pendiente' and 'borrador'
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
                             <DocumentTextIcon className="h-4 w-4 mr-1" /> Pendiente
                           </span>
                         )}
                       </td>
-                      {/* Celda para mostrar el Método de Pago */}
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
                         {cotizacion.metodoPago || 'N/A'}
                       </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cotizacion.empleadoId || 'Desconocido'}</td>
                       <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
                         <div className="flex items-center space-x-2 justify-center">
-                          {cotizacion.estado === 'pendiente' && (
+                          {/* Confirmar, Cancelar y Editar solo para estados 'pendiente' o 'borrador' */}
+                          {(cotizacion.estado === 'pendiente' || cotizacion.estado === 'borrador') && (
                             <>
                               <button
                                 onClick={() => handleConfirmarCotizacion(cotizacion.id)}
@@ -395,6 +391,7 @@ const CotizacionesIndexPage = () => {
                               >
                                 <XCircleIcon className="h-5 w-5" />
                               </button>
+                              {/* EDITAR: Solo si es pendiente o borrador */}
                               <button
                                 onClick={() => handleEditCotizacion(cotizacion.id)}
                                 className="text-purple-600 hover:text-purple-800 p-2 rounded-full hover:bg-purple-50 transition duration-150 ease-in-out"
@@ -411,15 +408,14 @@ const CotizacionesIndexPage = () => {
                           >
                             <EyeIcon className="h-5 w-5" />
                           </button>
-                          {(cotizacion.estado === 'pendiente' || cotizacion.estado === 'cancelada') && (
-                            <button
-                              onClick={() => handleDeleteCotizacion(cotizacion.id, cotizacion.estado)}
-                              className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
-                              title="Eliminar Cotización"
-                            >
-                              <TrashIcon className="h-5 w-5" />
-                            </button>
-                          )}
+                          {/* Eliminar para todos los estados (con advertencia para confirmadas) */}
+                          <button
+                            onClick={() => handleDeleteCotizacion(cotizacion.id, cotizacion.estado)}
+                            className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
+                            title="Eliminar Cotización"
+                          >
+                            <TrashIcon className="h-5 w-5" />
+                          </button>
                         </div>
                       </td>
                     </tr>

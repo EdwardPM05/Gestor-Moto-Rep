@@ -1,38 +1,43 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSale } from '../../contexts/SaleContext'; // Importar useSale
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import {
   collection,
-  getDoc, // Aunque no se usa directamente aquí, se mantiene si se usa en otro lugar
+  getDoc,
   doc,
-  addDoc, // Aunque no se usa directamente aquí con runTransaction, se mantiene si se usa en otro lugar
+  addDoc,
   serverTimestamp,
   query,
   orderBy,
   getDocs,
-  runTransaction, // Importado correctamente
+  runTransaction,
+  updateDoc, // Necesario para actualizar el estado de la venta
+  where // Necesario para consultar items de venta
 } from 'firebase/firestore';
 import { ShoppingCartIcon, PlusIcon, MagnifyingGlassIcon, TrashIcon, ArrowLeftIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
 
 const NuevaVentaPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const { activeSale, clearActiveSale } = useSale(); // Usar el contexto de venta
 
   const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState([]); // Lista completa de productos para búsqueda
   const [clientes, setClientes] = useState([]);
 
-  // Se asume que esta es para una VENTA DIRECTA, por lo tanto 'metodoPago' ya tiene un default.
-  // El 'tipoVenta' se establecerá explícitamente en el submit.
   const [ventaPrincipalData, setVentaPrincipalData] = useState({
+    id: null, // ID de la venta si es un borrador existente
     numeroVenta: '',
     clienteId: '',
     observaciones: '',
-    metodoPago: 'efectivo', // <-- Método de pago predeterminado para ventas directas
+    metodoPago: 'efectivo',
+    estado: 'borrador', // Estado inicial para nuevas ventas iniciadas aquí
+    tipoVenta: 'ventaDirecta'
   });
 
   const [currentSearchTerm, setCurrentSearchTerm] = useState('');
@@ -73,11 +78,48 @@ const NuevaVentaPage = () => {
         }));
         setClientes(clientesList);
 
-        // Inicializar con cliente 'cliente-no-registrado' si existe
-        setVentaPrincipalData(prev => ({
-          ...prev,
-          clienteId: clientesList.find(c => c.id === 'cliente-no-registrado')?.id || '',
-        }));
+        // 3. Cargar venta en borrador si existe en el contexto
+        if (activeSale && activeSale.saleId) {
+          const saleDocRef = doc(db, 'ventas', activeSale.saleId);
+          const saleSnap = await getDoc(saleDocRef);
+
+          if (saleSnap.exists() && saleSnap.data().estado === 'borrador') {
+            const saleData = saleSnap.data();
+            setVentaPrincipalData({
+              id: saleSnap.id,
+              numeroVenta: saleData.numeroVenta,
+              clienteId: saleData.clienteId,
+              observaciones: saleData.observaciones || '',
+              metodoPago: saleData.metodoPago || 'efectivo',
+              estado: saleData.estado,
+              tipoVenta: saleData.tipoVenta
+            });
+
+            // Cargar ítems de la subcolección
+            const qItems = query(collection(saleDocRef, 'itemsVenta'), orderBy('createdAt', 'asc'));
+            const itemsSnapshot = await getDocs(qItems);
+            const itemsList = itemsSnapshot.docs.map(itemDoc => ({
+              id: itemDoc.id,
+              ...itemDoc.data(),
+              subtotal: parseFloat(itemDoc.data().subtotal).toFixed(2) // Asegurar formato numérico
+            }));
+            setItemsVenta(itemsList);
+            alert(`Venta borrador ${saleData.numeroVenta} cargada.`);
+          } else {
+            // Si no existe o no es borrador, limpiar el contexto y empezar de nuevo
+            clearActiveSale();
+            setVentaPrincipalData(prev => ({
+              ...prev,
+              clienteId: clientesList.find(c => c.id === 'cliente-no-registrado')?.id || '',
+            }));
+          }
+        } else {
+          // Si no hay venta activa en el contexto, inicializar con cliente 'cliente-no-registrado'
+          setVentaPrincipalData(prev => ({
+            ...prev,
+            clienteId: clientesList.find(c => c.id === 'cliente-no-registrado')?.id || '',
+          }));
+        }
 
       } catch (err) {
         console.error("Error al cargar datos:", err);
@@ -90,7 +132,7 @@ const NuevaVentaPage = () => {
     if (router.isReady) {
       fetchData();
     }
-  }, [user, router.isReady]);
+  }, [user, router.isReady, activeSale]); // Añadir activeSale a las dependencias
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -122,13 +164,10 @@ const NuevaVentaPage = () => {
         if (isNaN(parsedValue) || parsedValue < 0) {
           parsedValue = 0;
         }
-        // La validación de stock disponible contra el stock REAL del producto
-        // se hará de forma más robusta dentro de la transacción de Firebase para evitar condiciones de carrera.
-        // Aquí es solo una validación inicial para la UX.
         const productInList = products.find(p => p.id === newItems[index].productoId);
         if (productInList && parsedValue > (productInList.stockActual || 0)) {
           alert(`Cantidad máxima para ${productInList.nombre} es ${productInList.stockActual || 0}.`);
-          parsedValue = (productInList.stockActual || 0); // Limitar a stock disponible
+          parsedValue = (productInList.stockActual || 0);
         }
       }
     } else if (name === 'precioVentaUnitario') {
@@ -146,7 +185,6 @@ const NuevaVentaPage = () => {
 
     newItems[index][name] = parsedValue;
 
-    // Recalcular subtotal
     const cantidad = parseFloat(newItems[index].cantidad || 0);
     const precio = parseFloat(newItems[index].precioVentaUnitario || 0);
 
@@ -197,19 +235,19 @@ const NuevaVentaPage = () => {
         return;
       }
 
-      setItemsVenta(prevItems => [
-        ...prevItems,
-        {
+      setItemsVenta(prevItems => {
+        const newItem = {
           id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
           productoId: selectedProductToAdd.id,
           nombreProducto: selectedProductToAdd.nombre,
-          cantidad: 1, // Por defecto 1
+          cantidad: 1,
           precioVentaUnitario: selectedProductToAdd.precioVentaDefault !== undefined
             ? parseFloat(selectedProductToAdd.precioVentaDefault).toFixed(2)
             : '0.00',
           subtotal: parseFloat((1 * (selectedProductToAdd.precioVentaDefault || 0)).toFixed(2)),
-        }
-      ]);
+        };
+        return [...prevItems, newItem];
+      });
       setCurrentSearchTerm('');
       setSelectedProductToAdd(null);
       setError(null);
@@ -262,12 +300,10 @@ const NuevaVentaPage = () => {
 
     try {
       await runTransaction(db, async (transaction) => {
-        // --- FASE 1: TODAS LAS LECTURAS ---
-        // Se recopilan todas las referencias de los productos y se leen sus documentos
+        // 1. Validar Stock y obtener referencias de productos
         const productRefs = itemsVenta.map(item => doc(db, 'productos', item.productoId));
         const productSnaps = await Promise.all(productRefs.map(ref => transaction.get(ref)));
 
-        // Mapa para verificar stock y obtener datos de productos
         const productStockMap = new Map();
         for (let i = 0; i < productSnaps.length; i++) {
           const productSnap = productSnaps[i];
@@ -289,57 +325,85 @@ const NuevaVentaPage = () => {
           });
         }
 
-        // --- FASE 2: TODAS LAS ESCRITURAS ---
-
-        // Generar un número de venta si no se proporcionó
-        let finalNumeroVenta = ventaPrincipalData.numeroVenta.trim();
-        if (!finalNumeroVenta) {
-          // Genera un número de venta único, puedes usar una lógica más robusta si necesitas secuencia
-          finalNumeroVenta = `VDIR-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-        }
-
-        const newVentaRef = doc(collection(db, 'ventas')); // Firestore generará el ID automáticamente
-        transaction.set(newVentaRef, {
-          numeroVenta: finalNumeroVenta,
-          clienteId: ventaPrincipalData.clienteId,
-          clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
-          clienteDNI: clienteSeleccionado.dni || clienteSeleccionado.numeroDocumento || null,
-          observaciones: ventaPrincipalData.observaciones.trim() || null,
-          metodoPago: ventaPrincipalData.metodoPago, // Heredado del estado local para ventas directas
-          totalVenta: parseFloat(totalVenta.toFixed(2)),
-          fechaVenta: serverTimestamp(),
-          empleadoId: user.email || user.uid,
-          estado: 'completada', // Una venta directa siempre se crea como completada
-          tipoVenta: 'ventaDirecta', // <-- ¡Campo para indicar que es una venta directa!
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-
-        // Actualizar el stock de productos y añadir los ítems a la subcolección
-        for (const item of itemsVenta) {
-          const { ref, currentStock } = productStockMap.get(item.productoId);
-          const cantidadVendida = parseFloat(item.cantidad);
-          const newStock = currentStock - cantidadVendida;
-
-          transaction.update(ref, {
-            stockActual: newStock,
+        // 2. Gestionar la venta principal (crear o actualizar)
+        let ventaRef;
+        if (ventaPrincipalData.id) {
+          // Si ya existe un ID de venta (es un borrador), actualizarlo
+          ventaRef = doc(db, 'ventas', ventaPrincipalData.id);
+          transaction.update(ventaRef, {
+            numeroVenta: ventaPrincipalData.numeroVenta.trim() || `V-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+            clienteId: ventaPrincipalData.clienteId,
+            clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
+            clienteDNI: clienteSeleccionado.dni || clienteSeleccionado.numeroDocumento || null,
+            observaciones: ventaPrincipalData.observaciones.trim() || null,
+            metodoPago: ventaPrincipalData.metodoPago,
+            totalVenta: parseFloat(totalVenta.toFixed(2)),
+            fechaVenta: serverTimestamp(),
+            empleadoId: user.email || user.uid,
+            estado: 'completada', // Cambiar de 'borrador' a 'completada'
+            tipoVenta: 'ventaDirecta',
             updatedAt: serverTimestamp(),
           });
-
-          // Asegúrate de que estás agregando a la subcolección de la nueva venta
-          transaction.set(doc(collection(newVentaRef, 'itemsVenta')), {
-            productoId: item.productoId,
-            nombreProducto: item.nombreProducto,
-            cantidad: cantidadVendida,
-            precioVentaUnitario: parseFloat(item.precioVentaUnitario),
-            subtotal: parseFloat(item.subtotal),
+        } else {
+          // Si no hay ID de venta, crear una nueva
+          ventaRef = doc(collection(db, 'ventas'));
+          transaction.set(ventaRef, {
+            numeroVenta: ventaPrincipalData.numeroVenta.trim() || `V-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+            clienteId: ventaPrincipalData.clienteId,
+            clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
+            clienteDNI: clienteSeleccionado.dni || clienteSeleccionado.numeroDocumento || null,
+            observaciones: ventaPrincipalData.observaciones.trim() || null,
+            metodoPago: ventaPrincipalData.metodoPago,
+            totalVenta: parseFloat(totalVenta.toFixed(2)),
+            fechaVenta: serverTimestamp(),
+            empleadoId: user.email || user.uid,
+            estado: 'completada',
+            tipoVenta: 'ventaDirecta',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
         }
+
+        // 3. Actualizar el stock de productos y los ítems de la subcolección
+        for (const item of itemsVenta) {
+          const { ref: productRef, currentStock } = productStockMap.get(item.productoId);
+          const cantidadVendida = parseFloat(item.cantidad);
+          const newStock = currentStock - cantidadVendida;
+
+          transaction.update(productRef, {
+            stockActual: newStock,
+            updatedAt: serverTimestamp(),
+          });
+
+          // Actualizar o añadir el item en la subcolección de itemsVenta
+          const itemDocRef = doc(db, 'ventas', ventaRef.id, 'itemsVenta', item.id); // Si es un item cargado, su ID es `item.id`
+          const itemSnap = await transaction.get(itemDocRef);
+
+          if (itemSnap.exists()) {
+            // Si el item ya existe (viene de un borrador), actualízalo
+            transaction.update(itemDocRef, {
+              cantidad: cantidadVendida,
+              precioVentaUnitario: parseFloat(item.precioVentaUnitario),
+              subtotal: parseFloat(item.subtotal),
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            // Si es un item nuevo (añadido en esta sesión), créalo
+            transaction.set(doc(collection(ventaRef, 'itemsVenta')), {
+              productoId: item.productoId,
+              nombreProducto: item.nombreProducto,
+              cantidad: cantidadVendida,
+              precioVentaUnitario: parseFloat(item.precioVentaUnitario),
+              subtotal: parseFloat(item.subtotal),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
       });
 
       alert('Venta registrada con éxito y stock actualizado.');
+      clearActiveSale(); // Limpiar la venta activa del contexto al finalizarla
       router.push('/ventas');
     } catch (err) {
       console.error("Error al registrar venta:", err);
@@ -348,6 +412,7 @@ const NuevaVentaPage = () => {
       setSaving(false);
     }
   };
+
 
   const totalGeneralVenta = itemsVenta.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
 
@@ -368,7 +433,14 @@ const NuevaVentaPage = () => {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">Registrar Nueva Venta Directa</h2>
           <button
-            onClick={() => router.push('/ventas')}
+            onClick={() => {
+              if (activeSale && window.confirm('¿Desea descartar la venta en progreso y volver a la lista de ventas?')) {
+                clearActiveSale(); // Limpiar el borrador si el usuario decide volver
+                router.push('/ventas');
+              } else if (!activeSale) {
+                router.push('/ventas');
+              }
+            }}
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
           >
             <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5 text-gray-500" aria-hidden="true" />

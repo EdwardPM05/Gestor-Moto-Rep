@@ -34,17 +34,14 @@ import {
   CreditCardIcon,
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
-  ClipboardDocumentListIcon,
-  BanknotesIcon
+  ClipboardDocumentListIcon
 } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
 
 import ImageModal from '../../components/modals/ImageModal';
 import ProductDetailsModal from '../../components/modals/ProductDetailsModal';
 import ProductModelsModal from '../../components/modals/ProductModelsModal';
-import ActiveCreditPanel from '../../components/panels/ActiveCreditPanel';
 import ActiveQuotationPanel from '../../components/panels/ActiveQuotationPanel';
-
 
 const ProductosPage = () => {
   const router = useRouter();
@@ -72,30 +69,13 @@ const ProductosPage = () => {
   const [showQuotationPanel, setShowQuotationPanel] = useState(false);
   const [pendingQuotations, setPendingQuotations] = useState([]);
 
-  // ESTADOS PARA EL CRÉDITO ACTIVO
-  const [activeCreditId, setActiveCreditId] = useState(null);
-  const [activeCredit, setActiveCredit] = useState(null);
-  const [activeCreditItems, setActiveCreditItems] = useState([]);
-  const [showCreditPanel, setShowCreditPanel] = useState(false);
-  const [pendingCredits, setPendingCredits] = useState([]);
+    const handleOpenPanel = () => {
+    setShowQuotationPanel(true);
+  };
 
-  const [clientesConCredito, setClientesConCredito] = useState([]);
-
-  const handleOpenQuotationPanel = () => {
-    setShowQuotationPanel(true);
-  };
-
-  const handleCloseQuotationPanel = () => {
-    setShowQuotationPanel(false);
-  };
-
-  const handleOpenCreditPanel = () => {
-    setShowCreditPanel(true);
-  };
-
-  const handleCloseCreditPanel = () => {
-    setShowCreditPanel(false);
-  };
+  const handleClosePanel = () => {
+    setShowQuotationPanel(false);
+  };
 
   // Función para cargar productos y clientes
   const fetchInitialData = async () => {
@@ -120,51 +100,35 @@ const ProductosPage = () => {
       setProductos(productosList);
       setFilteredProductos(productosList);
 
-      // Cargar TODOS los Clientes (para cotizaciones)
-    const qClientesTodos = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
-    const clienteSnapshotTodos = await getDocs(qClientesTodos);
-    const clientesListTodos = clienteSnapshotTodos.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    setClientes(clientesListTodos);
+      // Cargar Clientes
+      const qClientes = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
+      const clienteSnapshot = await getDocs(qClientes);
+      const clientesList = clienteSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setClientes(clientesList);
 
-    // Cargar SOLO clientes con crédito activado (para créditos)
-    const qClientesCredito = query(
-      collection(db, 'cliente'), 
-      where('tieneCredito', '==', true),
-      orderBy('nombre', 'asc')
-    );
-    const clienteSnapshotCredito = await getDocs(qClientesCredito);
-    const clientesListCredito = clienteSnapshotCredito.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    setClientesConCredito(clientesListCredito);
-
-    console.log('Clientes totales cargados:', clientesListTodos.length);
-    console.log('Clientes con crédito cargados:', clientesListCredito.length);
-
-  } catch (err) {
-    console.error("Error al cargar datos iniciales:", err);
-    setError("Error al cargar la información inicial. Intente de nuevo.");
-  } finally {
-    setLoading(false);
-  }
-};
+    } catch (err) {
+      console.error("Error al cargar datos iniciales:", err);
+      setError("Error al cargar la información inicial. Intente de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Efecto para cargar datos iniciales
   useEffect(() => {
     fetchInitialData();
   }, [user, router, productsPerPage]);
 
-  // Efecto para escuchar cambios en cotizaciones pendientes
+  // NEW EFFECT: Listen for changes in ALL pending quotations
   useEffect(() => {
     if (!user) return;
 
     const qPendingQuotations = query(
       collection(db, 'cotizaciones'),
-      where('estado', '==', 'borrador'),
+      where('estado', '==', 'borrador'), // Filter for 'borrador' (draft) status
       orderBy('fechaCreacion', 'desc')
     );
 
@@ -180,41 +144,6 @@ const ProductosPage = () => {
 
     return () => unsubscribePending();
   }, [user]);
-
-useEffect(() => {
-  if (!user) return;
-
-  console.log('Setting up pending credits listener...');
-
-  const qPendingCredits = query(
-    collection(db, 'creditos'),
-    where('estado', '==', 'borrador'),
-    orderBy('fechaCreacion', 'desc')
-  );
-
-  const unsubscribePendingCredits = onSnapshot(qPendingCredits, (snapshot) => {
-    console.log('Snapshot received for pending credits:', snapshot.size, 'documents');
-    
-    const creditsList = snapshot.docs.map(doc => {
-      const data = doc.data();
-      console.log('Credit doc data:', doc.id, data);
-      return {
-        id: doc.id,
-        ...data
-      };
-    });
-    
-    console.log('Setting pendingCredits:', creditsList);
-    setPendingCredits(creditsList);
-  }, (err) => {
-    console.error("Error al escuchar créditos pendientes:", err);
-  });
-
-  return () => {
-    console.log('Cleaning up pending credits listener');
-    unsubscribePendingCredits();
-  };
-}, [user]);
 
   // Efecto para escuchar cambios en la cotización activa
   useEffect(() => {
@@ -251,62 +180,6 @@ useEffect(() => {
 
     return () => unsubscribeQuotation();
   }, [activeQuotationId]);
-
- // En el efecto para escuchar cambios en el crédito activo, asegúrate de que esté así:
-useEffect(() => {
-  if (!activeCreditId) {
-    setActiveCredit(null);
-    setActiveCreditItems([]);
-    return;
-  }
-
-  console.log('Setting up active credit listener for ID:', activeCreditId);
-
-  const unsubscribeCredit = onSnapshot(doc(db, 'creditos', activeCreditId), async (docSnap) => {
-    console.log('Active credit snapshot received, exists:', docSnap.exists());
-    
-    if (docSnap.exists()) {
-      const creditData = { id: docSnap.id, ...docSnap.data() };
-      console.log('Setting active credit:', creditData);
-      setActiveCredit(creditData);
-
-      // Cargar items del crédito
-      try {
-        const qItems = query(
-          collection(db, 'creditos', activeCreditId, 'itemsCredito'), 
-          orderBy('createdAt', 'asc')
-        );
-        const itemsSnapshot = await getDocs(qItems);
-        const itemsList = itemsSnapshot.docs.map(itemDoc => ({
-          id: itemDoc.id,
-          ...itemDoc.data(),
-          subtotal: parseFloat(itemDoc.data().subtotal || 0).toFixed(2)
-        }));
-        
-        console.log('Setting active credit items:', itemsList);
-        setActiveCreditItems(itemsList);
-        setShowCreditPanel(true);
-      } catch (itemsError) {
-        console.error('Error loading credit items:', itemsError);
-        setActiveCreditItems([]);
-      }
-    } else {
-      console.log('Active credit not found, clearing state');
-      setActiveCreditId(null);
-      setActiveCredit(null);
-      setActiveCreditItems([]);
-      setShowCreditPanel(false);
-    }
-  }, (err) => {
-    console.error("Error al escuchar crédito activo:", err);
-    setError("Error al cargar el crédito activo.");
-  });
-
-  return () => {
-    console.log('Cleaning up active credit listener');
-    unsubscribeCredit();
-  };
-}, [activeCreditId]);
 
 
   // Lógica de filtrado (sin cambios)
@@ -420,8 +293,8 @@ useEffect(() => {
         totalCotizacion: 0,
         fechaCreacion: serverTimestamp(),
         empleadoId: user.email || user.uid,
-        estado: 'borrador',
-        metodoPago: null,
+        estado: 'borrador', // Initial status
+        metodoPago: null, // Add method of payment, initially null
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -438,69 +311,13 @@ useEffect(() => {
     }
   };
 
-  // --- LÓGICA DE GESTIÓN DE CRÉDITOS ---
-
-const handleNuevoCredito = async () => {
-  if (!user) {
-    alert("Debe iniciar sesión para crear un crédito.");
-    router.push('/auth');
-    return;
-  }
-
-  setLoading(true);
-  setError(null);
-
-  try {
-    console.log('Creating new credit...');
-    
-    const newCreditData = {
-      numeroCredito: `CRE-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-      clienteId: null,
-      clienteNombre: 'Cliente Pendiente',
-      clienteDNI: null,
-      totalCredito: 0,
-      saldoPendiente: 0,
-      fechaCreacion: serverTimestamp(),
-      fechaVencimiento: null,
-      empleadoId: user.email || user.uid,
-      estado: 'borrador', // IMPORTANTE: Asegúrate de que esté como 'borrador'
-      metodoPago: null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    console.log('New credit data:', newCreditData);
-
-    const newCreditRef = await addDoc(collection(db, 'creditos'), newCreditData);
-    console.log('New credit created with ID:', newCreditRef.id);
-
-    setActiveCreditId(newCreditRef.id);
-    setShowCreditPanel(true);
-    alert(`Nuevo crédito borrador creado: ${newCreditRef.id}. Seleccione un cliente y un método de pago.`);
-
-  } catch (err) {
-    console.error("Error al crear nuevo crédito:", err);
-    setError("Error al crear nuevo crédito: " + err.message);
-    alert('Error al crear nuevo crédito: ' + err.message);
-  } finally {
-    setLoading(false);
-  }
-};
-
   // Handle selecting an existing pending quotation
   const handleSelectPendingQuotation = (quotationId) => {
     setActiveQuotationId(quotationId);
     setShowQuotationPanel(true);
   };
 
-// Función para seleccionar crédito pendiente (verifica que esté así):
-const handleSelectPendingCredit = (creditId) => {
-  console.log('Selecting pending credit:', creditId);
-  setActiveCreditId(creditId);
-  setShowCreditPanel(true);
-};
-
-  // Actualizar el cliente de la cotización activa
+  // NUEVA FUNCIÓN: Actualizar el cliente de la cotización activa
   const handleUpdateQuotationClient = async (quotationId, newClientId) => {
     if (!quotationId) return;
 
@@ -512,6 +329,7 @@ const handleSelectPendingCredit = (creditId) => {
         const quotationRef = doc(db, 'cotizaciones', quotationId);
         let clientData = { nombre: 'Cliente Pendiente', apellido: '', dni: null, numeroDocumento: null };
 
+        // --- ALL READS FIRST ---
         const quotationSnap = await transaction.get(quotationRef);
 
         if (!quotationSnap.exists()) {
@@ -529,6 +347,7 @@ const handleSelectPendingCredit = (creditId) => {
 
         const clientNombre = `${clientData.nombre} ${clientData.apellido || ''}`.trim();
 
+        // --- ALL WRITES AFTER ALL READS ---
         transaction.update(quotationRef, {
           clienteId: newClientId || null,
           clienteNombre: clientNombre,
@@ -545,61 +364,7 @@ const handleSelectPendingCredit = (creditId) => {
     }
   };
 
-// Actualizar el cliente del crédito activo (con validación)
-const handleUpdateCreditClient = async (creditId, newClientId) => {
-  if (!creditId) return;
-
-  setLoading(true);
-  setError(null);
-
-  try {
-    await runTransaction(db, async (transaction) => {
-      const creditRef = doc(db, 'creditos', creditId);
-      let clientData = { nombre: 'Cliente Pendiente', apellido: '', dni: null, numeroDocumento: null };
-
-      const creditSnap = await transaction.get(creditRef);
-
-      if (!creditSnap.exists()) {
-        throw new Error("El crédito no existe.");
-      }
-
-      if (newClientId) {
-        const clientRef = doc(db, 'cliente', newClientId);
-        const clientSnap = await transaction.get(clientRef);
-        if (!clientSnap.exists()) {
-          throw new Error("El cliente seleccionado no existe.");
-        }
-        
-        const clienteData = clientSnap.data();
-        
-        // VALIDACIÓN IMPORTANTE: Verificar que el cliente tenga crédito activado
-        if (!clienteData.tieneCredito) {
-          throw new Error("El cliente seleccionado no tiene la opción de crédito activada.");
-        }
-        
-        clientData = clienteData;
-      }
-
-      const clientNombre = `${clientData.nombre} ${clientData.apellido || ''}`.trim();
-
-      transaction.update(creditRef, {
-        clienteId: newClientId || null,
-        clienteNombre: clientNombre,
-        clienteDNI: clientData.dni || clientData.numeroDocumento || null,
-        updatedAt: serverTimestamp(),
-      });
-    });
-    alert('Cliente de crédito actualizado.');
-  } catch (err) {
-    console.error("Error al actualizar cliente de crédito:", err);
-    setError("Error al actualizar cliente: " + err.message);
-    alert("Error al actualizar cliente: " + err.message);
-  } finally {
-    setLoading(false);
-  }
-};
-
-  // Actualizar método de pago de cotización
+  // NEW FUNCTION: Update payment method for active quotation
   const handleUpdateQuotationPaymentMethod = async (quotationId, newMetodoPago) => {
     if (!quotationId) return;
 
@@ -621,29 +386,8 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
     }
   };
 
-  // Actualizar método de pago de crédito
-  const handleUpdateCreditPaymentMethod = async (creditId, newMetodoPago) => {
-    if (!creditId) return;
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const creditRef = doc(db, 'creditos', creditId);
-      await updateDoc(creditRef, {
-        metodoPago: newMetodoPago,
-        updatedAt: serverTimestamp(),
-      });
-      alert('Método de pago de crédito actualizado.');
-    } catch (err) {
-      console.error("Error al actualizar método de pago de crédito:", err);
-      setError("Error al actualizar método de pago: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Añadir producto a cotización activa
+  // FIX: handleAddProductToActiveQuotation to ensure reads before writes
   const handleAddProductToActiveQuotation = async (product, quantity = 1) => {
     if (!activeQuotationId) {
       alert("Por favor, selecciona o crea una cotización primero.");
@@ -663,14 +407,16 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
     setError(null);
 
     try {
+      // --- IMPORTANT: Perform queries (reads) OUTSIDE the transaction if they involve multiple documents ---
       const quotationItemsCollectionRef = collection(db, 'cotizaciones', activeQuotationId, 'itemsCotizacion');
       const existingItemQuery = query(quotationItemsCollectionRef, where('productoId', '==', product.id));
-      const existingItemSnapshot = await getDocs(existingItemQuery);
+      const existingItemSnapshot = await getDocs(existingItemQuery); // Use getDocs() here, NOT transaction.get()
 
       await runTransaction(db, async (transaction) => {
         const productRef = doc(db, 'productos', product.id);
         const quotationRef = doc(db, 'cotizaciones', activeQuotationId);
 
+        // --- ALL READS INSIDE TRANSACTION FIRST ---
         const productSnap = await transaction.get(productRef);
         const quotationSnap = await transaction.get(quotationRef);
 
@@ -691,25 +437,29 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
         let oldSubtotal = 0;
         const productPrice = parseFloat(product.precioVentaDefault || 0);
 
+        // Use the existingItemSnapshot obtained BEFORE the transaction
         if (!existingItemSnapshot.empty && existingItemSnapshot.docs.length > 0) {
           const existingItemDoc = existingItemSnapshot.docs[0];
-          itemRef = existingItemDoc.ref;
+          itemRef = existingItemDoc.ref; // This ref is valid because it was obtained outside the transaction
           const existingItemData = existingItemDoc.data();
           oldSubtotal = parseFloat(existingItemData.subtotal || 0);
           newQuantity = existingItemData.cantidad + quantity;
           const newSubtotal = newQuantity * productPrice;
 
+          // Prepare update data for existing item
           const itemUpdateData = {
             cantidad: newQuantity,
             subtotal: newSubtotal,
             updatedAt: serverTimestamp(),
           };
+          // --- WRITE FOR EXISTING ITEM ---
           transaction.update(itemRef, itemUpdateData);
         } else {
-          itemRef = doc(quotationItemsCollectionRef);
+          itemRef = doc(quotationItemsCollectionRef); // Create new doc ref for subcollection
           newQuantity = quantity;
           const newSubtotal = newQuantity * productPrice;
 
+          // Prepare set data for new item
           const itemSetData = {
             productoId: product.id,
             nombreProducto: product.nombre,
@@ -719,128 +469,33 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
+          // --- WRITE FOR NEW ITEM ---
           transaction.set(itemRef, itemSetData);
         }
 
+        // Calculate updated total for the main quotation document
         const currentTotal = parseFloat(quotationSnap.data().totalCotizacion || 0);
         const finalItemSubtotal = newQuantity * productPrice;
         const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
 
+        // --- WRITE FOR MAIN QUOTATION ---
         transaction.update(quotationRef, {
           totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
           updatedAt: serverTimestamp(),
         });
       });
 
+      // REMOVED: alert(`"${product.nombre}" añadido a la cotización activa.`);
     } catch (err) {
       console.error("Error al añadir producto a cotización:", err);
       setError("Error al añadir producto a cotización: " + err.message);
-      alert('Hubo un error al añadir el producto a la cotización: ' + err.message);
+      alert('Hubo un error al añadir el producto a la cotización: ' + err.message); // Keep alert for errors
     } finally {
       setLoading(false);
     }
   };
 
-  // Añadir producto a crédito activo
-  const handleAddProductToActiveCredit = async (product, quantity = 1) => {
-    if (!activeCreditId) {
-      alert("Por favor, selecciona o crea un crédito primero.");
-      return;
-    }
-    if (!user) {
-      alert("Debe iniciar sesión para añadir productos.");
-      router.push('/auth');
-      return;
-    }
-    if (quantity <= 0) {
-      alert('La cantidad debe ser mayor a 0.');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const creditItemsCollectionRef = collection(db, 'creditos', activeCreditId, 'itemsCredito');
-      const existingItemQuery = query(creditItemsCollectionRef, where('productoId', '==', product.id));
-      const existingItemSnapshot = await getDocs(existingItemQuery);
-
-      await runTransaction(db, async (transaction) => {
-        const productRef = doc(db, 'productos', product.id);
-        const creditRef = doc(db, 'creditos', activeCreditId);
-
-        const productSnap = await transaction.get(productRef);
-        const creditSnap = await transaction.get(creditRef);
-
-        if (!productSnap.exists()) {
-          throw new Error(`El producto "${product.nombre}" no se encontró en el inventario.`);
-        }
-        if (!creditSnap.exists()) {
-          throw new Error("El crédito activo no existe.");
-        }
-
-        const currentStock = typeof productSnap.data().stockActual === 'number' ? productSnap.data().stockActual : 0;
-        if (currentStock < quantity) {
-          console.warn(`Advertencia: Stock insuficiente para "${product.nombre}". Stock actual: ${currentStock}, Cantidad solicitada: ${quantity}.`);
-        }
-
-        let itemRef;
-        let newQuantity;
-        let oldSubtotal = 0;
-        const productPrice = parseFloat(product.precioVentaDefault || 0);
-
-        if (!existingItemSnapshot.empty && existingItemSnapshot.docs.length > 0) {
-          const existingItemDoc = existingItemSnapshot.docs[0];
-          itemRef = existingItemDoc.ref;
-          const existingItemData = existingItemDoc.data();
-          oldSubtotal = parseFloat(existingItemData.subtotal || 0);
-          newQuantity = existingItemData.cantidad + quantity;
-          const newSubtotal = newQuantity * productPrice;
-
-          const itemUpdateData = {
-            cantidad: newQuantity,
-            subtotal: newSubtotal,
-            updatedAt: serverTimestamp(),
-          };
-          transaction.update(itemRef, itemUpdateData);
-        } else {
-          itemRef = doc(creditItemsCollectionRef);
-          newQuantity = quantity;
-          const newSubtotal = newQuantity * productPrice;
-
-          const itemSetData = {
-            productoId: product.id,
-            nombreProducto: product.nombre,
-            cantidad: newQuantity,
-            precioVentaUnitario: productPrice,
-            subtotal: newSubtotal,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          };
-          transaction.set(itemRef, itemSetData);
-        }
-
-        const currentTotal = parseFloat(creditSnap.data().totalCredito || 0);
-        const finalItemSubtotal = newQuantity * productPrice;
-        const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
-
-        transaction.update(creditRef, {
-          totalCredito: parseFloat(updatedTotal.toFixed(2)),
-          saldoPendiente: parseFloat(updatedTotal.toFixed(2)),
-          updatedAt: serverTimestamp(),
-        });
-      });
-
-    } catch (err) {
-      console.error("Error al añadir producto a crédito:", err);
-      setError("Error al añadir producto a crédito: " + err.message);
-      alert('Hubo un error al añadir el producto al crédito: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Remover ítem de cotización
+  // Función para remover un ítem de la cotización activa
   const handleRemoveItemFromQuotation = async (itemId, subtotalToRemove) => {
     if (!activeQuotationId || !itemId) return;
 
@@ -856,6 +511,7 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
         const itemRef = doc(db, 'cotizaciones', activeQuotationId, 'itemsCotizacion', itemId);
         const quotationRef = doc(db, 'cotizaciones', activeQuotationId);
 
+        // --- READS FIRST ---
         const quotationSnap = await transaction.get(quotationRef);
         const itemSnap = await transaction.get(itemRef);
 
@@ -869,6 +525,7 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
         const currentTotal = parseFloat(quotationSnap.data().totalCotizacion || 0);
         const updatedTotal = currentTotal - parseFloat(subtotalToRemove);
 
+        // --- WRITES AFTER ALL READS ---
         transaction.delete(itemRef);
         transaction.update(quotationRef, {
           totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
@@ -879,59 +536,13 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
     } catch (err) {
       console.error("Error al eliminar ítem de cotización:", err);
       setError("Error al eliminar producto de la cotización: " + err.message);
-      alert('Hubo un error al eliminar el producto de la cotización: ' + err.message);
+      alert('Hubo un error al eliminar el producto de la cotización: ' + err.message); // Keep alert for errors
     } finally {
       setLoading(false);
     }
   };
 
-  // Remover ítem de crédito
-  const handleRemoveItemFromCredit = async (itemId, subtotalToRemove) => {
-    if (!activeCreditId || !itemId) return;
-
-    if (!window.confirm('¿Estás seguro de que quieres eliminar este producto del crédito?')) {
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      await runTransaction(db, async (transaction) => {
-        const itemRef = doc(db, 'creditos', activeCreditId, 'itemsCredito', itemId);
-        const creditRef = doc(db, 'creditos', activeCreditId);
-
-        const creditSnap = await transaction.get(creditRef);
-        const itemSnap = await transaction.get(itemRef);
-
-        if (!itemSnap.exists()) {
-            throw new Error("El ítem a eliminar no existe en el crédito.");
-        }
-        if (!creditSnap.exists()) {
-            throw new Error("El crédito activo no existe.");
-        }
-
-        const currentTotal = parseFloat(creditSnap.data().totalCredito || 0);
-        const updatedTotal = currentTotal - parseFloat(subtotalToRemove);
-
-        transaction.delete(itemRef);
-        transaction.update(creditRef, {
-          totalCredito: parseFloat(updatedTotal.toFixed(2)),
-          saldoPendiente: parseFloat(updatedTotal.toFixed(2)),
-          updatedAt: serverTimestamp(),
-        });
-      });
-      alert('Producto eliminado del crédito.');
-    } catch (err) {
-      console.error("Error al eliminar ítem de crédito:", err);
-      setError("Error al eliminar producto del crédito: " + err.message);
-      alert('Hubo un error al eliminar el producto del crédito: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Actualizar cantidad en cotización
+  // Función para actualizar la cantidad de un ítem en la cotización activa
   const handleUpdateItemQuantityInQuotation = async (itemId, newQuantity, productPrice) => {
     if (!activeQuotationId || !itemId || newQuantity < 0) return;
 
@@ -943,6 +554,7 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
         const itemRef = doc(db, 'cotizaciones', activeQuotationId, 'itemsCotizacion', itemId);
         const quotationRef = doc(db, 'cotizaciones', activeQuotationId);
 
+        // --- READS FIRST ---
         const itemSnap = await transaction.get(itemRef);
         const quotationSnap = await transaction.get(quotationRef);
 
@@ -956,6 +568,7 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
         const oldSubtotal = parseFloat(itemSnap.data().subtotal || 0);
         const newSubtotal = newQuantity * parseFloat(productPrice);
 
+        // --- WRITES AFTER ALL READS ---
         transaction.update(itemRef, {
           cantidad: newQuantity,
           subtotal: newSubtotal,
@@ -974,63 +587,13 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
     } catch (err) {
       console.error("Error al actualizar cantidad en cotización:", err);
       setError("Error al actualizar cantidad: " + err.message);
-      alert('Hubo un error al actualizar la cantidad: ' + err.message);
+      alert('Hubo un error al actualizar la cantidad: ' + err.message); // Keep alert for errors
     } finally {
       setLoading(false);
     }
   };
 
-  // Actualizar cantidad en crédito
-  const handleUpdateItemQuantityInCredit = async (itemId, newQuantity, productPrice) => {
-    if (!activeCreditId || !itemId || newQuantity < 0) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      await runTransaction(db, async (transaction) => {
-        const itemRef = doc(db, 'creditos', activeCreditId, 'itemsCredito', itemId);
-        const creditRef = doc(db, 'creditos', activeCreditId);
-
-        const itemSnap = await transaction.get(itemRef);
-        const creditSnap = await transaction.get(creditRef);
-
-        if (!itemSnap.exists()) {
-          throw new Error("Ítem de crédito no encontrado.");
-        }
-        if (!creditSnap.exists()) {
-          throw new Error("El crédito activo no existe.");
-        }
-
-        const oldSubtotal = parseFloat(itemSnap.data().subtotal || 0);
-        const newSubtotal = newQuantity * parseFloat(productPrice);
-
-        transaction.update(itemRef, {
-          cantidad: newQuantity,
-          subtotal: newSubtotal,
-          updatedAt: serverTimestamp(),
-        });
-
-        const currentTotal = parseFloat(creditSnap.data().totalCredito || 0);
-        const updatedTotal = currentTotal - oldSubtotal + newSubtotal;
-
-        transaction.update(creditRef, {
-          totalCredito: parseFloat(updatedTotal.toFixed(2)),
-          saldoPendiente: parseFloat(updatedTotal.toFixed(2)),
-          updatedAt: serverTimestamp(),
-        });
-      });
-      alert('Cantidad actualizada en el crédito.');
-    } catch (err) {
-      console.error("Error al actualizar cantidad en crédito:", err);
-      setError("Error al actualizar cantidad: " + err.message);
-      alert('Hubo un error al actualizar la cantidad: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Finalizar cotización
+  // MODIFICACIÓN CRÍTICA: handleFinalizeQuotation ahora incluye la lógica de stock y venta
   const handleFinalizeQuotation = async (quotationId, metodoPago) => {
     if (!quotationId) return;
 
@@ -1051,12 +614,14 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
         }
 
         const currentCotizacionData = cotizacionSnap.data();
+        // Prevent re-finalizing if already confirmed or canceled
         if (currentCotizacionData.estado === 'confirmada' || currentCotizacionData.estado === 'cancelada') {
           throw new Error("Esta cotización ya ha sido confirmada o cancelada.");
         }
 
+        // Fetch items associated with this quotation
         const itemsCotizacionCollectionRef = collection(db, 'cotizaciones', quotationId, 'itemsCotizacion');
-        const itemsCotizacionSnapshot = await getDocs(itemsCotizacionCollectionRef);
+        const itemsCotizacionSnapshot = await getDocs(itemsCotizacionCollectionRef); // Query outside transaction
 
         if (itemsCotizacionSnapshot.empty) {
           throw new Error("No se encontraron productos asociados a esta cotización. No se puede finalizar.");
@@ -1066,7 +631,7 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
         for (const itemDoc of itemsCotizacionSnapshot.docs) {
           const itemData = itemDoc.data();
           const productoRef = doc(db, 'productos', itemData.productoId);
-          const productoSnap = await transaction.get(productoRef);
+          const productoSnap = await transaction.get(productoRef); // Read product data within transaction
 
           if (productoSnap.exists()) {
             productoRefsAndData.push({
@@ -1079,6 +644,7 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
           }
         }
 
+        // Pre-check stock availability for all products
         for (const { itemData, currentProductoData } of productoRefsAndData) {
             const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
             const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
@@ -1087,6 +653,7 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
             }
         }
 
+        // Create new Sale document
         const newVentaRef = doc(collection(db, 'ventas'));
         transaction.set(newVentaRef, {
             cotizacionId: quotationId,
@@ -1097,17 +664,19 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
             empleadoId: user.email || user.uid,
             observaciones: currentCotizacionData.observaciones || 'Convertido de cotización',
             estado: 'completada',
-            metodoPago: metodoPago || currentCotizacionData.metodoPago || 'Efectivo',
+            metodoPago: metodoPago || currentCotizacionData.metodoPago || 'Efectivo', // Use selected method or existing
             tipoVenta: currentCotizacionData.tipoVenta || 'cotizacionAprobada',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
         });
 
+        // Update product stock and add items to sale subcollection
         for (const { itemData, productoRef, currentProductoData } of productoRefsAndData) {
             const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
             const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
             const newStock = currentStock - cantidadVendida;
 
+            // DEBUGGING LOG: Check stock values
             console.log(`[Finalizar Cotización - ProductosPage] Producto: ${itemData.nombreProducto}, Stock Actual: ${currentStock}, Cantidad Vendida: ${cantidadVendida}, Nuevo Stock: ${newStock}`);
 
             transaction.update(productoRef, {
@@ -1125,153 +694,30 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
             });
         }
 
+        // Update quotation status to 'confirmada'
         transaction.update(cotizacionRef, {
           estado: 'confirmada',
-          metodoPago: metodoPago,
+          metodoPago: metodoPago, // Ensure metodoPago is saved with finalization
           fechaFinalizacion: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
       });
 
       alert('Cotización finalizada y convertida en Venta con éxito. Stock actualizado.');
-      setActiveQuotationId(null);
-      setShowQuotationPanel(false);
-      fetchInitialData();
+      setActiveQuotationId(null); // Clear the active quotation after finalizing
+      setShowQuotationPanel(false); // Hide the panel
+      // RE-FETCH PRODUCTS TO UPDATE STOCK DISPLAY
+      fetchInitialData(); // <--- ADDED THIS LINE
     } catch (err) {
       console.error("Error al finalizar cotización:", err);
       setError("Error al finalizar la cotización: " + err.message);
+      // More specific error message for the user
       alert(`Hubo un error al finalizar la cotización: ${err.message}. Por favor, verifica el stock de los productos y tus permisos de Firestore.`);
     } finally {
       setLoading(false);
     }
   };
 
-const handleFinalizeCredit = async (creditId, metodoPago) => {
-  if (!creditId) return;
-
-  if (!window.confirm(`¿Estás seguro de que quieres FINALIZAR este crédito con método de pago: ${metodoPago || 'No especificado'}? Esto lo activará como CRÉDITO PENDIENTE y afectará el stock actual.`)) {
-    return;
-  }
-
-  setLoading(true);
-  setError(null);
-
-  try {
-    await runTransaction(db, async (transaction) => {
-      const creditoRef = doc(db, 'creditos', creditId);
-      const creditoSnap = await transaction.get(creditoRef);
-
-      if (!creditoSnap.exists()) {
-        throw new Error("Crédito no encontrado.");
-      }
-
-      const currentCreditoData = creditoSnap.data();
-      if (currentCreditoData.estado === 'activo' || currentCreditoData.estado === 'cancelado' || currentCreditoData.estado === 'pagado') {
-        throw new Error("Este crédito ya ha sido activado, cancelado o pagado.");
-      }
-
-      // Verificar que hay un cliente seleccionado
-      if (!currentCreditoData.clienteId) {
-        throw new Error("No se puede finalizar un crédito sin cliente asignado.");
-      }
-
-      const itemsCreditoCollectionRef = collection(db, 'creditos', creditId, 'itemsCredito');
-      const itemsCreditoSnapshot = await getDocs(itemsCreditoCollectionRef);
-
-      if (itemsCreditoSnapshot.empty) {
-        throw new Error("No se encontraron productos asociados a este crédito. No se puede finalizar.");
-      }
-
-      const productoRefsAndData = [];
-      for (const itemDoc of itemsCreditoSnapshot.docs) {
-        const itemData = itemDoc.data();
-        const productoRef = doc(db, 'productos', itemData.productoId);
-        const productoSnap = await transaction.get(productoRef);
-
-        if (productoSnap.exists()) {
-          productoRefsAndData.push({
-            itemData: itemData,
-            productoRef: productoRef,
-            currentProductoData: productoSnap.data(),
-          });
-        } else {
-          throw new Error(`Producto con ID ${itemData.productoId} no encontrado en inventario. No se puede finalizar el crédito.`);
-        }
-      }
-
-      // Verificar stock disponible
-      for (const { itemData, currentProductoData } of productoRefsAndData) {
-          const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
-          const cantidadCredito = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
-          if (currentStock < cantidadCredito) {
-              throw new Error(`Stock insuficiente para el producto "${itemData.nombreProducto}". Stock actual: ${currentStock}, Cantidad solicitada: ${cantidadCredito}.`);
-          }
-      }
-
-      // *** NUEVA LÓGICA: Actualizar montoCreditoActual del cliente ***
-      const clienteRef = doc(db, 'cliente', currentCreditoData.clienteId);
-      const clienteSnap = await transaction.get(clienteRef);
-      
-      if (!clienteSnap.exists()) {
-        throw new Error("Cliente no encontrado.");
-      }
-      
-      const clienteData = clienteSnap.data();
-      const montoActual = typeof clienteData.montoCreditoActual === 'number' ? clienteData.montoCreditoActual : 0;
-      const totalCredito = parseFloat(currentCreditoData.totalCredito || 0);
-      const nuevoMontoCreditoActual = montoActual + totalCredito;
-      
-      console.log(`[Finalizar Crédito] Cliente: ${clienteData.nombre}`);
-      console.log(`[Finalizar Crédito] Monto actual: ${montoActual}`);
-      console.log(`[Finalizar Crédito] Total crédito: ${totalCredito}`);
-      console.log(`[Finalizar Crédito] Nuevo monto: ${nuevoMontoCreditoActual}`);
-      
-      // Actualizar el montoCreditoActual del cliente
-      transaction.update(clienteRef, {
-        montoCreditoActual: nuevoMontoCreditoActual,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Actualizar stock de productos
-      for (const { itemData, productoRef, currentProductoData } of productoRefsAndData) {
-          const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
-          const cantidadCredito = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
-          const newStock = currentStock - cantidadCredito;
-
-          console.log(`[Finalizar Crédito - ProductosPage] Producto: ${itemData.nombreProducto}, Stock Actual: ${currentStock}, Cantidad Crédito: ${cantidadCredito}, Nuevo Stock: ${newStock}`);
-
-          transaction.update(productoRef, {
-              stockActual: newStock,
-              updatedAt: serverTimestamp(),
-          });
-      }
-
-      // Calcular fecha de vencimiento (30 días por defecto)
-      const fechaVencimiento = new Date();
-      fechaVencimiento.setDate(fechaVencimiento.getDate() + 30);
-
-      // Actualizar estado del crédito
-      transaction.update(creditoRef, {
-        estado: 'activo',
-        metodoPago: metodoPago,
-        fechaVencimiento: fechaVencimiento,
-        fechaActivacion: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    });
-
-    alert('Crédito finalizado y activado con éxito. Stock actualizado y monto de crédito del cliente actualizado.');
-    setActiveCreditId(null);
-    setShowCreditPanel(false);
-    fetchInitialData();
-  } catch (err) {
-    console.error("Error al finalizar crédito:", err);
-    setError("Error al finalizar el crédito: " + err.message);
-    alert(`Hubo un error al finalizar el crédito: ${err.message}. Por favor, verifica el stock de los productos y tus permisos de Firestore.`);
-  } finally {
-    setLoading(false);
-  }
-};
 
   if (!user) {
     return null;
@@ -1387,7 +833,7 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
                 </select>
               </div>
 
-              {/* Botones de acción */}
+              {/* Botones de acción: Buscar, Limpiar, Agregar Producto, Nueva Cotización, Nueva Venta */}
               <div className="flex-none flex items-end space-x-2">
                 <button
                   onClick={handleSearchClick}
@@ -1413,6 +859,7 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
                   <PlusIcon className="h-5 w-5 mr-2" aria-hidden="true" />
                   Agregar Producto
                 </button>
+                {/* Botones para abrir paneles de transacción */}
                 <button
                   onClick={handleNuevaCotizacion}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 h-[42px]"
@@ -1422,15 +869,7 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
                   Nueva Cotización
                 </button>
                 <button
-                  onClick={handleNuevoCredito}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 h-[42px]"
-                  title="Generar Nuevo Crédito"
-                >
-                  <BanknotesIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                  Nuevo Crédito
-                </button>
-                <button
-                  onClick={() => { alert('Añadir a Venta (en desarrollo)'); }}
+                  onClick={() => { /* Lógica para Nueva Venta */ alert('Añadir a Venta (en desarrollo)'); }}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 h-[42px]"
                   title="Generar Nueva Venta"
                 >
@@ -1438,29 +877,21 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
                   Nueva Venta
                 </button>
                 <button
-                  onClick={handleOpenQuotationPanel}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 h-[42px]"
-                  title="Abrir Panel de Cotizaciones"
-                >
-                  <ClipboardDocumentListIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                  Abrir Cotizaciones
-                </button>
-                <button
-                  onClick={handleOpenCreditPanel}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 h-[42px]"
-                  title="Abrir Panel de Créditos"
-                >
-                  <CreditCardIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                  Abrir Créditos
-                </button>
+                  onClick={handleOpenPanel}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 h-[42px]"
+                  title="Abrir Panel de Cotizaciones"
+                >
+                  <ClipboardDocumentListIcon className="h-5 w-5 mr-2" aria-hidden="true" />
+                  Abrir Cotizaciones
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Contenedor principal con la tabla de productos y los paneles */}
+          {/* Contenedor principal con la tabla de productos y el panel de cotización */}
           <div className="flex flex-row flex-grow relative">
             {/* Tabla de Productos */}
-            <div className={`flex-grow ${(showQuotationPanel || showCreditPanel) ? 'w-2/3 pr-4' : 'w-full'}`}>
+            <div className={`flex-grow ${showQuotationPanel ? 'w-2/3 pr-4' : 'w-full'}`}>
               {loading ? (
                 <div className="flex justify-center items-center h-64">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1510,7 +941,7 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
                           <td className="border border-gray-300 relative whitespace-nowrap px-2 py-1 text-center">
                             <div className="flex justify-center space-x-1">
                               <button
-                                onClick={() => { alert('Añadir a Venta (en desarrollo)'); }}
+                                onClick={() => { /* Lógica para añadir a Venta */ alert('Añadir a Venta (en desarrollo)'); }}
                                 className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-gray-100"
                                 title="Añadir a Venta"
                               >
@@ -1525,10 +956,10 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
                                 <DocumentTextIcon className="h-5 w-5" />
                               </button>
                               <button
-                                onClick={() => handleAddProductToActiveCredit(producto)}
+                                onClick={() => { /* Lógica para añadir a Crédito */ alert('Añadir a Crédito (en desarrollo)'); }}
                                 className="text-yellow-600 hover:text-yellow-900 p-1 rounded-full hover:bg-gray-100"
-                                title="Añadir a Crédito Activo"
-                                disabled={!activeCreditId}
+                                title="Añadir a Crédito (Próximamente)"
+                                disabled
                               >
                                 <CreditCardIcon className="h-5 w-5" />
                               </button>
@@ -1588,6 +1019,7 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
               )}
             </div>
 
+
             {/* Panel de Cotización Activa */}
             <ActiveQuotationPanel
               isOpen={showQuotationPanel}
@@ -1602,24 +1034,7 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
               pendingQuotations={pendingQuotations}
               onSelectPendingQuotation={handleSelectPendingQuotation}
               onUpdateQuotationPaymentMethod={handleUpdateQuotationPaymentMethod}
-              onFinalizeQuotation={handleFinalizeQuotation}
-            />
-
-            {/* Panel de Crédito Activo */}
-            <ActiveCreditPanel
-            isOpen={showCreditPanel}
-            onClose={() => setShowCreditPanel(false)}
-            activeCredit={activeCredit}
-            activeCreditItems={activeCreditItems}
-            clientes={clientesConCredito} // ← CAMBIO IMPORTANTE: pasar clientesConCredito en lugar de clientes
-            setActiveCreditId={setActiveCreditId}
-            onUpdateCreditClient={handleUpdateCreditClient}
-            onRemoveItem={handleRemoveItemFromCredit}
-            onUpdateItemQuantity={handleUpdateItemQuantityInCredit}
-            pendingCredits={pendingCredits}
-            onSelectPendingCredit={handleSelectPendingCredit}
-            onUpdateCreditPaymentMethod={handleUpdateCreditPaymentMethod}
-            onFinalizeCredit={handleFinalizeCredit}
+              onFinalizeQuotation={handleFinalizeQuotation} // Now this function handles the full finalization logic
             />
           </div>
         </div>
