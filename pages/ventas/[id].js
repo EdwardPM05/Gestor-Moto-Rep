@@ -4,15 +4,16 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, collection, query, getDocs, orderBy } from 'firebase/firestore';
-import { ArrowLeftIcon, ReceiptPercentIcon, UserIcon, CalendarDaysIcon, TagIcon, BanknotesIcon,ShoppingCartIcon } from '@heroicons/react/24/outline'; // Importa iconos adicionales
+import { ArrowLeftIcon, ReceiptPercentIcon, UserIcon, CalendarDaysIcon, TagIcon, BanknotesIcon, ShoppingCartIcon, TruckIcon, IdentificationIcon } from '@heroicons/react/24/outline';
 
 const VentaDetailPage = () => {
   const { user } = useAuth();
   const router = useRouter();
-  const { id } = router.query; // Obtiene el ID de la venta de la URL
+  const { id } = router.query;
 
   const [venta, setVenta] = useState(null);
   const [itemsVenta, setItemsVenta] = useState([]);
+  const [cotizacionData, setCotizacionData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -24,7 +25,7 @@ const VentaDetailPage = () => {
 
     if (!id) {
       setLoading(false);
-      return; // Esperar a que el ID esté disponible
+      return;
     }
 
     const fetchVentaDetails = async () => {
@@ -56,9 +57,27 @@ const VentaDetailPage = () => {
 
         setVenta({ id: ventaSnap.id, ...ventaData });
 
+        // Si la venta viene de una cotización, obtener los datos de la cotización original
+        if (ventaData.cotizacionId) {
+          try {
+            const cotizacionRef = doc(db, 'cotizaciones', ventaData.cotizacionId);
+            const cotizacionSnap = await getDoc(cotizacionRef);
+            
+            if (cotizacionSnap.exists()) {
+              const cotizacionInfo = cotizacionSnap.data();
+              setCotizacionData(cotizacionInfo);
+              console.log("Datos de cotización cargados:", cotizacionInfo);
+            } else {
+              console.log("Cotización no encontrada:", ventaData.cotizacionId);
+            }
+          } catch (cotizacionError) {
+            console.error("Error al cargar datos de cotización:", cotizacionError);
+          }
+        }
+
         // Obtener los ítems de la subcolección 'itemsVenta'
         const itemsCollectionRef = collection(db, 'ventas', id, 'itemsVenta');
-        const qItems = query(itemsCollectionRef, orderBy('createdAt', 'asc')); // O el campo que uses para ordenar
+        const qItems = query(itemsCollectionRef, orderBy('createdAt', 'asc'));
         const itemsSnapshot = await getDocs(qItems);
         const fetchedItems = itemsSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -109,7 +128,6 @@ const VentaDetailPage = () => {
   }
 
   if (!venta) {
-    // Esto debería ser capturado por el error, pero es una fallback
     return (
       <Layout title="Venta no encontrada">
         <div className="text-center py-10">
@@ -192,10 +210,36 @@ const VentaDetailPage = () => {
             <div className="flex items-center text-gray-700">
               <p><span className="font-semibold">Registrado por:</span> {venta.empleadoId || 'Desconocido'}</p>
             </div>
-            <div classNamename="flex items-center text-gray-700 md:col-span-2">
+
+            {/* NUEVA SECCIÓN: Empleado Asignado - Desde Cotización */}
+            {cotizacionData?.empleadoAsignadoNombre && (
+              <div className="flex items-center text-gray-700">
+                <IdentificationIcon className="h-5 w-5 mr-2 text-blue-500" />
+                <p><span className="font-semibold">Empleado Asignado:</span> 
+                  <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    {cotizacionData.empleadoAsignadoNombre}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            {/* NUEVA SECCIÓN: Placa de Moto - Desde Cotización */}
+            {cotizacionData?.placaMoto && (
+              <div className="flex items-center text-gray-700">
+                <TruckIcon className="h-5 w-5 mr-2 text-green-500" />
+                <p><span className="font-semibold">Placa de Moto:</span> 
+                  <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 font-mono">
+                    {cotizacionData.placaMoto}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center text-gray-700 md:col-span-2">
               <p><span className="font-semibold">Observaciones:</span> {venta.observaciones || 'Sin observaciones'}</p>
             </div>
           </div>
+
 
           <div className="mb-8">
             <h3 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Productos Vendidos</h3>

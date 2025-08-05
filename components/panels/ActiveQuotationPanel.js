@@ -10,8 +10,11 @@ const ActiveQuotationPanel = ({
   activeQuotation,
   activeQuotationItems,
   clientes,
+  empleados, // Nuevo prop para empleados
   setActiveQuotationId,
   onUpdateQuotationClient,
+  onUpdateQuotationEmployee, // Nueva función para actualizar empleado
+  onUpdateQuotationPlaca, // Nueva función para actualizar placa
   onRemoveItem,
   onUpdateItemQuantity,
   pendingQuotations,
@@ -20,75 +23,71 @@ const ActiveQuotationPanel = ({
   onFinalizeQuotation,
 }) => {
   const [selectedClientOption, setSelectedClientOption] = useState(null);
+  const [selectedEmployeeOption, setSelectedEmployeeOption] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
+  const [placaMoto, setPlacaMoto] = useState('');
 
   // Estados y referencias para la funcionalidad de arrastrar el modal
   const panelRef = useRef(null);
   const isDraggingRef = useRef(false);
   const initialMousePosRef = useRef({ x: 0, y: 0 });
   const initialPanelPosRef = useRef({ x: 0, y: 0 });
-  const frameRef = useRef(null); // Reference to store the animation frame ID
+  const frameRef = useRef(null);
 
-  // Sincroniza la selección del cliente y el método de pago con la cotización activa
+  // Sincroniza la selección del cliente, empleado, método de pago y placa con la cotización activa
   useEffect(() => {
-    if (activeQuotation && clientes.length > 0) {
+    if (activeQuotation) {
       // Sincronizar cliente
-      const currentClient = clientes.find(c => c.id === activeQuotation.clienteId);
-      if (currentClient) {
-        setSelectedClientOption({
-          value: currentClient.id,
-          label: `${currentClient.nombre} ${currentClient.apellido || ''} - ${currentClient.dni || ''}`.trim()
-        });
-      } else {
-        setSelectedClientOption(null);
+      if (clientes.length > 0) {
+        const currentClient = clientes.find(c => c.id === activeQuotation.clienteId);
+        if (currentClient) {
+          setSelectedClientOption({
+            value: currentClient.id,
+            label: `${currentClient.nombre} ${currentClient.apellido || ''} - ${currentClient.dni || ''}`.trim()
+          });
+        } else {
+          setSelectedClientOption(null);
+        }
+      }
+
+      // Sincronizar empleado
+      if (empleados && empleados.length > 0) {
+        const currentEmployee = empleados.find(e => e.id === activeQuotation.empleadoAsignadoId);
+        if (currentEmployee) {
+          setSelectedEmployeeOption({
+            value: currentEmployee.id,
+            label: `${currentEmployee.nombre} ${currentEmployee.apellido || ''} - ${currentEmployee.puesto || ''}`.trim()
+          });
+        } else {
+          setSelectedEmployeeOption(null);
+        }
       }
       
       // Sincronizar método de pago
       setSelectedPaymentMethod(activeQuotation.metodoPago || '');
+
+      // Sincronizar placa de moto
+      setPlacaMoto(activeQuotation.placaMoto || '');
     } else {
       setSelectedClientOption(null);
+      setSelectedEmployeeOption(null);
       setSelectedPaymentMethod('');
+      setPlacaMoto('');
     }
-  }, [activeQuotation, clientes]);
+  }, [activeQuotation, clientes, empleados]);
 
   // Efecto para gestionar el arrastre del panel
   useEffect(() => {
-    // Function to handle the actual position update using requestAnimationFrame
-    const updatePanelPosition = () => {
-      if (!isDraggingRef.current || !panelRef.current) {
-        frameRef.current = null;
-        return;
-      }
-
-      // Calculate the difference from the initial mouse position
-      const dx = initialMousePosRef.current.x - initialMousePosRef.current.x; // These seem to be the same, let's assume it was a typo in the original logic. Corrected below.
-      const dy = initialMousePosRef.current.y - initialMousePosRef.current.y;
-      
-      // Calculate the new panel position
-      const newX = initialPanelPosRef.current.x + (e.clientX - initialMousePosRef.current.x);
-      const newY = initialPanelPosRef.current.y + (e.clientY - initialMousePosRef.current.y);
-
-      // Apply the new position directly to the DOM for fluidity
-      panelRef.current.style.transform = `translate(${newX}px, ${newY}px)`;
-      
-      frameRef.current = null; // Clear the frame reference
-    };
-
     const handleMouseMove = (e) => {
-      // If a frame is not already requested, request one
       if (!isDraggingRef.current || frameRef.current !== null) return;
 
-      // Request a new animation frame to update the position
       frameRef.current = requestAnimationFrame(() => {
-          // Calculate the difference of the mouse movement
           const dx = e.clientX - initialMousePosRef.current.x;
           const dy = e.clientY - initialMousePosRef.current.y;
 
-          // Calculate the new position based on the initial position and the movement
           const newX = initialPanelPosRef.current.x + dx;
           const newY = initialPanelPosRef.current.y + dy;
 
-          // Update the panel's transform
           if (panelRef.current) {
               panelRef.current.style.transform = `translate(${newX}px, ${newY}px)`;
           }
@@ -99,18 +98,15 @@ const ActiveQuotationPanel = ({
 
     const handleMouseUp = () => {
       isDraggingRef.current = false;
-      // Cancel any pending animation frame
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
     };
 
-    // Agrega los eventos al documento cuando se está arrastrando
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
 
-    // Limpia los eventos cuando el componente se desmonta o el arrastre termina
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -118,20 +114,17 @@ const ActiveQuotationPanel = ({
         cancelAnimationFrame(frameRef.current);
       }
     };
-  }, []); // El efecto solo se ejecuta una vez
+  }, []);
 
   const handleMouseDown = (e) => {
-    // Solo permite arrastrar si el clic es en el encabezado
     if (panelRef.current && e.target.classList.contains('drag-handle')) {
         isDraggingRef.current = true;
         initialMousePosRef.current = { x: e.clientX, y: e.clientY };
         
-        // Captura la posición inicial del panel
         const style = window.getComputedStyle(panelRef.current);
         const matrix = new DOMMatrixReadOnly(style.transform);
         initialPanelPosRef.current = { x: matrix.m41, y: matrix.m42 };
 
-        // Evita que el `Dialog` pierda el foco si se arrastra fuera del área
         e.preventDefault();
     }
   };
@@ -143,11 +136,26 @@ const ActiveQuotationPanel = ({
     }
   };
 
+  const handleEmployeeChange = (selectedOption) => {
+    setSelectedEmployeeOption(selectedOption);
+    if (activeQuotation) {
+      onUpdateQuotationEmployee(activeQuotation.id, selectedOption ? selectedOption.value : null);
+    }
+  };
+
   const handlePaymentMethodChange = (e) => {
     const method = e.target.value;
     setSelectedPaymentMethod(method);
     if (activeQuotation) {
       onUpdateQuotationPaymentMethod(activeQuotation.id, method);
+    }
+  };
+
+  const handlePlacaChange = (e) => {
+    const placa = e.target.value;
+    setPlacaMoto(placa);
+    if (activeQuotation) {
+      onUpdateQuotationPlaca(activeQuotation.id, placa);
     }
   };
   
@@ -176,6 +184,11 @@ const ActiveQuotationPanel = ({
     label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || ''}`.trim()
   }));
 
+  const employeeOptions = empleados ? empleados.map(empleado => ({
+    value: empleado.id,
+    label: `${empleado.nombre} ${empleado.apellido || ''} - ${empleado.puesto || ''}`.trim()
+  })) : [];
+
   const paymentMethodOptions = [
     { value: '', label: 'Seleccionar Método de Pago' },
     { value: 'efectivo', label: 'Efectivo' },
@@ -188,7 +201,6 @@ const ActiveQuotationPanel = ({
   return (
     <Transition.Root show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-20" onClose={onClose}>
-        {/* Fondo oscuro para el modal */}
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -201,7 +213,6 @@ const ActiveQuotationPanel = ({
           <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
         </Transition.Child>
 
-        {/* Contenedor principal del modal */}
         <div className="fixed inset-0 z-20 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4 text-center">
             <Transition.Child
@@ -217,10 +228,9 @@ const ActiveQuotationPanel = ({
                 ref={panelRef}
                 className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:w-full sm:max-w-lg"
                 style={{ transform: `translate(0px, 0px)` }}
-                onClick={e => e.stopPropagation()} // Previene que el clic en el modal cierre el modal
+                onClick={e => e.stopPropagation()}
               >
                 
-                {/* Encabezado del panel con área de arrastre */}
                 <div
                   className="drag-handle relative px-4 pt-5 sm:px-6 bg-gray-100 cursor-grab active:cursor-grabbing"
                   onMouseDown={handleMouseDown}
@@ -240,7 +250,6 @@ const ActiveQuotationPanel = ({
                   </div>
                 </div>
 
-                {/* Contenido del panel */}
                 <div className="px-4 py-6 sm:px-6">
                   {/* SECCIÓN: Cotizaciones Pendientes */}
                   <div className="border-b pb-4">
@@ -287,6 +296,37 @@ const ActiveQuotationPanel = ({
                           isClearable
                           placeholder="Buscar o seleccionar cliente..."
                           className="text-sm"
+                        />
+                      </div>
+
+                      {/* Employee Selector */}
+                      <div className="mt-4">
+                        <label htmlFor="employee-select" className="block text-sm font-medium text-gray-700 mb-1">
+                          Empleado Asignado (Opcional):
+                        </label>
+                        <Select
+                          id="employee-select"
+                          options={employeeOptions}
+                          value={selectedEmployeeOption}
+                          onChange={handleEmployeeChange}
+                          isClearable
+                          placeholder="Buscar o seleccionar empleado..."
+                          className="text-sm"
+                        />
+                      </div>
+
+                      {/* Placa Moto Field */}
+                      <div className="mt-4">
+                        <label htmlFor="placa-moto" className="block text-sm font-medium text-gray-700 mb-1">
+                          Placa de Moto (Opcional):
+                        </label>
+                        <input
+                          type="text"
+                          id="placa-moto"
+                          value={placaMoto}
+                          onChange={handlePlacaChange}
+                          placeholder="Ej: ABC-123"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                         />
                       </div>
 
@@ -410,4 +450,4 @@ const ActiveQuotationPanel = ({
   );
 };
 
-export default ActiveQuotationPanel;
+export default ActiveQuotationPanel;  

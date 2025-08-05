@@ -27,7 +27,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
   const router = useRouter();
   const [openSubmenu, setOpenSubmenu] = useState(null);
 
-  const isAdmin = user?.email === 'admin@gestormotorep.com';
+  const isAdmin = user?.email === 'admin@gmail.com';
 
   const handleLogout = async () => {
     await logout();
@@ -46,18 +46,19 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     }
   };
 
+  // Definición de todos los elementos del menú en un solo lugar
   const menuItems = [
     { name: 'Dashboard', icon: HomeIcon, path: '/dashboard', adminOnly: false },
     {
       name: 'Productos',
       icon: CubeIcon,
-      adminOnly: false,
+      adminOnly: true,
       path: '/productos'
     },
     {
       name: 'Inventario',
       icon: ClipboardDocumentListIcon,
-      adminOnly: false,
+      adminOnly: true,
       submenu: [
         { name: 'Ingresos', path: '/inventario/ingresos' },
         { name: 'Stock Actual', path: '/inventario/stock' },
@@ -67,7 +68,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     {
       name: 'Cotizaciones',
       icon: DocumentTextIcon,
-      adminOnly: false,
+      adminOnly: true,
       submenu: [
         { name: 'Mis Cotizaciones', path: '/cotizaciones' },
         { name: 'Todas las Cotizaciones', path: '/cotizaciones/todas', adminOnly: true },
@@ -77,42 +78,43 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     {
       name: 'Ventas',
       icon: BanknotesIcon,
-      adminOnly: false,
+      adminOnly: true,
       submenu: [
         { name: 'Ventas', path: '/ventas' },
-        { name: 'Carrito de compras', path: '/ventas/pos' },
         { name: 'Ventas del Día', path: '/ventas/ventas-del-dia' }
       ]
     },
     {
       name: 'Clientes',
       icon: UsersIcon,
-      adminOnly: false,
-      submenu: [
-        { name: 'Lista de Clientes', path: '/clientes' },
-        { name: 'Clientes con Crédito', path: '/clientes/credito' }
-      ]
+      adminOnly: true,
+      path: '/clientes' 
     },
     {
       name: 'Proveedores',
       icon: BuildingStorefrontIcon,
-      adminOnly: false,
+      adminOnly: true,
       path: '/proveedores'
     },
     {
       name: 'Créditos',
       icon: CreditCardIcon,
-      adminOnly: false,
+      adminOnly: true,
+      path: '/creditos/activos' 
+    },
+    {
+      name: 'Empleados', // Este es el apartado que querías
+      icon: UserGroupIcon,
+      adminOnly: true,
       submenu: [
-        { name: 'Créditos Activos', path: '/creditos/activos' },
-        { name: 'Pagos de Crédito', path: '/creditos/pagos' },
-        { name: 'Historial Créditos', path: '/creditos/historial' }
+        { name: 'Lista de Empleados', path: '/empleados' },
+        { name: 'Rendimiento', path: '/empleados/rendimiento' }
       ]
     },
     {
       name: 'Caja',
       icon: ChartBarIcon,
-      adminOnly: isAdmin,
+      adminOnly: true, // Se cambió a true para seguir la lógica de isAdmin
       submenu: [
         { name: 'Estado de Caja', path: '/caja/estado' },
         { name: 'Movimientos', path: '/caja/movimientos' },
@@ -124,7 +126,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     {
       name: 'Reportes',
       icon: PrinterIcon,
-      adminOnly: false,
+      adminOnly: true,
       submenu: [
         { name: 'Reporte de Ventas', path: '/reportes/ventas' },
         { name: 'Reporte de Inventory', path: '/reportes/inventario' },
@@ -133,19 +135,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       ]
     }
   ];
-
-  if (isAdmin) {
-    menuItems.push({
-      name: 'Empleados',
-      icon: UserGroupIcon,
-      adminOnly: true,
-      submenu: [
-        { name: 'Lista de Empleados', path: '/empleados' },
-        { name: 'Agregar Empleado', path: '/empleados/agregar' },
-        { name: 'Rendimiento', path: '/empleados/rendimiento' }
-      ]
-    });
-  }
 
   return (
     <>
@@ -160,7 +149,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       {/* Sidebar: Siempre fijo y se superpone */}
       <div className={`
         fixed inset-y-0 left-0
-        z-50                       /* Alto z-index para que siempre esté encima */
+        z-50                          /* Alto z-index para que siempre esté encima */
         w-64 bg-gray-900 text-white
         transform transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'} /* Controla si está visible o fuera de pantalla */

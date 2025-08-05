@@ -38,7 +38,7 @@ export default function ProductDetailsModal({ isOpen, onClose, product /* , mode
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all relative">
+              <Dialog.Panel className="w-full max-w-2xl transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all relative">
                 <Dialog.Title
                   as="h3"
                   className="text-lg font-medium leading-6 text-gray-900 mb-4"
@@ -53,13 +53,9 @@ export default function ProductDetailsModal({ isOpen, onClose, product /* , mode
                   <XMarkIcon className="h-6 w-6" />
                 </button>
 
-                <div className="mt-2 text-sm text-gray-500">
-                  <p><span className="font-medium text-gray-800">Stock Umbral:</span> {product.stockReferencialUmbral || 'N/A'}</p>
+                <div className="mt-2 text-sm text-gray-500 space-y-2">
                   <p><span className="font-medium text-gray-800">Descripción:</span> {product.descripcion || 'N/A'}</p>
-
-            
                 </div>
-
               </Dialog.Panel>
             </Transition.Child>
           </div>

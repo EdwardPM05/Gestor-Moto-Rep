@@ -583,8 +583,8 @@ const ClienteCreditoDetalle = () => {
                 <CurrencyDollarIcon className="h-5 w-5 mr-2" />
                 Método de Pago
               </h3>
-              <div className="grid grid-cols-3 gap-3">
-                {['efectivo', 'tarjeta', 'transferencia'].map((metodo) => (
+              <div className="grid grid-cols-4 gap-3">
+                {['efectivo', 'tarjeta', 'plin','yape'].map((metodo) => (
                   <button
                     key={metodo}
                     onClick={() => setMetodoPago(metodo)}
@@ -611,14 +611,6 @@ const ClienteCreditoDetalle = () => {
               >
                 <ShoppingCartIcon className="h-5 w-5 mr-2" />
                 Procesar Pago y Convertir a Venta
-              </button>
-
-              <button
-                onClick={() => generarReportePDF(cliente, creditosConItems)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center justify-center"
-              >
-                <ArrowDownTrayIcon className="h-5 w-5 mr-2" />
-                Generar PDF de Crédito
               </button>
             </div>
           )}

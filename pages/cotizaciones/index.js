@@ -313,6 +313,13 @@ const CotizacionesIndexPage = () => {
                 <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" fill="currentColor" />
               </div>
             </div>
+                        <button
+              onClick={() => router.push('/cotizaciones/nueva')}
+              className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
+            >
+              <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
+              Nueva Cotización
+            </button>
           </div>
 
           {loading ? (

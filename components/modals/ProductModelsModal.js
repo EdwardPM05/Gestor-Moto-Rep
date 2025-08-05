@@ -50,10 +50,10 @@ export default function ProductModelsModal({ isOpen, onClose, product /* , model
                   <XMarkIcon className="h-6 w-6" />
                 </button>
 
-                <div className="mt-2 text-sm text-gray-500">
+                <div className="mt-2 text-m text-gray-500">
                   {/* CAMBIO CLAVE: Mostrar el texto libre directamente */}
                   {product.modelosCompatiblesTexto ? (
-                    <ul className="list-disc list-inside space-y-1 text-gray-700">
+                    <ul className="list-disc list-inside space-y-1 text-black">
                       {product.modelosCompatiblesTexto.split(/[,;\n]/).map((modelo, index) =>
                         modelo.trim() ? <li key={index}>{modelo.trim()}</li> : null
                       )}

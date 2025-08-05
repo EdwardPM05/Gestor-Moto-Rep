@@ -80,6 +80,7 @@ const ProductosPage = () => {
   const [pendingCredits, setPendingCredits] = useState([]);
 
   const [clientesConCredito, setClientesConCredito] = useState([]);
+  const [empleados, setEmpleados] = useState([]);
 
   const handleOpenQuotationPanel = () => {
     setShowQuotationPanel(true);
@@ -97,30 +98,30 @@ const ProductosPage = () => {
     setShowCreditPanel(false);
   };
 
-  // Función para cargar productos y clientes
-  const fetchInitialData = async () => {
-    if (!user) {
-      router.push('/auth');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      // Cargar Productos
-      const qProductos = query(
-        collection(db, 'productos'),
-        orderBy('nombre', 'asc'),
-        limit(productsPerPage)
-      );
-      const productosSnapshot = await getDocs(qProductos);
-      const productosList = productosSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setProductos(productosList);
-      setFilteredProductos(productosList);
+  // 2. Modificar la función fetchInitialData para cargar empleados
+const fetchInitialData = async () => {
+  if (!user) {
+    router.push('/auth');
+    return;
+  }
+  setLoading(true);
+  setError(null);
+  try {
+    // Cargar Productos
+    const qProductos = query(
+      collection(db, 'productos'),
+      orderBy('nombre', 'asc'),
+      limit(productsPerPage)
+    );
+    const productosSnapshot = await getDocs(qProductos);
+    const productosList = productosSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    setProductos(productosList);
+    setFilteredProductos(productosList);
 
-      // Cargar TODOS los Clientes (para cotizaciones)
+    // Cargar TODOS los Clientes (para cotizaciones)
     const qClientesTodos = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
     const clienteSnapshotTodos = await getDocs(qClientesTodos);
     const clientesListTodos = clienteSnapshotTodos.docs.map(doc => ({
@@ -128,6 +129,15 @@ const ProductosPage = () => {
       ...doc.data()
     }));
     setClientes(clientesListTodos);
+
+    // Cargar EMPLEADOS
+    const qEmpleados = query(collection(db, 'empleado'), orderBy('nombre', 'asc'));
+    const empleadosSnapshot = await getDocs(qEmpleados);
+    const empleadosList = empleadosSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    setEmpleados(empleadosList);
 
     // Cargar SOLO clientes con crédito activado (para créditos)
     const qClientesCredito = query(
@@ -143,6 +153,7 @@ const ProductosPage = () => {
     setClientesConCredito(clientesListCredito);
 
     console.log('Clientes totales cargados:', clientesListTodos.length);
+    console.log('Empleados cargados:', empleadosList.length);
     console.log('Clientes con crédito cargados:', clientesListCredito.length);
 
   } catch (err) {
@@ -643,6 +654,71 @@ const handleUpdateCreditClient = async (creditId, newClientId) => {
     }
   };
 
+  const handleUpdateQuotationEmployee = async (quotationId, newEmployeeId) => {
+  if (!quotationId) return;
+
+  setLoading(true);
+  setError(null);
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const quotationRef = doc(db, 'cotizaciones', quotationId);
+      let employeeData = { nombre: '', apellido: '', puesto: '' };
+
+      const quotationSnap = await transaction.get(quotationRef);
+
+      if (!quotationSnap.exists()) {
+        throw new Error("La cotización no existe.");
+      }
+
+      if (newEmployeeId) {
+        const employeeRef = doc(db, 'empleado', newEmployeeId);
+        const employeeSnap = await transaction.get(employeeRef);
+        if (!employeeSnap.exists()) {
+          throw new Error("El empleado seleccionado no existe.");
+        }
+        employeeData = employeeSnap.data();
+      }
+
+      const employeeNombre = `${employeeData.nombre} ${employeeData.apellido || ''}`.trim();
+
+      transaction.update(quotationRef, {
+        empleadoAsignadoId: newEmployeeId || null,
+        empleadoAsignadoNombre: employeeNombre || null,
+        empleadoAsignadoPuesto: employeeData.puesto || null,
+        updatedAt: serverTimestamp(),
+      });
+    });
+    console.log('Empleado de cotización actualizado.');
+  } catch (err) {
+    console.error("Error al actualizar empleado de cotización:", err);
+    setError("Error al actualizar empleado: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// 4. Agregar función para actualizar placa de cotización
+const handleUpdateQuotationPlaca = async (quotationId, newPlaca) => {
+  if (!quotationId) return;
+
+  setLoading(true);
+  setError(null);
+
+  try {
+    const quotationRef = doc(db, 'cotizaciones', quotationId);
+    await updateDoc(quotationRef, {
+      placaMoto: newPlaca || null,
+      updatedAt: serverTimestamp(),
+    });
+    console.log('Placa de moto de cotización actualizada.');
+  } catch (err) {
+    console.error("Error al actualizar placa de cotización:", err);
+    setError("Error al actualizar placa: " + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
   // Añadir producto a cotización activa
   const handleAddProductToActiveQuotation = async (product, quantity = 1) => {
     if (!activeQuotationId) {
@@ -1595,8 +1671,11 @@ const handleFinalizeCredit = async (creditId, metodoPago) => {
               activeQuotation={activeQuotation}
               activeQuotationItems={activeQuotationItems}
               clientes={clientes}
+              empleados={empleados} // Nuevo prop
               setActiveQuotationId={setActiveQuotationId}
               onUpdateQuotationClient={handleUpdateQuotationClient}
+              onUpdateQuotationEmployee={handleUpdateQuotationEmployee} // Nueva función
+              onUpdateQuotationPlaca={handleUpdateQuotationPlaca} // Nueva función
               onRemoveItem={handleRemoveItemFromQuotation}
               onUpdateItemQuantity={handleUpdateItemQuantityInQuotation}
               pendingQuotations={pendingQuotations}
