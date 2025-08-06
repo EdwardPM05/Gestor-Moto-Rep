@@ -1,6 +1,7 @@
 // pages/cotizaciones/nueva.js
 
 import { useState, useEffect, Fragment } from 'react';
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
@@ -911,67 +912,130 @@ const NuevaCotizacionPage = () => {
                     </div>
 
                     <div className="p-4">
-                      {itemsCotizacionActiva.length === 0 ? (
-                        <div className="text-center py-12">
-                          <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                          <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta cotización</h4>
-                          <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {itemsCotizacionActiva.map(item => (
-                            <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-start justify-between mb-3">
-                                    <div className="flex-1">
-                                      <h5 className="font-semibold text-gray-900 text-lg">
-                                        {item.nombreProducto}
-                                      </h5>
-                                      <p className="text-sm text-gray-600">Código: {item.codigoTienda}</p>
-                                      <p className="text-sm text-gray-600">Marca: {item.marca}</p>
-                                      {item.descripcion && (
-                                        <p className="text-sm text-gray-500">Color: {item.descripcion}</p>
-                                      )}
-                                    </div>
-                                    <div className="flex space-x-2 flex-shrink-0 ml-4">
-                                      <button
-                                        onClick={() => handleEditItem(item)}
-                                        className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition-colors"
-                                        title="Editar cantidad y precio"
-                                      >
-                                        <PencilIcon className="h-5 w-5" />
-                                      </button>
-                                      <button
-                                        onClick={() => handleRemoveItem(item.id, item.subtotal)}
-                                        className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition-colors"
-                                        title="Eliminar producto"
-                                      >
-                                        <TrashIcon className="h-5 w-5" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-3 gap-4 text-sm">
-                                    <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                      <span className="text-gray-500 block">Cantidad:</span>
-                                      <span className="font-semibold text-gray-900 text-lg">{item.cantidad}</span>
-                                    </div>
-                                    <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                      <span className="text-gray-500 block">Precio Unitario:</span>
-                                      <span className="font-semibold text-gray-900 text-lg">S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}</span>
-                                    </div>
-                                    <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg border border-green-200">
-                                      <span className="text-green-700 block">Subtotal:</span>
-                                      <span className="font-bold text-green-800 text-lg">S/. {parseFloat(item.subtotal || 0).toFixed(2)}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+
+{itemsCotizacionActiva.length === 0 ? (
+  <div className="text-center py-12">
+    <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+    <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta cotización</h4>
+    <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
+  </div>
+) : (
+  <div className="bg-white rounded-lg overflow-hidden">
+    {/* Tabla de items */}
+    <div className="overflow-x-auto">
+      <table className="min-w-full border-collapse">
+        {/* Encabezados */}
+        <thead className="bg-gray-50">
+          <tr className="border-b border-gray-300">
+            <th className="px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide">NOMBRE</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CÓDIGO</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P.V. UNIT.</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">COLOR</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">ACCIONES</th>
+          </tr>
+        </thead>
+        
+        {/* Cuerpo de la tabla */}
+        <tbody>
+          {itemsCotizacionActiva.map((item, index) => (
+            <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+              {/* Nombre */}
+              <td className="px-3 py-3">
+                <div className="font-medium text-gray-900 text-sm">
+                  {item.nombreProducto}
+                </div>
+              </td>
+
+              {/* Código */}
+              <td className="px-3 py-3 text-center">
+                <span className="text-sm text-gray-900 font-medium">
+                  {item.codigoTienda || 'N/A'}
+                </span>
+              </td>
+
+              {/* Marca */}
+              <td className="px-3 py-3 text-center">
+                <span className="text-sm text-gray-700">
+                  {item.marca || 'Sin marca'}
+                </span>
+              </td>
+
+              {/* Cantidad */}
+              <td className="px-3 py-3 text-center">
+                <span className="text-sm font-medium text-gray-900">
+                  {item.cantidad}
+                </span>
+              </td>
+
+              {/* Precio unitario */}
+              <td className="px-3 py-3 text-center">
+                <span className="text-sm font-medium text-gray-900">
+                  S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
+                </span>
+              </td>
+
+              {/* Color */}
+              <td className="px-3 py-3 text-center">
+                <span className="text-sm text-gray-600" title={item.descripcion || 'N/A'}>
+                  {item.descripcion ? 
+                    (item.descripcion.length > 15 ? `${item.descripcion.substring(0, 15)}...` : item.descripcion) 
+                    : 'N/A'
+                  }
+                </span>
+              </td>
+
+              {/* Subtotal */}
+              <td className="px-3 py-3 text-center">
+                <span className="text-sm font-semibold text-gray-900">
+                  S/. {parseFloat(item.subtotal || 0).toFixed(2)}
+                </span>
+              </td>
+
+              {/* Acciones */}
+              <td className="px-3 py-3 text-center">
+                <div className="flex justify-center space-x-2">
+                  <button
+                    onClick={() => handleEditItem(item)}
+                    className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                    title="Editar"
+                  >
+                    <PencilIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleRemoveItem(item.id, item.subtotal)}
+                    className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
+                    title="Eliminar"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    {/* Total final */}
+    <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 border-t border-gray-300">
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-lg font-semibold">Total de la Cotización</h3>
+          <p className="text-blue-100 text-sm">{itemsCotizacionActiva.length} producto{itemsCotizacionActiva.length !== 1 ? 's' : ''}</p>
+        </div>
+        <div className="text-right">
+          <div className="text-3xl font-bold">
+            S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+                      
                     </div>
                   </div>
                 )}
@@ -982,250 +1046,272 @@ const NuevaCotizacionPage = () => {
       </div>
 
       {/* Modal de Cantidad y Precio */}
-      <Transition.Root show={showQuantityModal} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
-          </Transition.Child>
+      {/* Modal de Cantidad y Precio - VERSIÓN MEJORADA */}
+<Transition.Root show={showQuantityModal} as={Fragment}>
+  <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
+    <Transition.Child
+      as={Fragment}
+      enter="ease-out duration-300"
+      enterFrom="opacity-0"
+      enterTo="opacity-100"
+      leave="ease-in duration-200"
+      leaveFrom="opacity-100"
+      leaveTo="opacity-0"
+    >
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+    </Transition.Child>
 
-          <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                enterTo="opacity-100 translate-y-0 sm:scale-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-                leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+          enterTo="opacity-100 translate-y-0 sm:scale-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+          leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+        >
+          <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+            <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+              <button
+                type="button"
+                className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                onClick={() => setShowQuantityModal(false)}
               >
-                <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
-                  <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                    <button
-                      type="button"
-                      className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                      onClick={() => setShowQuantityModal(false)}
-                    >
-                      <span className="sr-only">Cerrar</span>
-                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  <div className="sm:flex sm:items-start">
-                    <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                      <ShoppingCartIcon className="h-6 w-6 text-blue-600" aria-hidden="true" />
-                    </div>
-                    <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                      <Dialog.Title as="h3" className="text-base font-semibold leading-6 text-gray-900">
-                        Agregar Producto a Cotización
-                      </Dialog.Title>
-                      
-                      {selectedProduct && (
-                        <div className="mt-4">
-                          <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                            <h4 className="font-medium text-gray-900">
-                              {selectedProduct.nombre} ({selectedProduct.codigoTienda})
-                            </h4>
-                            <p className="text-sm text-gray-600">{selectedProduct.marca || 'Sin marca'}</p>
-                            <p className="text-sm text-gray-500">Stock disponible: {selectedProduct.stockActual || 0}</p>
-                          </div>
-
-                          <div className="space-y-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Cantidad
-                              </label>
-                              <input
-                                type="number"
-                                value={quantity}
-                                onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                                min="1"
-                                max={selectedProduct.stockActual || 999}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Precio de Venta (S/.)
-                              </label>
-                              <input
-                                type="number"
-                                value={precioVenta}
-                                onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
-                                min="0"
-                                step="0.01"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              />
-                            </div>
-
-                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                              <div className="text-sm text-gray-700">
-                                <div className="flex justify-between items-center">
-                                  <span className="font-medium">Subtotal:</span>
-                                  <span className="font-bold text-blue-800 text-lg">S/. {(quantity * precioVenta).toFixed(2)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                    <button
-                      type="button"
-                      className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      onClick={handleAddProductToCotizacion}
-                      disabled={!cotizacionActiva || quantity <= 0 || precioVenta <= 0}
-                    >
-                      Agregar a Cotización
-                    </button>
-                    <button
-                      type="button"
-                      className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
-                      onClick={() => setShowQuantityModal(false)}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </Dialog.Panel>
-              </Transition.Child>
+                <span className="sr-only">Cerrar</span>
+                <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+              </button>
             </div>
-          </div>
-        </Dialog>
-      </Transition.Root>
 
-      {/* Modal de Edición de Item */}
-      <Transition.Root show={showEditItemModal} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={setShowEditItemModal}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
-          </Transition.Child>
+            <div className="sm:flex sm:items-start">
+              <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                <ShoppingCartIcon className="h-6 w-6 text-blue-600" aria-hidden="true" />
+              </div>
+              <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-gray-900 mb-4">
+                  Agregar Producto a Cotización
+                </Dialog.Title>
+                
+                {selectedProduct && (
+                  <div className="mt-4">
+                    <div className="bg-gray-50 p-6 rounded-lg mb-6">
+                      <h4 className="font-semibold text-lg text-gray-900 mb-2">
+                        {selectedProduct.nombre}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium text-gray-700">Código: </span>
+                          <span className="text-gray-600">{selectedProduct.codigoTienda}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Marca: </span>
+                          <span className="text-gray-600">{selectedProduct.marca || 'Sin marca'}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Stock disponible: </span>
+                          <span className="text-gray-600">{selectedProduct.stockActual || 0}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Color: </span>
+                          <span className="text-gray-600">{selectedProduct.descripcion || 'N/A'}</span>
+                        </div>
+                      </div>
+                    </div>
 
-          <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                enterTo="opacity-100 translate-y-0 sm:scale-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-                leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Cantidad
+                        </label>
+                        <input
+                          type="number"
+                          value={quantity}
+                          onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                          min="1"
+                          max={selectedProduct.stockActual || 999}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Precio de Venta (S/.)
+                        </label>
+                        <input
+                          type="number"
+                          value={precioVenta}
+                          onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
+                          min="0"
+                          step="0.01"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200 mt-6">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-medium text-gray-700">Subtotal:</span>
+                        <span className="font-bold text-blue-800 text-2xl">S/. {(quantity * precioVenta).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
+              <button
+                type="button"
+                className="inline-flex w-full justify-center rounded-md bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                onClick={handleAddProductToCotizacion}
+                disabled={!cotizacionActiva || quantity <= 0 || precioVenta <= 0}
               >
-                <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
-                  <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                    <button
-                      type="button"
-                      className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                      onClick={() => setShowEditItemModal(false)}
-                    >
-                      <span className="sr-only">Cerrar</span>
-                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  <div className="sm:flex sm:items-start">
-                    <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
-                      <PencilIcon className="h-6 w-6 text-yellow-600" aria-hidden="true" />
-                    </div>
-                    <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                      <Dialog.Title as="h3" className="text-base font-semibold leading-6 text-gray-900">
-                        Editar Producto
-                      </Dialog.Title>
-                      
-                      {editingItem && (
-                        <div className="mt-4">
-                          <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                            <h4 className="font-medium text-gray-900">
-                              {editingItem.nombreProducto} ({editingItem.codigoTienda})
-                            </h4>
-                            <p className="text-sm text-gray-600">{editingItem.marca}</p>
-                          </div>
-
-                          <div className="space-y-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Cantidad
-                              </label>
-                              <input
-                                type="number"
-                                value={editQuantity}
-                                onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
-                                min="1"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Precio de Venta (S/.)
-                              </label>
-                              <input
-                                type="number"
-                                value={editPrecio}
-                                onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
-                                min="0"
-                                step="0.01"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              />
-                            </div>
-
-                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                              <div className="text-sm text-gray-700">
-                                <div className="flex justify-between items-center">
-                                  <span className="font-medium">Nuevo Subtotal:</span>
-                                  <span className="font-bold text-blue-800 text-lg">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                    <button
-                      type="button"
-                      className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500 sm:ml-3 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed"
-                      onClick={handleUpdateItem}
-                      disabled={editQuantity <= 0 || editPrecio <= 0}
-                    >
-                      Actualizar
-                    </button>
-                    <button
-                      type="button"
-                      className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
-                      onClick={() => setShowEditItemModal(false)}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </Dialog.Panel>
-              </Transition.Child>
+                Agregar a Cotización
+              </button>
+              <button
+                type="button"
+                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
+                onClick={() => setShowQuantityModal(false)}
+              >
+                Cancelar
+              </button>
             </div>
-          </div>
-        </Dialog>
-      </Transition.Root>
+          </Dialog.Panel>
+        </Transition.Child>
+      </div>
+    </div>
+  </Dialog>
+</Transition.Root>
+
+{/* Modal de Edición de Item - VERSIÓN MEJORADA */}
+<Transition.Root show={showEditItemModal} as={Fragment}>
+  <Dialog as="div" className="relative z-50" onClose={setShowEditItemModal}>
+    <Transition.Child
+      as={Fragment}
+      enter="ease-out duration-300"
+      enterFrom="opacity-0"
+      enterTo="opacity-100"
+      leave="ease-in duration-200"
+      leaveFrom="opacity-100"
+      leaveTo="opacity-0"
+    >
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+    </Transition.Child>
+
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+          enterTo="opacity-100 translate-y-0 sm:scale-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+          leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+        >
+          <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+            <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+              <button
+                type="button"
+                className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                onClick={() => setShowEditItemModal(false)}
+              >
+                <span className="sr-only">Cerrar</span>
+                <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="sm:flex sm:items-start">
+              <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
+                <PencilIcon className="h-6 w-6 text-yellow-600" aria-hidden="true" />
+              </div>
+              <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-gray-900 mb-4">
+                  Editar Producto
+                </Dialog.Title>
+                
+                {editingItem && (
+                  <div className="mt-4">
+                    <div className="bg-gray-50 p-6 rounded-lg mb-6">
+                      <h4 className="font-semibold text-lg text-gray-900 mb-2">
+                        {editingItem.nombreProducto}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium text-gray-700">Código: </span>
+                          <span className="text-gray-600">{editingItem.codigoTienda}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Marca: </span>
+                          <span className="text-gray-600">{editingItem.marca}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Cantidad
+                        </label>
+                        <input
+                          type="number"
+                          value={editQuantity}
+                          onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                          min="1"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Precio de Venta (S/.)
+                        </label>
+                        <input
+                          type="number"
+                          value={editPrecio}
+                          onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
+                          min="0"
+                          step="0.01"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg border border-yellow-200 mt-6">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-medium text-gray-700">Nuevo Subtotal:</span>
+                        <span className="font-bold text-yellow-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
+              <button
+                type="button"
+                className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-yellow-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                onClick={handleUpdateItem}
+                disabled={editQuantity <= 0 || editPrecio <= 0}
+              >
+                Actualizar
+              </button>
+              <button
+                type="button"
+                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
+                onClick={() => setShowEditItemModal(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </Dialog.Panel>
+        </Transition.Child>
+      </div>
+    </div>
+  </Dialog>
+</Transition.Root>
     </Layout>
   );
 };
