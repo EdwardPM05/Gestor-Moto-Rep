@@ -115,7 +115,7 @@ const NuevaCotizacionPage = () => {
     }
   };
 
-  // Función para buscar productos
+  // 1. CORREGIR LA BÚSQUEDA DE PRODUCTOS - añadir modelosCompatiblesTexto
   const searchProducts = async (searchTerm) => {
     if (!searchTerm.trim()) {
       setFilteredProductos([]);
@@ -140,16 +140,20 @@ const NuevaCotizacionPage = () => {
         const codigoProveedor = (producto.codigoProveedor || '').toLowerCase();
         const descripcion = (producto.descripcion || '').toLowerCase();
         
-        // Buscar en modelos compatibles
+        // Buscar en modelos compatibles IDs
         const modelosCompatibles = producto.modelosCompatiblesIds || [];
         const modelosCompatiblesText = modelosCompatibles.join(' ').toLowerCase();
+        
+        // AGREGAR BÚSQUEDA EN modelosCompatiblesTexto
+        const modelosCompatiblesTexto = (producto.modelosCompatiblesTexto || '').toLowerCase();
 
         return nombre.includes(searchTermLower) ||
-               marca.includes(searchTermLower) ||
-               codigoTienda.includes(searchTermLower) ||
-               codigoProveedor.includes(searchTermLower) ||
-               descripcion.includes(searchTermLower) ||
-               modelosCompatiblesText.includes(searchTermLower);
+              marca.includes(searchTermLower) ||
+              codigoTienda.includes(searchTermLower) ||
+              codigoProveedor.includes(searchTermLower) ||
+              descripcion.includes(searchTermLower) ||
+              modelosCompatiblesText.includes(searchTermLower) ||
+              modelosCompatiblesTexto.includes(searchTermLower);
       });
 
       setFilteredProductos(filtered);
@@ -416,78 +420,85 @@ const NuevaCotizacionPage = () => {
 
   // Agregar producto a cotización
   const handleAddProductToCotizacion = async () => {
-    if (!cotizacionActiva?.id || !selectedProduct) return;
+  if (!cotizacionActiva?.id || !selectedProduct) return;
 
-    try {
-      const cotizacionItemsRef = collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion');
-      const existingItemQuery = query(cotizacionItemsRef, where('productoId', '==', selectedProduct.id));
-      const existingItemSnapshot = await getDocs(existingItemQuery);
+  try {
+    const cotizacionItemsRef = collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion');
+    const existingItemQuery = query(cotizacionItemsRef, where('productoId', '==', selectedProduct.id));
+    const existingItemSnapshot = await getDocs(existingItemQuery);
 
-      await runTransaction(db, async (transaction) => {
-        const productRef = doc(db, 'productos', selectedProduct.id);
-        const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+    await runTransaction(db, async (transaction) => {
+      const productRef = doc(db, 'productos', selectedProduct.id);
+      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
 
-        const productSnap = await transaction.get(productRef);
-        const cotizacionSnap = await transaction.get(cotizacionRef);
+      const productSnap = await transaction.get(productRef);
+      const cotizacionSnap = await transaction.get(cotizacionRef);
 
-        if (!productSnap.exists() || !cotizacionSnap.exists()) {
-          throw new Error("Producto o cotización no encontrada");
-        }
+      if (!productSnap.exists() || !cotizacionSnap.exists()) {
+        throw new Error("Producto o cotización no encontrada");
+      }
 
-        let itemRef;
-        let newQuantity;
-        let oldSubtotal = 0;
+      // OBTENER LOS DATOS MÁS RECIENTES DEL PRODUCTO
+      const productData = productSnap.data();
 
-        if (!existingItemSnapshot.empty) {
-          const existingItemDoc = existingItemSnapshot.docs[0];
-          itemRef = existingItemDoc.ref;
-          const existingItemData = existingItemDoc.data();
-          oldSubtotal = parseFloat(existingItemData.subtotal || 0);
-          newQuantity = existingItemData.cantidad + quantity;
-          const newSubtotal = newQuantity * precioVenta;
+      let itemRef;
+      let newQuantity;
+      let oldSubtotal = 0;
 
-          transaction.update(itemRef, {
-            cantidad: newQuantity,
-            subtotal: newSubtotal,
-            precioVentaUnitario: precioVenta,
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          itemRef = doc(cotizacionItemsRef);
-          newQuantity = quantity;
-          const newSubtotal = newQuantity * precioVenta;
+      if (!existingItemSnapshot.empty) {
+        const existingItemDoc = existingItemSnapshot.docs[0];
+        itemRef = existingItemDoc.ref;
+        const existingItemData = existingItemDoc.data();
+        oldSubtotal = parseFloat(existingItemData.subtotal || 0);
+        newQuantity = existingItemData.cantidad + quantity;
+        const newSubtotal = newQuantity * precioVenta;
 
-          transaction.set(itemRef, {
-            productoId: selectedProduct.id,
-            nombreProducto: selectedProduct.nombre,
-            marca: selectedProduct.marca || '',
-            codigoTienda: selectedProduct.codigoTienda || '',
-            descripcion: selectedProduct.descripcion || '',
-            cantidad: newQuantity,
-            precioVentaUnitario: precioVenta,
-            subtotal: newSubtotal,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-
-        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
-        const finalItemSubtotal = newQuantity * precioVenta;
-        const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
-
-        transaction.update(cotizacionRef, {
-          totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+        transaction.update(itemRef, {
+          cantidad: newQuantity,
+          subtotal: newSubtotal,
+          precioVentaUnitario: precioVenta,
+          // ACTUALIZAR TAMBIÉN EL COLOR DEL PRODUCTO
+          color: productData.color || '',
           updatedAt: serverTimestamp(),
         });
-      });
+      } else {
+        itemRef = doc(cotizacionItemsRef);
+        newQuantity = quantity;
+        const newSubtotal = newQuantity * precioVenta;
 
-      setShowQuantityModal(false);
-      alert('Producto agregado exitosamente');
-    } catch (err) {
-      console.error("Error al agregar producto:", err);
-      setError("Error al agregar producto a la cotización");
-    }
-  };
+        // GUARDAR TODOS LOS DATOS DEL PRODUCTO, INCLUYENDO COLOR
+        transaction.set(itemRef, {
+          productoId: selectedProduct.id,
+          nombreProducto: productData.nombre || selectedProduct.nombre,
+          marca: productData.marca || selectedProduct.marca || '',
+          codigoTienda: productData.codigoTienda || selectedProduct.codigoTienda || '',
+          descripcion: productData.descripcion || selectedProduct.descripcion || '',
+          color: productData.color || selectedProduct.color || '', // ASEGURAR QUE SE GUARDE EL COLOR
+          cantidad: newQuantity,
+          precioVentaUnitario: precioVenta,
+          subtotal: newSubtotal,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+      const finalItemSubtotal = newQuantity * precioVenta;
+      const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
+
+      transaction.update(cotizacionRef, {
+        totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    setShowQuantityModal(false);
+    alert('Producto agregado exitosamente');
+  } catch (err) {
+    console.error("Error al agregar producto:", err);
+    setError("Error al agregar producto a la cotización");
+  }
+};
 
   // Abrir modal de edición de item
   const handleEditItem = (item) => {
@@ -633,21 +644,17 @@ const NuevaCotizacionPage = () => {
   if (!user) return null;
 
   return (
-    <Layout title="Nueva Cotización">
-      <div className="min-h-screen bg-gray-50 py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {error && (
-            <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
-              {error}
-            </div>
-          )}
+  <Layout title="Nueva Cotización">
+    <div className="min-h-screen bg-gray-50 py-6">
+      {/* CAMBIAR max-w-7xl por max-w-full y agregar padding más amplio */}
+      <div className="max-w-full mx-auto px-6 sm:px-8 lg:px-12">
+        {error && (
+          <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
+            {error}
+          </div>
+        )}
 
           <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
-              <h1 className="text-2xl font-bold text-white">Nueva Cotización</h1>
-              <p className="text-blue-100 mt-1">Crear y gestionar cotizaciones</p>
-            </div>
 
             <div className="grid grid-cols-12 gap-6 p-6">
               {/* Panel Izquierdo - Cotizaciones Borrador */}
@@ -855,17 +862,18 @@ const NuevaCotizacionPage = () => {
                                     {producto.nombre} ({producto.codigoTienda})
                                   </h4>
                                   <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Marca:</span> {producto.marca || 'Sin marca'}
+                                    <span className="font-medium">Marca:</span> {producto.marca}
                                   </p>
                                   <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Color:</span> {producto.descripcion || 'N/A'}
+                                    <span className="font-medium">Color:</span> {producto.color || 'N/A'}
                                   </p>
                                   <p className="text-sm text-gray-500">
-                                    <span className="font-medium">Stock:</span> {producto.stockActual || 0}
+                                    <span className="font-medium">Stock:</span> {producto.stockActual}
                                   </p>
-                                  {producto.modelosCompatiblesIds && producto.modelosCompatiblesIds.length > 0 && (
+                                  {/* MOSTRAR MODELOS COMPATIBLES DESDE modelosCompatiblesTexto */}
+                                  {producto.modelosCompatiblesTexto && (
                                     <p className="text-sm text-blue-600 truncate">
-                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesIds.slice(0, 3).join(', ')}{producto.modelosCompatiblesIds.length > 3 ? '...' : ''}
+                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesTexto}
                                     </p>
                                   )}
                                 </div>
@@ -913,7 +921,7 @@ const NuevaCotizacionPage = () => {
 
                     <div className="p-4">
 
-{itemsCotizacionActiva.length === 0 ? (
+                    {itemsCotizacionActiva.length === 0 ? (
   <div className="text-center py-12">
     <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
     <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta cotización</h4>
@@ -921,20 +929,20 @@ const NuevaCotizacionPage = () => {
   </div>
 ) : (
   <div className="bg-white rounded-lg overflow-hidden">
-    {/* Tabla de items */}
+    {/* Tabla de items - USAR OVERFLOW RESPONSIVE */}
     <div className="overflow-x-auto">
-      <table className="min-w-full border-collapse">
+      <table className="w-full border-collapse">
         {/* Encabezados */}
         <thead className="bg-gray-50">
           <tr className="border-b border-gray-300">
-            <th className="px-3 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide">NOMBRE</th>
-            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CÓDIGO</th>
-            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
-            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
-            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P.V. UNIT.</th>
-            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">COLOR</th>
-            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
-            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">ACCIONES</th>
+            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">CÓDIGO</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">MARCA</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-16">CANT.</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P.V. UNIT.</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">COLOR</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-28">SUBTOTAL</th>
+            <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">ACCIONES</th>
           </tr>
         </thead>
         
@@ -943,7 +951,7 @@ const NuevaCotizacionPage = () => {
           {itemsCotizacionActiva.map((item, index) => (
             <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
               {/* Nombre */}
-              <td className="px-3 py-3">
+              <td className="px-4 py-3">
                 <div className="font-medium text-gray-900 text-sm">
                   {item.nombreProducto}
                 </div>
@@ -977,13 +985,11 @@ const NuevaCotizacionPage = () => {
                 </span>
               </td>
 
-              {/* Color */}
+              {/* Color - ASEGURAR QUE USE EL CAMPO CORRECTO */}
               <td className="px-3 py-3 text-center">
-                <span className="text-sm text-gray-600" title={item.descripcion || 'N/A'}>
-                  {item.descripcion ? 
-                    (item.descripcion.length > 15 ? `${item.descripcion.substring(0, 15)}...` : item.descripcion) 
-                    : 'N/A'
-                  }
+                <span className="text-sm text-gray-600" title={item.color || item.descripcion || 'N/A'}>
+                  {/* Mostrar color, si no hay color mostrar descripcion, si no N/A */}
+                  {item.color || item.descripcion || "N/A"}
                 </span>
               </td>
 
@@ -1035,7 +1041,6 @@ const NuevaCotizacionPage = () => {
     </div>
   </div>
 )}
-                      
                     </div>
                   </div>
                 )}
@@ -1114,7 +1119,7 @@ const NuevaCotizacionPage = () => {
                         </div>
                         <div>
                           <span className="font-medium text-gray-700">Color: </span>
-                          <span className="text-gray-600">{selectedProduct.descripcion || 'N/A'}</span>
+                          <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
                         </div>
                       </div>
                     </div>

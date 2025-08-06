@@ -1,4 +1,3 @@
-// pages/productos/[id].js
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,9 +9,6 @@ import {
   getDoc,
   addDoc,
   updateDoc,
-  // query, // Ya no necesitamos query ni getDocs para modelosMoto
-  // getDocs, // Ya no necesitamos getDocs para modelosMoto
-  // orderBy, // Ya no necesitamos orderBy para modelosMoto
   serverTimestamp,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -26,7 +22,6 @@ const AddEditProductoPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  // const [modelosMoto, setModelosMoto] = useState([]); // ¡ELIMINAMOS ESTE ESTADO!
 
   const DEFAULT_STOCK_UMBRAL = 4; // Valor por defecto para el umbral de stock bajo
 
@@ -44,8 +39,9 @@ const AddEditProductoPage = () => {
     stockReferencialUmbral: DEFAULT_STOCK_UMBRAL,
     ubicacion: '',
     imageUrl: '',
-    // CAMBIO CLAVE: Ahora es un string para texto libre
     modelosCompatiblesTexto: '',
+    descripcionPuntos: '',
+    color: '', // CAMBIO CLAVE: Agregado el nuevo campo de color
   });
 
   const [selectedImageFile, setSelectedImageFile] = useState(null);
@@ -64,14 +60,6 @@ const AddEditProductoPage = () => {
       setError(null);
 
       try {
-        // ¡ELIMINAMOS LA CARGA DE MODELOS DE MOTO DE FIRESTORE AQUI!
-        // No necesitamos:
-        // const qModelos = query(collection(db, 'modelosMoto'), orderBy('marcaModelo', 'asc'));
-        // const modelosSnapshot = await getDocs(qModelos);
-        // const fetchedModelos = modelosSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // setModelosMoto(fetchedModelos); // ¡ELIMINAMOS ESTA LÍNEA!
-
-        // 2. Si estamos editando, cargar los datos del producto
         if (isEditing) {
           const productDocRef = doc(db, 'productos', id);
           const productDocSnap = await getDoc(productDocRef);
@@ -91,8 +79,9 @@ const AddEditProductoPage = () => {
               stockReferencialUmbral: productData.stockReferencialUmbral ?? DEFAULT_STOCK_UMBRAL,
               ubicacion: productData.ubicacion || '',
               imageUrl: productData.imageUrl || '',
-              // CAMBIO CLAVE: Usamos el nuevo campo de texto libre
               modelosCompatiblesTexto: productData.modelosCompatiblesTexto || '',
+              descripcionPuntos: productData.descripcionPuntos || productData.descripcion || '',
+              color: productData.color || '', // CAMBIO CLAVE: Carga el valor de color
             });
             setImagePreviewUrl(productData.imageUrl || '');
           } else {
@@ -103,7 +92,9 @@ const AddEditProductoPage = () => {
           setFormData(prev => ({
             ...prev,
             stockReferencialUmbral: DEFAULT_STOCK_UMBRAL,
-            modelosCompatiblesTexto: '', // Aseguramos que esté vacío para un nuevo producto
+            modelosCompatiblesTexto: '',
+            descripcionPuntos: '',
+            color: '', // Inicializa el color para un nuevo producto
           }));
         }
       } catch (err) {
@@ -141,10 +132,6 @@ const AddEditProductoPage = () => {
     setImagePreviewUrl('');
     setFormData((prev) => ({ ...prev, imageUrl: '' }));
   };
-
-  // ¡ELIMINAMOS handleModeloSelection YA NO ES NECESARIO!
-  // const handleModeloSelection = (e) => { /* ... */ };
-
 
   const uploadImage = async (file) => {
     if (!file) return null;
@@ -186,9 +173,10 @@ const AddEditProductoPage = () => {
       const productDataToSave = {
         ...formData,
         imageUrl: finalImageUrl,
-        // Eliminamos modelosCompatiblesIds y usamos el nuevo campo de texto libre
-        modelosCompatiblesIds: [], // Opcional: podrías guardarlo como un array vacío si quieres mantener el campo en Firestore
-        modelosCompatiblesTexto: formData.modelosCompatiblesTexto, // Guardamos el texto ingresado
+        modelosCompatiblesIds: [],
+        modelosCompatiblesTexto: formData.modelosCompatiblesTexto,
+        descripcionPuntos: formData.descripcionPuntos,
+        color: formData.color, // CAMBIO CLAVE: Guarda el valor de color
         updatedAt: serverTimestamp(),
       };
 
@@ -197,10 +185,16 @@ const AddEditProductoPage = () => {
       }
 
       if (isEditing) {
-        await updateDoc(doc(db, 'productos', id), productDataToSave);
+        await updateDoc(doc(db, 'productos', id), {
+            ...productDataToSave,
+            descripcion: productDataToSave.descripcionPuntos,
+        });
         console.log("Producto actualizado con ID: ", id);
       } else {
-        const docRef = await addDoc(collection(db, 'productos'), productDataToSave);
+        const docRef = await addDoc(collection(db, 'productos'), {
+            ...productDataToSave,
+            descripcion: productDataToSave.descripcionPuntos,
+        });
         console.log("Producto agregado con ID: ", docRef.id);
       }
       router.push('/productos');
@@ -252,9 +246,12 @@ const AddEditProductoPage = () => {
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
             <div className="md:col-span-2">
-              <label htmlFor="descripcion" className="block text-sm font-medium text-gray-700">Descripción</label>
-              <textarea name="descripcion" id="descripcion" rows="3" value={formData.descripcion} onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></textarea>
+              <label htmlFor="descripcionPuntos" className="block text-sm font-medium text-gray-700">Descripción por Puntos</label>
+              <p className="text-sm text-gray-500 mb-2">Ingrese cada punto en una nueva línea.</p>
+              <textarea name="descripcionPuntos" id="descripcionPuntos" rows="4" value={formData.descripcionPuntos} onChange={handleChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder="Ej:&#10; - Material de alta calidad&#10; - Resistente a la corrosión&#10; - Fácil de instalar"
+              ></textarea>
             </div>
             <div>
               <label htmlFor="medida" className="block text-sm font-medium text-gray-700">Medida (opcional)</label>
@@ -264,6 +261,12 @@ const AddEditProductoPage = () => {
             <div>
               <label htmlFor="ubicacion" className="block text-sm font-medium text-gray-700">Ubicación (Andamio)</label>
               <input type="text" name="ubicacion" id="ubicacion" value={formData.ubicacion} onChange={handleChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+            </div>
+            {/* CAMBIO CLAVE: Nuevo campo de input para el color */}
+            <div>
+              <label htmlFor="color" className="block text-sm font-medium text-gray-700">Color (opcional)</label>
+              <input type="text" name="color" id="color" value={formData.color} onChange={handleChange}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
           </div>

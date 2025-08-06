@@ -47,9 +47,6 @@ const CotizacionesIndexPage = () => {
             fechaCreacion: data.fechaCreacion?.toDate().toLocaleDateString('es-ES', {
               year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
             }) || 'N/A',
-            fechaExpiracion: data.fechaExpiracion?.toDate().toLocaleDateString('es-ES', {
-              year: 'numeric', month: 'long', day: 'numeric'
-            }) || 'N/A',
             estado: data.estado,
             metodoPago: data.metodoPago || 'N/A',
           };
@@ -340,7 +337,6 @@ const CotizacionesIndexPage = () => {
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° COTIZACIÓN</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CLIENTE</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA CREACIÓN</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA EXPIRACIÓN</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TOTAL</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MÉTODO DE PAGO</th>
@@ -356,7 +352,6 @@ const CotizacionesIndexPage = () => {
                       </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cotizacion.clienteNombre}</td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cotizacion.fechaCreacion}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cotizacion.fechaExpiracion}</td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black font-medium text-left">
                         S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}
                       </td>

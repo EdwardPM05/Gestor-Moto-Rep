@@ -69,11 +69,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Cotizaciones',
       icon: DocumentTextIcon,
       adminOnly: true,
-      submenu: [
-        { name: 'Mis Cotizaciones', path: '/cotizaciones' },
-        { name: 'Todas las Cotizaciones', path: '/cotizaciones/todas', adminOnly: true },
-        { name: 'Historial', path: '/cotizaciones/historial' }
-      ]
+      path: '/cotizaciones'
     },
     {
       name: 'Ventas',
