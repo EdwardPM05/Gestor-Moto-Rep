@@ -28,7 +28,8 @@ import {
   TruckIcon,
   CreditCardIcon,
   DocumentTextIcon,
-  CheckIcon
+  CheckIcon,
+  PencilIcon
 } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
 import { Dialog, Transition } from '@headlessui/react';
@@ -37,15 +38,14 @@ import Select from 'react-select';
 const NuevaCotizacionPage = () => {
   const router = useRouter();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Estados para productos
+  // Estados para productos - SIN CARGAR AUTOMÁTICAMENTE
   const [productos, setProductos] = useState([]);
   const [filteredProductos, setFilteredProductos] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [productLimit, setProductLimit] = useState(20);
-  const [displayedProducts, setDisplayedProducts] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Estados para datos de referencia
   const [clientes, setClientes] = useState([]);
@@ -69,7 +69,13 @@ const NuevaCotizacionPage = () => {
   const [quantity, setQuantity] = useState(1);
   const [precioVenta, setPrecioVenta] = useState(0);
 
-  // Cargar datos iniciales
+  // Estados para modal de edición de item
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [editQuantity, setEditQuantity] = useState(1);
+  const [editPrecio, setEditPrecio] = useState(0);
+
+  // Cargar datos iniciales (sin productos)
   useEffect(() => {
     if (!user) {
       router.push('/auth');
@@ -82,16 +88,6 @@ const NuevaCotizacionPage = () => {
     setLoading(true);
     setError(null);
     try {
-      // Cargar productos
-      const qProductos = query(collection(db, 'productos'), orderBy('nombre', 'asc'));
-      const productosSnapshot = await getDocs(qProductos);
-      const productosList = productosSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setProductos(productosList);
-      setFilteredProductos(productosList);
-
       // Cargar clientes
       const qClientes = query(collection(db, 'cliente'), orderBy('nombre', 'asc'));
       const clientesSnapshot = await getDocs(qClientes);
@@ -117,6 +113,65 @@ const NuevaCotizacionPage = () => {
       setLoading(false);
     }
   };
+
+  // Función para buscar productos
+  const searchProducts = async (searchTerm) => {
+    if (!searchTerm.trim()) {
+      setFilteredProductos([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const qProductos = query(collection(db, 'productos'), orderBy('nombre', 'asc'));
+      const productosSnapshot = await getDocs(qProductos);
+      const productosList = productosSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      const searchTermLower = searchTerm.toLowerCase();
+      
+      const filtered = productosList.filter(producto => {
+        const nombre = (producto.nombre || '').toLowerCase();
+        const marca = (producto.marca || '').toLowerCase();
+        const codigoTienda = (producto.codigoTienda || '').toLowerCase();
+        const codigoProveedor = (producto.codigoProveedor || '').toLowerCase();
+        const descripcion = (producto.descripcion || '').toLowerCase();
+        
+        // Buscar en modelos compatibles
+        const modelosCompatibles = producto.modelosCompatiblesIds || [];
+        const modelosCompatiblesText = modelosCompatibles.join(' ').toLowerCase();
+
+        return nombre.includes(searchTermLower) ||
+               marca.includes(searchTermLower) ||
+               codigoTienda.includes(searchTermLower) ||
+               codigoProveedor.includes(searchTermLower) ||
+               descripcion.includes(searchTermLower) ||
+               modelosCompatiblesText.includes(searchTermLower);
+      });
+
+      setFilteredProductos(filtered);
+    } catch (err) {
+      console.error("Error al buscar productos:", err);
+      setError("Error al buscar productos");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Efecto para buscar productos con debounce
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchTerm.trim()) {
+        searchProducts(searchTerm);
+      } else {
+        setFilteredProductos([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
 
   // Escuchar cotizaciones pendientes
   useEffect(() => {
@@ -190,27 +245,6 @@ const NuevaCotizacionPage = () => {
       setObservaciones(cotizacionActiva.observaciones || '');
     }
   }, [cotizacionActiva, clientes, empleados]);
-
-  // Filtrar productos
-  useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredProductos(productos);
-    } else {
-      const filtered = productos.filter(producto =>
-        producto.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (producto.marca && producto.marca.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        producto.codigoTienda.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (producto.codigoProveedor && producto.codigoProveedor.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
-      setFilteredProductos(filtered);
-    }
-  }, [searchTerm, productos]);
-
-  // Aplicar límite de productos mostrados
-  useEffect(() => {
-    const limited = filteredProductos.slice(0, productLimit);
-    setDisplayedProducts(limited);
-  }, [filteredProductos, productLimit]);
 
   // Crear nueva cotización
   const handleNuevaCotizacion = async () => {
@@ -426,6 +460,8 @@ const NuevaCotizacionPage = () => {
             productoId: selectedProduct.id,
             nombreProducto: selectedProduct.nombre,
             marca: selectedProduct.marca || '',
+            codigoTienda: selectedProduct.codigoTienda || '',
+            descripcion: selectedProduct.descripcion || '',
             cantidad: newQuantity,
             precioVentaUnitario: precioVenta,
             subtotal: newSubtotal,
@@ -449,6 +485,55 @@ const NuevaCotizacionPage = () => {
     } catch (err) {
       console.error("Error al agregar producto:", err);
       setError("Error al agregar producto a la cotización");
+    }
+  };
+
+  // Abrir modal de edición de item
+  const handleEditItem = (item) => {
+    setEditingItem(item);
+    setEditQuantity(item.cantidad);
+    setEditPrecio(parseFloat(item.precioVentaUnitario || 0));
+    setShowEditItemModal(true);
+  };
+
+  // Actualizar item de cotización
+  const handleUpdateItem = async () => {
+    if (!cotizacionActiva?.id || !editingItem) return;
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const itemRef = doc(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion', editingItem.id);
+        const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+
+        const cotizacionSnap = await transaction.get(cotizacionRef);
+        if (!cotizacionSnap.exists()) {
+          throw new Error("Cotización no encontrada");
+        }
+
+        const oldSubtotal = parseFloat(editingItem.subtotal || 0);
+        const newSubtotal = editQuantity * editPrecio;
+
+        transaction.update(itemRef, {
+          cantidad: editQuantity,
+          precioVentaUnitario: editPrecio,
+          subtotal: newSubtotal,
+          updatedAt: serverTimestamp(),
+        });
+
+        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+        const updatedTotal = currentTotal - oldSubtotal + newSubtotal;
+
+        transaction.update(cotizacionRef, {
+          totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      setShowEditItemModal(false);
+      alert('Producto actualizado exitosamente');
+    } catch (err) {
+      console.error("Error al actualizar item:", err);
+      setError("Error al actualizar producto");
     }
   };
 
@@ -485,7 +570,7 @@ const NuevaCotizacionPage = () => {
     }
   };
 
-  // Guardar cotización como pendiente - MODIFICADO
+  // Guardar cotización como pendiente
   const handleGuardarCotizacion = async () => {
     if (!cotizacionActiva?.id) return;
 
@@ -506,11 +591,11 @@ const NuevaCotizacionPage = () => {
     try {
       const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
       await updateDoc(cotizacionRef, {
-        estado: 'pendiente', // Cambio aquí: de 'confirmada' a 'pendiente'
+        estado: 'pendiente',
         metodoPago: metodoPago || 'efectivo',
         placaMoto: placaMoto || null,
         observaciones: observaciones || '',
-        fechaGuardado: serverTimestamp(), // Nueva fecha para cuando se guarda como pendiente
+        fechaGuardado: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
@@ -548,427 +633,599 @@ const NuevaCotizacionPage = () => {
 
   return (
     <Layout title="Nueva Cotización">
-      <div className="flex h-screen bg-gray-100 fixed inset-0 overflow-hidden" style={{ top: '64px', height: 'calc(100vh - 64px)' }}>
-        {error && (
-          <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
-            {error}
-          </div>
-        )}
-
-        {/* Panel Izquierdo - Cotizaciones Pendientes */}
-        <div className="w-80 bg-white shadow-lg flex flex-col flex-shrink-0">
-          <div className="p-4 bg-blue-600 text-white flex-shrink-0">
-            <h2 className="text-lg font-semibold mb-3">Cotizaciones Borrador</h2>
-            <button
-              onClick={handleNuevaCotizacion}
-              className="w-full bg-blue-500 hover:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center justify-center"
-              disabled={loading}
-            >
-              <PlusIcon className="h-5 w-5 mr-2" />
-              Nueva Cotización
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-            {cotizacionesPendientes.length === 0 ? (
-              <p className="text-gray-500 text-center">No hay cotizaciones en borrador</p>
-            ) : (
-              <div className="space-y-3">
-                {cotizacionesPendientes.map(cotizacion => (
-                  <div
-                    key={cotizacion.id}
-                    className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                      cotizacionActiva?.id === cotizacion.id
-                        ? 'bg-blue-50 border-blue-500'
-                        : 'bg-gray-50 hover:bg-gray-100 border-gray-200'
-                    }`}
-                    onClick={() => handleSelectCotizacion(cotizacion)}
-                  >
-                    <div className="font-medium text-sm">{cotizacion.numeroCotizacion}</div>
-                    <div className="text-xs text-gray-600">{cotizacion.clienteNombre}</div>
-                    <div className="text-xs font-semibold">S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}</div>
-                    <div className="text-xs text-gray-500">
-                      {cotizacion.fechaCreacion?.toDate?.() ? 
-                        cotizacion.fechaCreacion.toDate().toLocaleDateString() : 
-                        'Fecha N/A'
-                      }
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Información de Cotización Activa */}
-          {cotizacionActiva && (
-            <div className="border-t p-4 bg-gray-50 flex-shrink-0 max-h-96 overflow-y-auto custom-scrollbar">
-              <h3 className="font-semibold text-sm mb-3">Cotización Activa</h3>
-              
-              {/* Cliente */}
-              <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Cliente:</label>
-                <Select
-                  options={clienteOptions}
-                  value={selectedCliente}
-                  onChange={handleUpdateCliente}
-                  placeholder="Seleccionar cliente..."
-                  className="text-xs"
-                  isClearable
-                />
-              </div>
-
-              {/* Empleado */}
-              <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Empleado:</label>
-                <Select
-                  options={empleadoOptions}
-                  value={selectedEmpleado}
-                  onChange={handleUpdateEmpleado}
-                  placeholder="Seleccionar empleado..."
-                  className="text-xs"
-                  isClearable
-                />
-              </div>
-
-              {/* Placa Moto */}
-              <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Placa Moto:</label>
-                <input
-                  type="text"
-                  value={placaMoto}
-                  onChange={(e) => handleUpdatePlaca(e.target.value)}
-                  placeholder="Ej: ABC-123"
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                />
-              </div>
-
-              {/* Método de Pago */}
-              <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Método de Pago:</label>
-                <select
-                  value={metodoPago}
-                  onChange={(e) => handleUpdateMetodoPago(e.target.value)}
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                >
-                  <option value="">Seleccionar...</option>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="tarjeta">Tarjeta</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="yape">Yape</option>
-                  <option value="plin">Plin</option>
-                </select>
-              </div>
-
-              {/* Observaciones */}
-              <div className="mb-3">
-                <label className="block text-xs font-medium text-gray-700 mb-1">Observaciones:</label>
-                <textarea
-                  value={observaciones}
-                  onChange={(e) => handleUpdateObservaciones(e.target.value)}
-                  placeholder="Observaciones adicionales..."
-                  className="w-full px-2 py-1 text-xs border border-gray-300 rounded"
-                  rows="2"
-                />
-              </div>
-
-              {/* Total */}
-              <div className="mb-3 p-2 bg-blue-50 rounded">
-                <div className="text-xs font-semibold">
-                  Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
-                </div>
-              </div>
-
-              {/* BOTÓN MODIFICADO: Ahora guarda como pendiente */}
-              <button
-                onClick={handleGuardarCotizacion}
-                disabled={!selectedCliente || itemsCotizacionActiva.length === 0}
-                className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center justify-center text-sm"
-              >
-                <DocumentTextIcon className="h-4 w-4 mr-2" />
-                Guardar como Pendiente
-              </button>
-              
-              {/* Botón para ir al índice de cotizaciones */}
-              <button
-                onClick={() => router.push('/cotizaciones')}
-                className="w-full mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center text-sm"
-              >
-                <CheckIcon className="h-4 w-4 mr-2" />
-                Ver Todas las Cotizaciones
-              </button>
+      <div className="min-h-screen bg-gray-50 py-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {error && (
+            <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
+              {error}
             </div>
           )}
-        </div>
 
-        {/* Panel Derecho - Productos y Items */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Buscador de Productos */}
-          <div className="bg-white shadow-sm p-4 flex-shrink-0">
-            <div className="flex items-center space-x-4 mb-3">
-              <div className="flex-1 relative">
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Buscar productos por nombre, marca, código..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div className="text-sm text-gray-600 whitespace-nowrap">
-                Mostrando {displayedProducts.length} de {filteredProductos.length}
-              </div>
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
+              <h1 className="text-2xl font-bold text-white">Nueva Cotización</h1>
+              <p className="text-blue-100 mt-1">Crear y gestionar cotizaciones</p>
             </div>
-            
-            {/* Control de límite de productos */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Mostrar:</span>
-                <select
-                  value={productLimit}
-                  onChange={(e) => setProductLimit(parseInt(e.target.value))}
-                  className="text-sm border border-gray-300 rounded px-2 py-1"
-                >
-                  <option value={10}>10 productos</option>
-                  <option value={20}>20 productos</option>
-                  <option value={50}>50 productos</option>
-                  <option value={100}>100 productos</option>
-                </select>
-              </div>
-              
-              {filteredProductos.length > productLimit && (
-                <div className="text-xs text-orange-600">
-                  Hay {filteredProductos.length - productLimit} productos más. Usa el buscador o aumenta el límite.
-                </div>
-              )}
-            </div>
-          </div>
 
-          <div className="flex-1 flex min-h-0">
-            {/* Lista de Productos */}
-            <div className="flex-1 bg-white flex flex-col min-w-0">
-              <div className="p-4 flex-shrink-0">
-                <h3 className="text-lg font-semibold mb-4">Seleccionar Productos</h3>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar">
-                {loading ? (
-                  <div className="flex justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  </div>
-                ) : (
-                  <div className="grid gap-3">
-                    {displayedProducts.map(producto => (
-                      <div
-                        key={producto.id}
-                        className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer flex-shrink-0"
-                        onClick={() => handleSelectProduct(producto)}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-gray-900 truncate">{producto.nombre}</h4>
-                            <p className="text-sm text-gray-600 truncate">{producto.marca || 'Sin marca'}</p>
-                            <p className="text-xs text-gray-500">Código: {producto.codigoTienda}</p>
-                            <p className="text-xs text-gray-500">Stock: {producto.stockActual || 0}</p>
-                          </div>
-                          <div className="text-right flex-shrink-0 ml-4">
-                            <p className="font-semibold text-green-600">
-                              S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Costo: S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
-                            </p>
+            <div className="grid grid-cols-12 gap-6 p-6">
+              {/* Panel Izquierdo - Cotizaciones Borrador */}
+              <div className="col-span-12 lg:col-span-4">
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-800">Cotizaciones Borrador</h2>
+                  <button
+                    onClick={handleNuevaCotizacion}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
+                    disabled={loading}
+                  >
+                    <PlusIcon className="h-5 w-5 mr-2" />
+                    Nueva Cotización
+                  </button>
+
+                  <div className="max-h-64 overflow-y-auto space-y-2">
+                    {cotizacionesPendientes.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No hay cotizaciones en borrador</p>
+                    ) : (
+                      cotizacionesPendientes.map(cotizacion => (
+                        <div
+                          key={cotizacion.id}
+                          className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                            cotizacionActiva?.id === cotizacion.id
+                              ? 'bg-blue-50 border-blue-500 shadow-md'
+                              : 'bg-white hover:bg-gray-50 border-gray-200'
+                          }`}
+                          onClick={() => handleSelectCotizacion(cotizacion)}
+                        >
+                          <div className="font-medium text-sm text-gray-800">{cotizacion.numeroCotizacion}</div>
+                          <div className="text-xs text-gray-600">{cotizacion.clienteNombre}</div>
+                          <div className="text-xs font-semibold text-green-600">S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}</div>
+                          <div className="text-xs text-gray-500">
+                            {cotizacion.fechaCreacion?.toDate?.() ? 
+                              cotizacion.fechaCreacion.toDate().toLocaleDateString() : 
+                              'Fecha N/A'
+                            }
                           </div>
                         </div>
-                      </div>
-                    ))}
-                    
-                    {displayedProducts.length === 0 && !loading && (
-                      <div className="text-center py-8 text-gray-500">
-                        No se encontraron productos
-                      </div>
+                      ))
                     )}
+                  </div>
+                </div>
+
+                {/* Información de Cotización Activa */}
+                {cotizacionActiva && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-semibold text-lg mb-4 text-gray-800">Datos de la Cotización</h3>
+                    
+                    <div className="space-y-4">
+                      {/* Cliente */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Cliente:</label>
+                        <Select
+                          options={clienteOptions}
+                          value={selectedCliente}
+                          onChange={handleUpdateCliente}
+                          placeholder="Seleccionar cliente..."
+                          className="text-sm"
+                          isClearable
+                        />
+                      </div>
+
+                      {/* Empleado */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Empleado:</label>
+                        <Select
+                          options={empleadoOptions}
+                          value={selectedEmpleado}
+                          onChange={handleUpdateEmpleado}
+                          placeholder="Seleccionar empleado..."
+                          className="text-sm"
+                          isClearable
+                        />
+                      </div>
+
+                      {/* Placa Moto */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Placa Moto:</label>
+                        <input
+                          type="text"
+                          value={placaMoto}
+                          onChange={(e) => handleUpdatePlaca(e.target.value)}
+                          placeholder="Ej: ABC-123"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      {/* Método de Pago */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Método de Pago:</label>
+                        <select
+                          value={metodoPago}
+                          onChange={(e) => handleUpdateMetodoPago(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Seleccionar...</option>
+                          <option value="efectivo">Efectivo</option>
+                          <option value="tarjeta">Tarjeta</option>
+                          <option value="transferencia">Transferencia</option>
+                          <option value="yape">Yape</option>
+                          <option value="plin">Plin</option>
+                        </select>
+                      </div>
+
+                      {/* Observaciones */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
+                        <textarea
+                          value={observaciones}
+                          onChange={(e) => handleUpdateObservaciones(e.target.value)}
+                          placeholder="Observaciones adicionales..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          rows="3"
+                        />
+                      </div>
+
+                      {/* Total */}
+                      <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+                        <div className="text-lg font-bold text-green-800">
+                          Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
+                        </div>
+                      </div>
+
+                      {/* Botones de acción */}
+                      <div className="space-y-3">
+                        <button
+                          onClick={handleGuardarCotizacion}
+                          disabled={!selectedCliente || itemsCotizacionActiva.length === 0}
+                          className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                        >
+                          <DocumentTextIcon className="h-5 w-5 mr-2" />
+                          Guardar como Pendiente
+                        </button>
+                        
+                        <button
+                          onClick={() => router.push('/cotizaciones')}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                        >
+                          <CheckIcon className="h-5 w-5 mr-2" />
+                          Ver Todas las Cotizaciones
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Lista de Items de la Cotización Activa */}
-            {cotizacionActiva && (
-              <div className="w-96 bg-gray-50 border-l flex flex-col flex-shrink-0">
-                <div className="p-4 flex-shrink-0">
-                  <h3 className="text-lg font-semibold mb-4">Items de la Cotización</h3>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto px-4 pb-4 custom-scrollbar">
-                  {itemsCotizacionActiva.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">No hay productos en esta cotización</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {itemsCotizacionActiva.map(item => (
-                        <div key={item.id} className="bg-white p-3 rounded-lg border flex-shrink-0">
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1 min-w-0">
-                              <h5 className="font-medium text-gray-900 truncate">{item.nombreProducto}</h5>
-                              <p className="text-sm text-gray-600 truncate">{item.marca}</p>
-                            </div>
-                            <button
-                              onClick={() => handleRemoveItem(item.id, item.subtotal)}
-                              className="text-red-500 hover:text-red-700 p-1 flex-shrink-0"
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            <div>
-                              <span className="text-gray-500">Cantidad:</span>
-                              <span className="ml-1 font-medium">{item.cantidad}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Precio:</span>
-                              <span className="ml-1 font-medium">S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}</span>
-                            </div>
-                          </div>
-                          <div className="mt-2 pt-2 border-t">
-                            <div className="text-right">
-                              <span className="text-gray-500">Subtotal:</span>
-                              <span className="ml-2 font-bold text-green-600">
-                                S/. {parseFloat(item.subtotal || 0).toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
+              {/* Panel Derecho - Buscador y Items */}
+              <div className="col-span-12 lg:col-span-8">
+                {/* Buscador de Productos */}
+                <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
+                  <div className="p-4">
+                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
+                    <div className="relative">
+                      <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
+                        className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {isSearching && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
                         </div>
-                      ))}
+                      )}
+                    </div>
+                    
+                    <div className="text-sm text-gray-600 mt-2">
+                      {searchTerm.trim() === '' ? (
+                        'Escribe para buscar productos...'
+                      ) : (
+                        `${filteredProductos.length} productos encontrados`
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dropdown de productos */}
+                  {searchTerm.trim() !== '' && (
+                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+                      {isSearching ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        </div>
+                      ) : filteredProductos.length === 0 ? (
+                        <div className="p-4 text-center text-gray-500">
+                          <p>No se encontraron productos</p>
+                        </div>
+                      ) : (
+                        <div className="max-h-80">
+                          {filteredProductos.slice(0, 20).map(producto => (
+                            <div
+                              key={producto.id}
+                              className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                              onClick={() => {
+                                handleSelectProduct(producto);
+                                setSearchTerm('');
+                              }}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-medium text-gray-900 truncate">
+                                    {producto.nombre} ({producto.codigoTienda})
+                                  </h4>
+                                  <p className="text-sm text-gray-600 truncate">
+                                    <span className="font-medium">Marca:</span> {producto.marca || 'Sin marca'}
+                                  </p>
+                                  <p className="text-sm text-gray-600 truncate">
+                                    <span className="font-medium">Color:</span> {producto.descripcion || 'N/A'}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    <span className="font-medium">Stock:</span> {producto.stockActual || 0}
+                                  </p>
+                                  {producto.modelosCompatiblesIds && producto.modelosCompatiblesIds.length > 0 && (
+                                    <p className="text-sm text-blue-600 truncate">
+                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesIds.slice(0, 3).join(', ')}{producto.modelosCompatiblesIds.length > 3 ? '...' : ''}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-4">
+                                  <p className="font-semibold text-green-600 text-lg">
+                                    S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    Stock: {producto.stockActual || 0}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {filteredProductos.length > 20 && (
+                            <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                              Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Modal de Cantidad y Precio */}
-        <Transition.Root show={showQuantityModal} as={Fragment}>
-          <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0"
-              enterTo="opacity-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100"
-              leaveTo="opacity-0"
-            >
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
-            </Transition.Child>
-
-            <div className="fixed inset-0 z-50 overflow-y-auto">
-              <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-                <Transition.Child
-                  as={Fragment}
-                  enter="ease-out duration-300"
-                  enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                  enterTo="opacity-100 translate-y-0 sm:scale-100"
-                  leave="ease-in duration-200"
-                  leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-                  leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                >
-                  <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
-                    <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                      <button
-                        type="button"
-                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                        onClick={() => setShowQuantityModal(false)}
-                      >
-                        <span className="sr-only">Cerrar</span>
-                        <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                      </button>
+                {/* Items de la Cotización */}
+                {!cotizacionActiva ? (
+                  <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                    <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                    <h3 className="text-xl font-medium text-gray-600 mb-2">Selecciona o crea una cotización</h3>
+                    <p className="text-gray-500">Crea una nueva cotización o selecciona una existente para comenzar a agregar productos</p>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-gray-200 rounded-lg">
+                    <div className="p-4 border-b border-gray-200">
+                      <h3 className="text-xl font-semibold text-gray-800">
+                        Items de la Cotización: {cotizacionActiva.numeroCotizacion || 'Nueva'}
+                      </h3>
+                      <div className="mt-3 bg-gradient-to-r from-blue-50 to-blue-100 p-3 rounded-lg border border-blue-200">
+                        <div className="text-lg font-bold text-blue-800">
+                          Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="sm:flex sm:items-start">
-                      <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                        <ShoppingCartIcon className="h-6 w-6 text-blue-600" aria-hidden="true" />
-                      </div>
-                      <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                        <Dialog.Title as="h3" className="text-base font-semibold leading-6 text-gray-900">
-                          Agregar Producto a Cotización
-                        </Dialog.Title>
-                        
-                        {selectedProduct && (
-                          <div className="mt-4">
-                            <div className="bg-gray-50 p-3 rounded-lg mb-4">
-                              <h4 className="font-medium text-gray-900">{selectedProduct.nombre}</h4>
-                              <p className="text-sm text-gray-600">{selectedProduct.marca || 'Sin marca'}</p>
-                              <p className="text-sm text-gray-500">Stock disponible: {selectedProduct.stockActual || 0}</p>
-                            </div>
-
-                            <div className="space-y-4">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                  Cantidad
-                                </label>
-                                <input
-                                  type="number"
-                                  value={quantity}
-                                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                                  min="1"
-                                  max={selectedProduct.stockActual || 999}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                  Precio de Venta (S/.)
-                                </label>
-                                <input
-                                  type="number"
-                                  value={precioVenta}
-                                  onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
-                                  min="0"
-                                  step="0.01"
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                />
-                              </div>
-
-                              <div className="bg-blue-50 p-3 rounded-lg">
-                                <div className="text-sm text-gray-600">
-                                  <div className="flex justify-between">
-                                    <span>Subtotal:</span>
-                                    <span className="font-semibold">S/. {(quantity * precioVenta).toFixed(2)}</span>
+                    <div className="p-4">
+                      {itemsCotizacionActiva.length === 0 ? (
+                        <div className="text-center py-12">
+                          <ShoppingCartIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                          <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en esta cotización</h4>
+                          <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {itemsCotizacionActiva.map(item => (
+                            <div key={item.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-start justify-between mb-3">
+                                    <div className="flex-1">
+                                      <h5 className="font-semibold text-gray-900 text-lg">
+                                        {item.nombreProducto}
+                                      </h5>
+                                      <p className="text-sm text-gray-600">Código: {item.codigoTienda}</p>
+                                      <p className="text-sm text-gray-600">Marca: {item.marca}</p>
+                                      {item.descripcion && (
+                                        <p className="text-sm text-gray-500">Color: {item.descripcion}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex space-x-2 flex-shrink-0 ml-4">
+                                      <button
+                                        onClick={() => handleEditItem(item)}
+                                        className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition-colors"
+                                        title="Editar cantidad y precio"
+                                      >
+                                        <PencilIcon className="h-5 w-5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleRemoveItem(item.id, item.subtotal)}
+                                        className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition-colors"
+                                        title="Eliminar producto"
+                                      >
+                                        <TrashIcon className="h-5 w-5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-3 gap-4 text-sm">
+                                    <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                      <span className="text-gray-500 block">Cantidad:</span>
+                                      <span className="font-semibold text-gray-900 text-lg">{item.cantidad}</span>
+                                    </div>
+                                    <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                      <span className="text-gray-500 block">Precio Unitario:</span>
+                                      <span className="font-semibold text-gray-900 text-lg">S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}</span>
+                                    </div>
+                                    <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-lg border border-green-200">
+                                      <span className="text-green-700 block">Subtotal:</span>
+                                      <span className="font-bold text-green-800 text-lg">S/. {parseFloat(item.subtotal || 0).toFixed(2)}</span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-
-                    <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                      <button
-                        type="button"
-                        className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto"
-                        onClick={handleAddProductToCotizacion}
-                        disabled={!cotizacionActiva || quantity <= 0 || precioVenta <= 0}
-                      >
-                        Agregar a Cotización
-                      </button>
-                      <button
-                        type="button"
-                        className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
-                        onClick={() => setShowQuantityModal(false)}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </Dialog.Panel>
-                </Transition.Child>
+                  </div>
+                )}
               </div>
             </div>
-          </Dialog>
-        </Transition.Root>
+          </div>
+        </div>
       </div>
+
+      {/* Modal de Cantidad y Precio */}
+      <Transition.Root show={showQuantityModal} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                enterTo="opacity-100 translate-y-0 sm:scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              >
+                <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                  <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+                    <button
+                      type="button"
+                      className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      onClick={() => setShowQuantityModal(false)}
+                    >
+                      <span className="sr-only">Cerrar</span>
+                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <div className="sm:flex sm:items-start">
+                    <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                      <ShoppingCartIcon className="h-6 w-6 text-blue-600" aria-hidden="true" />
+                    </div>
+                    <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                      <Dialog.Title as="h3" className="text-base font-semibold leading-6 text-gray-900">
+                        Agregar Producto a Cotización
+                      </Dialog.Title>
+                      
+                      {selectedProduct && (
+                        <div className="mt-4">
+                          <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                            <h4 className="font-medium text-gray-900">
+                              {selectedProduct.nombre} ({selectedProduct.codigoTienda})
+                            </h4>
+                            <p className="text-sm text-gray-600">{selectedProduct.marca || 'Sin marca'}</p>
+                            <p className="text-sm text-gray-500">Stock disponible: {selectedProduct.stockActual || 0}</p>
+                          </div>
+
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Cantidad
+                              </label>
+                              <input
+                                type="number"
+                                value={quantity}
+                                onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                                min="1"
+                                max={selectedProduct.stockActual || 999}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Precio de Venta (S/.)
+                              </label>
+                              <input
+                                type="number"
+                                value={precioVenta}
+                                onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
+                                min="0"
+                                step="0.01"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                              <div className="text-sm text-gray-700">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-medium">Subtotal:</span>
+                                  <span className="font-bold text-blue-800 text-lg">S/. {(quantity * precioVenta).toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                    <button
+                      type="button"
+                      className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      onClick={handleAddProductToCotizacion}
+                      disabled={!cotizacionActiva || quantity <= 0 || precioVenta <= 0}
+                    >
+                      Agregar a Cotización
+                    </button>
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                      onClick={() => setShowQuantityModal(false)}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
+
+      {/* Modal de Edición de Item */}
+      <Transition.Root show={showEditItemModal} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={setShowEditItemModal}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 z-50 overflow-y-auto">
+            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+                enterTo="opacity-100 translate-y-0 sm:scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+                leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              >
+                <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                  <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+                    <button
+                      type="button"
+                      className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      onClick={() => setShowEditItemModal(false)}
+                    >
+                      <span className="sr-only">Cerrar</span>
+                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <div className="sm:flex sm:items-start">
+                    <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
+                      <PencilIcon className="h-6 w-6 text-yellow-600" aria-hidden="true" />
+                    </div>
+                    <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                      <Dialog.Title as="h3" className="text-base font-semibold leading-6 text-gray-900">
+                        Editar Producto
+                      </Dialog.Title>
+                      
+                      {editingItem && (
+                        <div className="mt-4">
+                          <div className="bg-gray-50 p-4 rounded-lg mb-4">
+                            <h4 className="font-medium text-gray-900">
+                              {editingItem.nombreProducto} ({editingItem.codigoTienda})
+                            </h4>
+                            <p className="text-sm text-gray-600">{editingItem.marca}</p>
+                          </div>
+
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Cantidad
+                              </label>
+                              <input
+                                type="number"
+                                value={editQuantity}
+                                onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                                min="1"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Precio de Venta (S/.)
+                              </label>
+                              <input
+                                type="number"
+                                value={editPrecio}
+                                onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
+                                min="0"
+                                step="0.01"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+
+                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                              <div className="text-sm text-gray-700">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-medium">Nuevo Subtotal:</span>
+                                  <span className="font-bold text-blue-800 text-lg">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                    <button
+                      type="button"
+                      className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500 sm:ml-3 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      onClick={handleUpdateItem}
+                      disabled={editQuantity <= 0 || editPrecio <= 0}
+                    >
+                      Actualizar
+                    </button>
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                      onClick={() => setShowEditItemModal(false)}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition.Root>
     </Layout>
   );
 };
