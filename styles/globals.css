@@ -1,4 +1,22 @@
 /* styles/globals.css */
+
+@font-face {
+  font-family: 'Simplified Arabic';
+  src: url('/fonts/SimplifiedArabic.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    font-size: 105%; /* Equivalente a 18px (18/16 = 1.125) */
+  }
+  body {
+    font-family: 'Simplified Arabic', 'serif';
+  }
+}

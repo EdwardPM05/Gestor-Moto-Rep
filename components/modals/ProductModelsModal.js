@@ -51,7 +51,7 @@ export default function ProductModelsModal({ isOpen, onClose, product /* , model
                         {/* Iterar sobre los modelos y mostrar cada uno en una celda */}
                         {product.modelosCompatiblesTexto.split(/[,;\n]/).map((modelo, index) =>
                           modelo.trim() ? (
-                            <div key={index} className="px-4 py-2 text-black border-b border-gray-200 last:border-b-0">
+                            <div key={index} className="px-4 py-2 text-black  text-center border-b border-gray-200 last:border-b-0">
                               {modelo.trim()}
                             </div>
                           ) : null

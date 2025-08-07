@@ -1,3 +1,4 @@
+// components/ProductDetailsModal.js
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
@@ -5,34 +6,27 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 export default function ProductDetailsModal({ isOpen, onClose, product /* , modelosMoto ya no lo necesitamos */ }) {
   if (!isOpen || !product) return null;
 
-  // Esta función ya no es necesaria porque modelosCompatiblesIds no se usará para buscar nombres
-  // const getModeloNombre = (modeloId) => {
-  //   const modelo = modelosMoto.find(m => m.id === modeloId);
-  //   return modelo ? `${modelo.marcaModelo} ${modelo.nombreModelo}` : 'Desconocido';
-  // };
-  
-  // Dividimos la descripción por saltos de línea y filtramos los puntos vacíos
   const descriptionPoints = product.descripcionPuntos ? product.descripcionPuntos.split(/\n/).filter(point => point.trim()) : [];
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
         <Transition.Child
-          as={Fragment}
+          as="div"
+          className="fixed inset-0 bg-black bg-opacity-75"
           enter="ease-out duration-300"
           enterFrom="opacity-0"
           enterTo="opacity-100"
           leave="ease-in duration-200"
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black bg-opacity-75" />
-        </Transition.Child>
+        />
 
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4 text-center">
             <Transition.Child
-              as={Fragment}
+              as="div"
+              className="w-full max-w-sm transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all relative"
               enter="ease-out duration-300"
               enterFrom="opacity-0 scale-95"
               enterTo="opacity-100 scale-100"
@@ -40,7 +34,7 @@ export default function ProductDetailsModal({ isOpen, onClose, product /* , mode
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="w-full max-w-sm transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all relative">
+              <Dialog.Panel>
                 <button
                   onClick={onClose}
                   className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
@@ -48,7 +42,8 @@ export default function ProductDetailsModal({ isOpen, onClose, product /* , mode
                   <XMarkIcon className="h-6 w-6" />
                 </button>
 
-                <div className="mt-2 text-gray-500">
+                {/* Aplica la fuente aquí */}
+                <div className="mt-2 text-gray-500 font-simplified-arabic">
                   {descriptionPoints.length > 0 ? (
                     <div className="flex justify-center items-center">
                       <div className="w-full max-w-xs border border-gray-200 rounded-lg overflow-hidden">
