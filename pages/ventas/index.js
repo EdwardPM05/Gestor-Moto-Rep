@@ -20,6 +20,7 @@ import {
   XCircleIcon,
   CheckCircleIcon,
   CurrencyDollarIcon,
+  CreditCardIcon ,
   TagIcon // Importar TagIcon
 } from '@heroicons/react/24/outline';
 
@@ -194,6 +195,10 @@ const VentasIndexPage = () => {
                         {venta.tipoVenta === 'cotizacionAprobada' ? (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                             <TagIcon className="h-4 w-4 mr-1" /> Aprobada (Cot.)
+                          </span>
+                        ) : venta.tipoVenta === 'abono' ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <CreditCardIcon className="h-4 w-4 mr-1" /> Abono
                           </span>
                         ) : (
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">

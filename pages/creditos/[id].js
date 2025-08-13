@@ -19,12 +19,12 @@ import {
 import {
   CreditCardIcon,
   ArrowDownTrayIcon,
-  ShoppingCartIcon,
-  CheckIcon,
   CurrencyDollarIcon,
   CubeIcon,
   ArrowLeftIcon,
-  DocumentIcon // Icono para representar un crédito
+  DocumentIcon,
+  PlusIcon,
+  BanknotesIcon
 } from '@heroicons/react/24/outline';
 
 // Modal de alerta personalizado
@@ -49,15 +49,15 @@ const CustomAlert = ({ message, onClose }) => {
   );
 };
 
-
 const ClienteCreditoDetalle = () => {
   const router = useRouter();
   const { id: clienteId } = router.query;
   const { user } = useAuth();
 
   const [cliente, setCliente] = useState(null);
-  const [creditosConItems, setCreditosConItems] = useState([]); // Array de objetos de crédito, cada uno conteniendo sus items
-  const [productosSeleccionados, setProductosSeleccionados] = useState([]); // [ {itemId, creditoId}, ... ]
+  const [creditosConItems, setCreditosConItems] = useState([]);
+  const [abonos, setAbonos] = useState([]); // Nuevo estado para abonos
+  const [montoAbono, setMontoAbono] = useState(''); // Monto del abono a registrar
   const [metodoPago, setMetodoPago] = useState('efectivo');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -73,7 +73,7 @@ const ClienteCreditoDetalle = () => {
     }
   }, [user, router]);
 
-  // Cargar detalles del cliente y los créditos con sus ítems
+  // Cargar detalles del cliente, créditos con sus ítems y abonos
   useEffect(() => {
     if (!clienteId || !user) {
       setLoading(false);
@@ -88,7 +88,6 @@ const ClienteCreditoDetalle = () => {
         const clientDocRef = doc(db, 'cliente', clienteId);
         const clientDocSnap = await getDoc(clientDocRef);
         if (clientDocSnap.exists()) {
-          // No actualizamos montoCreditoActual aquí inicialmente, lo calcularemos desde los ítems
           setCliente({ id: clientDocSnap.id, ...clientDocSnap.data() });
         } else {
           setError("Cliente no encontrado.");
@@ -107,7 +106,7 @@ const ClienteCreditoDetalle = () => {
         
         console.log("Créditos activos encontrados para clienteId", clienteId, ":", creditosSnapshot.docs.length);
 
-        let totalAdeudadoCalculado = 0; // Variable para sumar el monto real adeudado
+        let totalAdeudadoCalculado = 0;
         const loadedCreditosConItems = [];
         for (const creditoDoc of creditosSnapshot.docs) {
           const creditoData = { id: creditoDoc.id, ...creditoDoc.data(), items: [] };
@@ -116,7 +115,7 @@ const ClienteCreditoDetalle = () => {
           // Fetch items for each credit
           const itemsCreditoQuery = query(
             collection(db, 'creditos', creditoDoc.id, 'itemsCredito'),
-            orderBy('createdAt', 'desc') // Requires a composite index for 'itemsCredito' collection group on 'createdAt'
+            orderBy('createdAt', 'desc')
           );
           const itemsSnapshot = await getDocs(itemsCreditoQuery);
           console.log(`Items en subcolección 'itemsCredito' para crédito ${creditoDoc.id}:`, itemsSnapshot.docs.length);
@@ -124,24 +123,38 @@ const ClienteCreditoDetalle = () => {
           itemsSnapshot.forEach(itemDoc => {
             const itemData = {
               id: itemDoc.id,
-              creditoId: creditoDoc.id, // Add the credit ID to the item
+              creditoId: creditoDoc.id,
               ...itemDoc.data()
             };
             creditoData.items.push(itemData);
-            totalAdeudadoCalculado += (itemData.subtotal || 0); // Sumar al total adeudado
+            totalAdeudadoCalculado += (itemData.subtotal || 0);
           });
           loadedCreditosConItems.push(creditoData);
         }
         
         setCreditosConItems(loadedCreditosConItems);
+
+        // 3. Fetch Abonos del cliente
+        const abonosQuery = query(
+          collection(db, 'abonos'),
+          where('clienteId', '==', clienteId),
+          orderBy('fecha', 'desc')
+        );
+        const abonosSnapshot = await getDocs(abonosQuery);
+        const loadedAbonos = abonosSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setAbonos(loadedAbonos);
+
         // Actualizar el estado del cliente con el monto calculado
         setCliente(prevCliente => ({
             ...prevCliente,
-            montoCreditoActual: totalAdeudadoCalculado // Actualiza el monto con el cálculo real
+            montoCreditoActual: totalAdeudadoCalculado
         }));
         console.log("Todos los créditos con sus ítems cargados:", loadedCreditosConItems);
         console.log("Total adeudado calculado desde ítems:", totalAdeudadoCalculado);
-
+        console.log("Abonos cargados:", loadedAbonos);
 
       } catch (err) {
         console.error('Error al cargar datos del cliente y créditos:', err);
@@ -154,243 +167,125 @@ const ClienteCreditoDetalle = () => {
     fetchClientAndCreditos();
   }, [clienteId, user]);
 
-  // Alternar selección de producto
-  // Ahora productoSeleccionado es un objeto { itemId, creditoId }
-  const toggleProductoSeleccionado = (itemId, creditoId) => {
-    setProductosSeleccionados(prev => {
-      const isSelected = prev.some(
-        (sel) => sel.itemId === itemId && sel.creditoId === creditoId
-      );
-
-      if (isSelected) {
-        return prev.filter(
-          (sel) => !(sel.itemId === itemId && sel.creditoId === creditoId)
-        );
-      } else {
-        return [...prev, { itemId, creditoId }];
-      }
-    });
-  };
-
-  // Calcular total seleccionado
-  const calcularTotalSeleccionado = () => {
-    let total = 0;
-    productosSeleccionados.forEach(selectedItem => {
-      // Buscar el crédito y luego el ítem dentro de ese crédito
-      const credito = creditosConItems.find(c => c.id === selectedItem.creditoId);
-      if (credito) {
-        const item = credito.items.find(i => i.id === selectedItem.itemId);
-        if (item) {
-          total += (item.subtotal || 0);
-        }
-      }
-    });
-    return total;
-  };
-
-  // Procesar pago y convertir a venta
-  const procesarPagoCredito = async () => {
-    if (productosSeleccionados.length === 0) {
-      showAlert('Selecciona al menos un producto para pagar');
+  // Procesar abono
+  const procesarAbono = async () => {
+    const monto = parseFloat(montoAbono);
+    
+    if (!monto || monto <= 0) {
+      showAlert('Ingresa un monto válido para el abono');
       return;
     }
 
-    const totalAPagar = calcularTotalSeleccionado();
+    if (monto > cliente.montoCreditoActual) {
+      showAlert('El monto del abono no puede ser mayor al saldo pendiente');
+      return;
+    }
+
     const confirmPayment = window.confirm(
-      `¿Estás seguro de procesar el pago de S/. ${totalAPagar.toFixed(2)} por los productos seleccionados?`
+      `¿Confirmar abono de S/. ${monto.toFixed(2)} por ${metodoPago}?`
     );
     if (!confirmPayment) {
       return;
     }
 
     try {
-      // Get a fresh client document to ensure we have the latest montoCreditoActual
-      const clientDocRef = doc(db, 'cliente', cliente.id);
-      const clientDocSnap = await getDoc(clientDocRef);
-      if (!clientDocSnap.exists()) {
-          showAlert("Error: Cliente no encontrado para actualizar monto.");
-          return;
-      }
-      const currentClientData = clientDocSnap.data();
-      const currentMontoCreditoActual = currentClientData.montoCreditoActual || 0;
-
-      const itemsAPagar = [];
-      productosSeleccionados.forEach(selectedItem => {
-          const credito = creditosConItems.find(c => c.id === selectedItem.creditoId);
-          if (credito) {
-              const item = credito.items.find(i => i.id === selectedItem.itemId);
-              if (item) {
-                  itemsAPagar.push(item);
-              }
-          }
-      });
-
-      // Create the sale
-      const ventaData = {
+      // 1. Crear registro de abono
+      const abonoData = {
         clienteId: cliente.id,
         clienteNombre: cliente.nombre,
         clienteDNI: cliente.dni,
+        monto: monto,
         metodoPago: metodoPago,
-        totalVenta: totalAPagar,
-        tipoVenta: 'creditoSaldado',
-        estado: 'completada',
-        fechaVenta: new Date(),
-        observaciones: 'Convertido de crédito',
-        empleadoId: user.uid,
+        fecha: new Date(),
+        empleadoId: user.email || user.uid,
+        descripcion: 'Abono a cuenta de crédito',
         createdAt: new Date(),
         updatedAt: new Date()
       };
 
-      const ventaRef = await addDoc(collection(db, 'ventas'), ventaData);
-      console.log("Venta creada con ID:", ventaRef.id);
+      const abonoRef = await addDoc(collection(db, 'abonos'), abonoData);
+      console.log("Abono creado con ID:", abonoRef.id);
 
-      // Create sale items
-      for (const item of itemsAPagar) {
-        await addDoc(collection(db, 'ventas', ventaRef.id, 'itemsVenta'), {
-          productoId: item.productoId || '',
-          nombreProducto: item.nombreProducto,
-          cantidad: item.cantidad,
-          precioVentaUnitario: item.precioVentaUnitario,
-          subtotal: item.subtotal,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
-      }
-      console.log("Items de venta creados.");
+      // 2. Registrar abono como ganancia inmediata (venta tipo abono)
+      const ventaAbonoData = {
+        clienteId: cliente.id,
+        clienteNombre: cliente.nombre,
+        clienteDNI: cliente.dni,
+        metodoPago: metodoPago,
+        totalVenta: monto,
+        tipoVenta: 'abono', // Esto debe aparecer en la tabla de ventas
+        estado: 'completada',
+        fechaVenta: new Date(),
+        observaciones: `Abono a cuenta de crédito - Saldo anterior: S/. ${cliente.montoCreditoActual.toFixed(2)}`,
+        empleadoId: user.email || user.uid,
+        abonoId: abonoRef.id, // Referencia al abono
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
 
-      // Delete paid items from credit and update parent credit status
-      const creditIdsToUpdate = new Set();
-      for (const item of itemsAPagar) {
-        if (item.creditoId && item.id) {
-          await deleteDoc(doc(db, 'creditos', item.creditoId, 'itemsCredito', item.id));
-          creditIdsToUpdate.add(item.creditoId);
-          console.log(`Item ${item.id} deleted from credit ${item.creditoId}`);
-        }
+      await addDoc(collection(db, 'ventas'), ventaAbonoData);
+      console.log("Venta de abono registrada como ganancia");
+
+      // 3. Obtener el saldo actual más reciente del cliente y actualizarlo
+      const clientDocRef = doc(db, 'cliente', cliente.id);
+      const clientDocSnap = await getDoc(clientDocRef);
+      if (!clientDocSnap.exists()) {
+        showAlert("Error: Cliente no encontrado para actualizar saldo.");
+        return;
       }
       
-      // Update parent credit documents if they are now empty
-      for (const creditId of creditIdsToUpdate) {
-        const remainingItemsQuery = query(collection(db, 'creditos', creditId, 'itemsCredito'));
-        const remainingItemsSnapshot = await getDocs(remainingItemsQuery);
-        if (remainingItemsSnapshot.empty) {
-          console.log(`Credit ${creditId} has no more items. Updating its status.`);
-          await updateDoc(doc(db, 'creditos', creditId), {
-            estado: 'completado',
-            updatedAt: new Date(),
-          });
-        }
-      }
-
-      // Update client's current credit amount
-      // This part now uses the fetched currentMontoCreditoActual
-      const nuevoMonto = Math.max(0, currentMontoCreditoActual - totalAPagar);
+      const currentClientData = clientDocSnap.data();
+      const saldoActualReal = currentClientData.montoCreditoActual || 0;
+      const nuevoSaldo = Math.max(0, saldoActualReal - monto);
+      
       await updateDoc(doc(db, 'cliente', cliente.id), {
-        montoCreditoActual: nuevoMonto,
+        montoCreditoActual: nuevoSaldo,
         updatedAt: new Date()
       });
-      console.log(`Monto de crédito del cliente actualizado a S/. ${nuevoMonto.toFixed(2)}`);
-
-      showAlert(`Pago procesado exitosamente por S/. ${totalAPagar.toFixed(2)}. Redirigiendo...`);
-      setTimeout(() => {
-        router.push('/creditos/activos'); // REDIRIGE A LA PÁGINA DE CRÉDITOS ACTIVOS GLOBAL
-      }, 2000);
-
-    } catch (error) {
-      console.error('Error al procesar pago:', error);
-      showAlert('Error al procesar el pago. Inténtalo de nuevo.');
-    }
-  };
-  
-
-  // Generar reporte PDF
-  const generarReportePDF = async (clienteToReport, creditosToReport) => {
-    if (!clienteToReport || creditosToReport.length === 0) {
-      showAlert("No hay créditos o productos para generar el reporte.");
-      return;
-    }
-
-    try {
-      const jsPDF = (await import('jspdf')).default;
-      await import('jspdf-autotable');
-
-      const pdf = new jsPDF();
-      const fechaHoy = new Date().toLocaleDateString('es-PE');
-      let finalY = 20;
-
-      pdf.setFontSize(16);
-      pdf.text('REPORTE DE CRÉDITO DEL CLIENTE', 20, finalY);
-      finalY += 10;
       
-      pdf.setFontSize(12);
-      pdf.text(`Fecha de Emisión: ${fechaHoy}`, 20, finalY);
-      finalY += 10;
+      console.log(`Saldo anterior: S/. ${saldoActualReal.toFixed(2)}, Abono: S/. ${monto.toFixed(2)}, Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
 
-      pdf.text(`Cliente: ${clienteToReport.nombre} ${clienteToReport.apellido || ''}`, 20, finalY);
-      finalY += 7;
-      pdf.text(`DNI: ${clienteToReport.dni}`, 20, finalY);
-      finalY += 7;
-      // Use the actual calculated total from the state for PDF
-      pdf.text(`Total Adeudado: S/. ${cliente.montoCreditoActual.toFixed(2)}`, 20, finalY); 
-      finalY += 15;
-      
-      pdf.setFontSize(14);
-      pdf.text('DETALLE DE CRÉDITOS Y PRODUCTOS', 20, finalY);
-      finalY += 10;
-      
-      for (const credito of creditosToReport) {
-        pdf.setFontSize(12);
-        pdf.text(`Crédito ID: ${credito.id}`, 20, finalY);
-        finalY += 7;
-        pdf.text(`Fecha de Creación: ${credito.fechaCreacion?.toDate ?
-            credito.fechaCreacion.toDate().toLocaleDateString('es-PE') :
-            (credito.fechaCreacion && new Date(credito.fechaCreacion.seconds * 1000 + credito.fechaCreacion.nanoseconds / 1000000).toLocaleDateString('es-PE'))
-        }`, 20, finalY);
-        finalY += 7;
-        pdf.text(`Monto Original: S/. ${credito.totalCredito?.toFixed(2)}`, 20, finalY);
-        finalY += 7;
-        // Calculate the outstanding balance for this specific credit by summing its items
-        const saldoPendienteCredito = credito.items.reduce((sum, item) => sum + item.subtotal, 0);
-        pdf.text(`Saldo Pendiente (de este crédito): S/. ${saldoPendienteCredito.toFixed(2)}`, 20, finalY);
-        finalY += 10;
+      // 4. Si el saldo llega a 0, marcar todos los items como saldados
+      if (nuevoSaldo === 0) {
+        console.log("Saldo llegó a 0, marcando productos como saldados");
+        for (const credito of creditosConItems) {
+          if (credito.items.length > 0) {
+            // Actualizar estado del crédito
+            await updateDoc(doc(db, 'creditos', credito.id), {
+              estado: 'saldado',
+              fechaSaldado: new Date(),
+              updatedAt: new Date()
+            });
 
-        if (credito.items && credito.items.length > 0) {
-          const headers = [["Producto", "Cantidad", "Precio Unitario", "Subtotal"]];
-          const data = credito.items.map(item => [
-            item.nombreProducto,
-            item.cantidad,
-            `S/. ${item.precioVentaUnitario?.toFixed(2)}`,
-            `S/. ${item.subtotal?.toFixed(2)}`
-          ]);
-
-          pdf.autoTable({
-            startY: finalY,
-            head: headers,
-            body: data,
-            theme: 'striped',
-            styles: { fontSize: 9, cellPadding: 2, halign: 'center' },
-            headStyles: { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold' }
-          });
-          finalY = pdf.autoTable.previous.finalY + 10; // Move Y for next section
-        } else {
-          pdf.text('Este crédito no tiene productos pendientes.', 20, finalY);
-          finalY += 10;
+            // Marcar todos los items como saldados (opcional: mover a historial)
+            for (const item of credito.items) {
+              await updateDoc(doc(db, 'creditos', credito.id, 'itemsCredito', item.id), {
+                estado: 'saldado',
+                fechaSaldado: new Date(),
+                updatedAt: new Date()
+              });
+            }
+          }
         }
-        finalY += 5; // Add some space between credits
+        showAlert(`¡Crédito saldado completamente! Abono de S/. ${monto.toFixed(2)} procesado. Redirigiendo...`);
+        setTimeout(() => {
+          router.push('/creditos/activos');
+        }, 2000);
+      } else {
+        // Actualizar estados locales con el saldo correcto
+        setCliente(prev => ({ ...prev, montoCreditoActual: nuevoSaldo }));
+        setAbonos(prev => [{ id: abonoRef.id, ...abonoData }, ...prev]);
+        setMontoAbono('');
+        showAlert(`Abono de S/. ${monto.toFixed(2)} registrado exitosamente. Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
       }
 
-
-      pdf.save(`reporte-credito-${clienteToReport.nombre}-${fechaHoy}.pdf`);
-
     } catch (error) {
-      console.error('Error al generar PDF:', error);
-      showAlert('Error al generar el reporte PDF. Por favor, inténtalo de nuevo.');
+      console.error('Error al procesar abono:', error);
+      showAlert('Error al procesar el abono. Inténtalo de nuevo.');
     }
   };
 
 
-  if (!user) {
-    return null;
-  }
 
   if (loading) {
     return (
@@ -411,7 +306,7 @@ const ClienteCreditoDetalle = () => {
           <p className="text-xl">Ocurrió un error:</p>
           <p className="text-lg">{error}</p>
           <button
-            onClick={() => router.push('/creditos/activos')} // Redirige a la lista de todos los créditos activos
+            onClick={() => router.push('/creditos/activos')}
             className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
             Volver a la lista de créditos
@@ -427,7 +322,7 @@ const ClienteCreditoDetalle = () => {
             <div className="flex flex-col items-center justify-center h-screen text-gray-700">
                 <p className="text-xl">Cliente no encontrado o ID inválido.</p>
                 <button
-                    onClick={() => router.push('/creditos/activos')} // Redirige a la lista de todos los créditos activos
+                    onClick={() => router.push('/creditos/activos')}
                     className="mt-6 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                     Volver a la lista de créditos
@@ -438,6 +333,7 @@ const ClienteCreditoDetalle = () => {
   }
 
   const totalProductosEnCredito = creditosConItems.reduce((count, credito) => count + credito.items.length, 0);
+  const totalAbonos = abonos.reduce((sum, abono) => sum + (abono.monto || 0), 0);
 
   return (
     <Layout title={`Crédito - ${cliente.nombre}`}>
@@ -448,7 +344,7 @@ const ClienteCreditoDetalle = () => {
           <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
             <div className="flex items-center">
               <button
-                onClick={() => router.push('/creditos/activos')} // Redirige a la lista de todos los créditos activos
+                onClick={() => router.push('/creditos/activos')}
                 className="mr-4 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg"
               >
                 <ArrowLeftIcon className="h-5 w-5" />
@@ -462,19 +358,107 @@ const ClienteCreditoDetalle = () => {
               </div>
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-600">Total adeudado</p>
+              <p className="text-sm text-gray-600">Saldo pendiente</p>
               <p className="text-2xl font-bold text-red-600">
-                {/* Usa el montoCreditoActual calculado */}
                 S/. {(cliente.montoCreditoActual || 0).toFixed(2)}
               </p>
+              {totalAbonos > 0 && (
+                <p className="text-sm text-green-600">
+                  Total abonado: S/. {totalAbonos.toFixed(2)}
+                </p>
+              )}
             </div>
           </div>
+
+          {/* Sistema de Abonos */}
+          {cliente.montoCreditoActual > 0 && (
+            <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+              <h3 className="text-lg font-semibold mb-4 flex items-center text-green-800">
+                <BanknotesIcon className="h-5 w-5 mr-2" />
+                Registrar Abono
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Monto del Abono (S/.)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={cliente.montoCreditoActual}
+                    value={montoAbono}
+                    onChange={(e) => setMontoAbono(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Método de Pago
+                  </label>
+                  <select
+                    value={metodoPago}
+                    onChange={(e) => setMetodoPago(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="yape">Yape</option>
+                    <option value="plin">Plin</option>
+                    <option value="tarjeta">Tarjeta</option>
+                  </select>
+                </div>
+                
+                <div className="flex items-end">
+                  <button
+                    onClick={procesarAbono}
+                    disabled={!montoAbono || parseFloat(montoAbono) <= 0}
+                    className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-md font-semibold flex items-center justify-center"
+                  >
+                    <PlusIcon className="h-4 w-4 mr-2" />
+                    Registrar Abono
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Historial de Abonos */}
+          {abonos.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <DocumentIcon className="h-5 w-5 mr-2" />
+                Historial de Abonos ({abonos.length})
+              </h3>
+              <div className="bg-gray-50 rounded-lg p-4 max-h-60 overflow-y-auto">
+                <div className="space-y-2">
+                  {abonos.map((abono) => (
+                    <div key={abono.id} className="flex justify-between items-center p-3 bg-white rounded border">
+                      <div>
+                        <p className="font-semibold text-green-600">S/. {abono.monto?.toFixed(2)}</p>
+                        <p className="text-sm text-gray-600">
+                          {abono.fecha?.toDate ? abono.fecha.toDate().toLocaleDateString('es-PE') : 
+                            (abono.fecha && new Date(abono.fecha.seconds * 1000).toLocaleDateString('es-PE'))}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium capitalize">{abono.metodoPago}</p>
+                        <p className="text-xs text-gray-500">{abono.descripcion}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Créditos y sus productos */}
           <div className="mb-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center">
               <DocumentIcon className="h-5 w-5 mr-2" />
-              Créditos Activos ({creditosConItems.length})
+              Productos en Crédito ({creditosConItems.length} créditos, {totalProductosEnCredito} productos)
             </h2>
 
             {creditosConItems.length === 0 ? (
@@ -519,32 +503,16 @@ const ClienteCreditoDetalle = () => {
                         {credito.items.map((item) => (
                           <div
                             key={item.id}
-                            className={`p-3 rounded-md border-2 cursor-pointer transition-all ${
-                              productosSeleccionados.some(sel => sel.itemId === item.id && sel.creditoId === credito.id)
-                                ? 'border-green-500 bg-green-50'
-                                : 'border-gray-200 bg-white hover:border-blue-100'
-                            }`}
-                            onClick={() => toggleProductoSeleccionado(item.id, credito.id)}
+                            className="p-3 rounded-md border border-gray-200 bg-white"
                           >
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center">
-                                <div className={`w-5 h-5 rounded-full border-2 mr-2 flex items-center justify-center ${
-                                  productosSeleccionados.some(sel => sel.itemId === item.id && sel.creditoId === credito.id)
-                                    ? 'border-green-500 bg-green-500'
-                                    : 'border-gray-300'
-                                }`}>
-                                  {productosSeleccionados.some(sel => sel.itemId === item.id && sel.creditoId === credito.id) && (
-                                    <CheckIcon className="h-3 w-3 text-white" />
-                                  )}
-                                </div>
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 text-sm">
-                                    {item.nombreProducto}
-                                  </h5>
-                                  <p className="text-xs text-gray-600">
-                                    Cant: {item.cantidad} | P. Unit: S/. {item.precioVentaUnitario?.toFixed(2)}
-                                  </p>
-                                </div>
+                              <div>
+                                <h5 className="font-semibold text-gray-800 text-sm">
+                                  {item.nombreProducto}
+                                </h5>
+                                <p className="text-xs text-gray-600">
+                                  Cant: {item.cantidad} | P. Unit: S/. {item.precioVentaUnitario?.toFixed(2)}
+                                </p>
                               </div>
                               <div className="text-right">
                                 <p className="font-bold text-md">
@@ -562,58 +530,7 @@ const ClienteCreditoDetalle = () => {
             )}
           </div>
 
-          {/* Resumen de Selección */}
-          {totalProductosEnCredito > 0 && productosSeleccionados.length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-              <div className="flex justify-between items-center">
-                <p className="text-blue-800">
-                  {productosSeleccionados.length} producto(s) seleccionado(s)
-                </p>
-                <p className="text-blue-800 font-bold text-lg">
-                  Total a pagar por seleccionados: S/. {calcularTotalSeleccionado().toFixed(2)}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Métodos de Pago */}
-          {totalProductosEnCredito > 0 && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-3 flex items-center">
-                <CurrencyDollarIcon className="h-5 w-5 mr-2" />
-                Método de Pago
-              </h3>
-              <div className="grid grid-cols-4 gap-3">
-                {['efectivo', 'tarjeta', 'plin','yape'].map((metodo) => (
-                  <button
-                    key={metodo}
-                    onClick={() => setMetodoPago(metodo)}
-                    className={`p-3 rounded-lg border-2 capitalize transition-all ${
-                      metodoPago === metodo
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 hover:border-blue-300'
-                    }`}
-                  >
-                    {metodo}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Botones de Acción */}
-          {totalProductosEnCredito > 0 && (
-            <div className="flex flex-col md:flex-row gap-3">
-              <button
-                onClick={procesarPagoCredito}
-                disabled={productosSeleccionados.length === 0}
-                className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold flex items-center justify-center"
-              >
-                <ShoppingCartIcon className="h-5 w-5 mr-2" />
-                Procesar Pago y Convertir a Venta
-              </button>
-            </div>
-          )}
+        
         </div>
       </div>
     </Layout>

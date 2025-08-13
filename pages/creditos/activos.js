@@ -4,6 +4,9 @@ import { useRouter } from 'next/router';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { generarPDFCliente, generarPDFPorPeriodo } from '../../components/utils/pdfGenerator';
 import {
     collection,
     query,
@@ -12,15 +15,16 @@ import {
     getDocs,
     orderBy,
     doc,
-    getDoc
+    getDoc,
+    Timestamp
 } from 'firebase/firestore';
 import {
     UsersIcon,
     CreditCardIcon,
     DocumentTextIcon,
-    CubeIcon,
     XMarkIcon,
     PrinterIcon,
+    PlusIcon
 } from '@heroicons/react/24/outline';
 
 // Modal de alerta personalizado
@@ -53,7 +57,6 @@ const ClientePDFModal = ({ isOpen, onClose, clientes, onGeneratePDF, loading }) 
 
     const handleGenerate = () => {
         if (!selectedClienteId) {
-            // Reemplazar alert con el modal de alerta personalizado
             onClose();
             return;
         }
@@ -122,11 +125,18 @@ const ClientesConCreditoActivos = () => {
     const router = useRouter();
     const { user } = useAuth();
     const [clientes, setClientes] = useState([]);
+    const [clientesFiltrados, setClientesFiltrados] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [alertMessage, setAlertMessage] = useState('');
     const [showPDFModal, setShowPDFModal] = useState(false);
     const [generatingPDF, setGeneratingPDF] = useState(false);
+
+    // Estados para filtros
+    const [filterPeriod, setFilterPeriod] = useState('all');
+    const [startDate, setStartDate] = useState(null);
+    const [endDate, setEndDate] = useState(null);
+    const [limitPerPage, setLimitPerPage] = useState(20);
 
     const showAlert = (message) => setAlertMessage(message);
     const closeAlert = () => setAlertMessage('');
@@ -170,38 +180,105 @@ const ClientesConCreditoActivos = () => {
             unsubscribeClientes();
         };
     }, [user]);
-    
-    // Función auxiliar para obtener los detalles del producto desde Firestore
-    const getProductDetails = async (productoId) => {
-        if (!productoId) return {};
-        try {
-            const docRef = doc(db, "productos", productoId); // Asume que tienes una colección llamada "productos"
-            const docSnap = await getDoc(docRef);
 
-            if (docSnap.exists()) {
-                return docSnap.data();
-            } else {
-                console.log("No such document!");
-                return {};
-            }
-        } catch (error) {
-            console.error("Error al obtener detalles del producto:", error);
-            return {};
+    // Función para manejar cambios en los filtros
+    const handleFilterChange = (period) => {
+        setFilterPeriod(period);
+        const now = new Date();
+        let start, end;
+
+        switch (period) {
+            case 'day':
+                start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+                break;
+            case 'week':
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                startOfWeek.setHours(0, 0, 0, 0);
+                start = startOfWeek;
+                end = new Date(startOfWeek);
+                end.setDate(startOfWeek.getDate() + 6);
+                end.setHours(23, 59, 59, 999);
+                break;
+            case 'month':
+                start = new Date(now.getFullYear(), now.getMonth(), 1);
+                end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+                break;
+            default:
+                start = null;
+                end = null;
         }
+
+        setStartDate(start);
+        setEndDate(end);
     };
 
-    // Generar PDF detallado para un cliente específico
-    const generarPDFCliente = async (cliente) => {
+    // Filtrar clientes según el período seleccionado
+    useEffect(() => {
+        const filterClientsByDate = async () => {
+            if (filterPeriod === 'all' || (!startDate && !endDate)) {
+                setClientesFiltrados(clientes.slice(0, limitPerPage));
+                return;
+            }
+
+            if (!startDate || !endDate) {
+                setClientesFiltrados(clientes.slice(0, limitPerPage));
+                return;
+            }
+
+            const clientesFiltradosPromises = clientes.map(async (cliente) => {
+                // Buscar créditos del cliente en el rango de fechas
+                const qCreditos = query(
+                    collection(db, 'creditos'),
+                    where('clienteId', '==', cliente.id),
+                    where('estado', '==', 'activo'),
+                    where('fechaCreacion', '>=', Timestamp.fromDate(startDate)),
+                    where('fechaCreacion', '<=', Timestamp.fromDate(endDate))
+                );
+
+                const creditosSnapshot = await getDocs(qCreditos);
+                
+                if (creditosSnapshot.empty) {
+                    return null; // No incluir este cliente
+                }
+
+                return cliente;
+            });
+
+            const resultados = await Promise.all(clientesFiltradosPromises);
+            const clientesConCreditos = resultados.filter(cliente => cliente !== null);
+            setClientesFiltrados(clientesConCreditos.slice(0, limitPerPage));
+        };
+
+        filterClientsByDate();
+    }, [clientes, filterPeriod, startDate, endDate, limitPerPage]);
+
+    // Generar PDF detallado para un cliente específico - ACTUALIZADA PARA INCLUIR ABONOS
+    const generarPDFClienteHandler = async (cliente) => {
         setGeneratingPDF(true);
         
         try {
-            // Obtener todos los créditos activos del cliente
-            const qCreditos = query(
-                collection(db, 'creditos'),
-                where('clienteId', '==', cliente.id),
-                where('estado', '==', 'activo'),
-                orderBy('fechaCreacion', 'desc')
-            );
+            // Obtener créditos del cliente según el filtro actual
+            let qCreditos;
+            
+            if (filterPeriod === 'all' || (!startDate && !endDate)) {
+                qCreditos = query(
+                    collection(db, 'creditos'),
+                    where('clienteId', '==', cliente.id),
+                    where('estado', '==', 'activo'),
+                    orderBy('fechaCreacion', 'desc')
+                );
+            } else {
+                qCreditos = query(
+                    collection(db, 'creditos'),
+                    where('clienteId', '==', cliente.id),
+                    where('estado', '==', 'activo'),
+                    where('fechaCreacion', '>=', Timestamp.fromDate(startDate)),
+                    where('fechaCreacion', '<=', Timestamp.fromDate(endDate)),
+                    orderBy('fechaCreacion', 'desc')
+                );
+            }
             
             const creditosSnapshot = await getDocs(qCreditos);
             const creditos = [];
@@ -228,12 +305,48 @@ const ClientesConCreditoActivos = () => {
             }
 
             if (creditos.length === 0) {
-                showAlert('Este cliente no tiene créditos activos para generar reporte.');
+                showAlert('Este cliente no tiene créditos activos para el período seleccionado.');
                 return;
             }
 
-            // Generar PDF
-            await generarPDF(cliente, creditos);
+            // OBTENER ABONOS DEL CLIENTE
+            let qAbonos;
+            if (filterPeriod === 'all' || (!startDate && !endDate)) {
+                qAbonos = query(
+                    collection(db, 'abonos'),
+                    where('clienteId', '==', cliente.id),
+                    orderBy('fecha', 'desc')
+                );
+            } else {
+                qAbonos = query(
+                    collection(db, 'abonos'),
+                    where('clienteId', '==', cliente.id),
+                    where('fecha', '>=', Timestamp.fromDate(startDate)),
+                    where('fecha', '<=', Timestamp.fromDate(endDate)),
+                    orderBy('fecha', 'desc')
+                );
+            }
+            
+            const abonosSnapshot = await getDocs(qAbonos);
+            const abonos = abonosSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Obtener el nombre del período para el PDF
+            const getPeriodoNombre = () => {
+                switch (filterPeriod) {
+                    case 'day': return 'HOY';
+                    case 'week': return 'ESTA SEMANA';
+                    case 'month': return 'ESTE MES';
+                    case 'custom': return `${startDate?.toLocaleDateString('es-PE')} - ${endDate?.toLocaleDateString('es-PE')}`;
+                    default: return '';
+                }
+            };
+
+            // Generar PDF usando la función actualizada que incluye abonos
+            const mensaje = await generarPDFCliente(cliente, creditos, abonos, getPeriodoNombre());
+            showAlert(mensaje);
             
         } catch (error) {
             console.error('Error al generar PDF del cliente:', error);
@@ -243,226 +356,36 @@ const ClientesConCreditoActivos = () => {
         }
     };
 
-    // Función para generar el PDF con un diseño de cotización
-    const generarPDF = async (cliente, creditos) => {
+    // Generar PDF por período (todos los clientes del período)
+    const generarPDFPorPeriodoHandler = async () => {
+        setGeneratingPDF(true);
+        
         try {
-            const { jsPDF } = await import('jspdf');
-            
-            const pdf = new jsPDF({
-                orientation: 'p',
-                unit: 'mm',
-                format: 'a4',
-            });
-            const pageWidth = pdf.internal.pageSize.width;
-            const pageHeight = pdf.internal.pageSize.height;
-            const margin = 10; // Margen reducido
-            const totalWidth = pageWidth - 2 * margin;
-            
-            let currentY = 15;
-
-            // =========================================================================
-            // ENCABEZADO: INFORMACIÓN DE LA EMPRESA, CRÉDITO Y VENDEDOR
-            // =========================================================================
-
-            // Configuración de la fuente por defecto
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(12); // Fuente más pequeña
-            
-            // Título de la empresa (izquierda)
-            pdf.text('MOTORES & REPUESTOS SAC', margin, currentY);
-            
-            // Número de crédito (derecha)
-            pdf.text(`CRÉDITO Nro. ${creditos[0]?.numeroCredito || 'N/A'}`, pageWidth - margin, currentY, { align: 'right' });
-            currentY += 5;
-
-            pdf.setFontSize(8); // Fuente más pequeña para los detalles
-            pdf.setFont('helvetica', 'normal');
-            
-            // Detalles de la empresa (izquierda)
-            pdf.text('R.U.C: 20123456789', margin, currentY);
-            pdf.text('Email: motoresrepuestos@mail.com', margin, currentY + 4);
-            pdf.text('Dirección: Av. Los Motores 456, San Borja', margin, currentY + 8);
-            pdf.text('Teléfono: 999 888 777', margin, currentY + 12);
-            pdf.text('Credito realizado en tienda Av.Los Motores 456 San Borja', margin, currentY + 16);
-            currentY += 20;
-            
-
-            // Información de la cotización (abajo del encabezado)
-            pdf.setFontSize(8);
-            pdf.setFont('helvetica', 'normal');
-            
-            const fechaCreacion = creditos[0]?.fechaCreacion?.toDate ? 
-                creditos[0].fechaCreacion.toDate().toLocaleDateString('es-PE') : 
-                new Date().toLocaleDateString('es-PE');
-            
-            pdf.text('FECHA DE CREACIÓN:', margin, currentY);
-            pdf.setFont('helvetica', 'normal');
-            pdf.text(fechaCreacion, margin + 33, currentY);
-
-            pdf.setFont('helvetica', 'normal');
-            pdf.text('FORMA DE PAGO:', pageWidth / 2, currentY);
-            pdf.setFont('helvetica', 'normal');
-            pdf.text('  Todos los medios de pago', pageWidth / 2 + 25, currentY);
-            currentY += 5;
-
-            // Línea divisora
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 5;
-
-            // =========================================================================
-            // INFORMACIÓN DEL CLIENTE
-            // =========================================================================
-
-            pdf.setFontSize(8);
-            pdf.setFont('helvetica', 'bold');
-            pdf.text('CLIENTE:', margin, currentY);
-            pdf.setFont('helvetica', 'normal');
-            pdf.text(`${cliente.nombre} ${cliente.apellido || ''}`, margin + 15, currentY);
-            currentY += 5;
-            
-            pdf.setFont('helvetica', 'bold');
-            pdf.text('DNI:', margin, currentY);
-            pdf.setFont('helvetica', 'normal');
-            // Corrección: se convierte el DNI a string para evitar errores con jsPDF
-            pdf.text(String(cliente.dni || 'N/A'), margin + 15, currentY);
-            currentY += 7;
-            
-            // =========================================================================
-            // TABLA DE ITEMS
-            // =========================================================================
-
-            // Se cambian los encabezados de la tabla
-            const tableHeaders = ['Cód. Tienda', 'Descripcion', 'Color', 'Medida', 'Marca', 'Ubicación', 'Cant.', 'P. Unitario', 'P. Total'];
-            
-            // Se ajustan los anchos de las columnas para que sean más compactos
-            const colWidths = [
-                totalWidth * 0.15, // Cód. Tienda (Nuevo)
-                totalWidth * 0.23, // Item (ajustado para ser más ancho)
-                totalWidth * 0.1,  // Color
-                totalWidth * 0.13, // Medida
-                totalWidth * 0.1,  // Marca
-                totalWidth * 0.1,  // Ubicación (ajustado)
-                totalWidth * 0.05, // Cant. (ajustado para ser más pequeño)
-                totalWidth * 0.08, // Precio Unitario (ajustado)
-                totalWidth * 0.06  // Precio Total (ajustado)
-            ];
-            let currentX = margin;
-
-            pdf.setFontSize(8); // Fuente más pequeña para la tabla
-            pdf.setFont('helvetica', 'bold');
-            
-            // Línea de la tabla
-            pdf.setDrawColor(0, 0, 0);
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-
-            // Encabezados de la tabla
-            tableHeaders.forEach((header, index) => {
-                pdf.text(header, currentX, currentY);
-                currentX += colWidths[index];
-            });
-            currentY += 3;
-
-            // Línea de la tabla
-            pdf.setDrawColor(0, 0, 0);
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            
-            pdf.setFont('helvetica', 'normal');
-            let totalGeneral = 0;
-
-            for (const credito of creditos) {
-                // Se usa 'items' como se llama el array de productos
-                if (credito.items && credito.items.length > 0) {
-                    for (const item of credito.items) {
-                        // Obtener los detalles del producto usando el productoId
-                        const productDetails = await getProductDetails(item.productoId);
-                        
-                        // Añadir nueva página si es necesario
-                        if (currentY > pageHeight - 30) { // Se reduce el espacio de seguridad
-                            pdf.addPage();
-                            currentY = 15;
-                            // Volver a dibujar los encabezados en la nueva página
-                            currentX = margin;
-                            pdf.setFont('helvetica', 'bold');
-                            pdf.setFontSize(8);
-                            pdf.line(margin, currentY, pageWidth - margin, currentY);
-                            currentY += 3;
-                            tableHeaders.forEach((header, idx) => {
-                                pdf.text(header, currentX, currentY);
-                                currentX += colWidths[idx];
-                            });
-                            currentY += 3;
-                            pdf.line(margin, currentY, pageWidth - margin, currentY);
-                            currentY += 3;
-                            pdf.setFont('helvetica', 'normal');
-                        }
-                        
-                        currentX = margin;
-                        // Nuevo campo: Código de Tienda
-                        pdf.text(productDetails.codigoTienda || 'N/A', currentX, currentY);
-                        currentX += colWidths[0];
-                        // Campo Item
-                        pdf.text(item.nombreProducto || 'N/A', currentX, currentY);
-                        currentX += colWidths[1];
-                        // Nuevas columnas - se usan los datos de productDetails
-                        pdf.text(productDetails.color || 'N/A', currentX, currentY, { align: 'left' });
-                        currentX += colWidths[2];
-                        pdf.text(productDetails.medida || 'N/A', currentX, currentY, { align: 'left' });
-                        currentX += colWidths[3];
-                        pdf.text(productDetails.marca || 'N/A', currentX, currentY, { align: 'left' });
-                        currentX += colWidths[4];
-                        pdf.text(productDetails.ubicacion || 'N/A', currentX, currentY, { align: 'left' });
-                        currentX += colWidths[5];
-                        pdf.text(String(item.cantidad || 0), currentX, currentY, { align: 'left' });
-                        currentX += colWidths[6];
-                        
-                        // Se cambia el texto a "Precio Unitario"
-                        pdf.text(`S/. ${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`, currentX, currentY, { align: 'left' });
-                        currentX += colWidths[7];
-                        
-                        // Se cambia el texto a "Precio Total"
-                        pdf.text(`S/. ${parseFloat(item.subtotal || 0).toFixed(2)}`, currentX, currentY, { align: 'left' });
-                        
-                        totalGeneral += parseFloat(item.subtotal || 0);
-                        currentY += 5; // Espacio entre filas reducido
-                    }
-                }
+            if (clientesFiltrados.length === 0) {
+                showAlert('No hay clientes con crédito para el período seleccionado.');
+                return;
             }
 
-            currentY += 5;
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 5;
+            const getPeriodoNombre = () => {
+                switch (filterPeriod) {
+                    case 'day': return 'HOY';
+                    case 'week': return 'ESTA SEMANA';
+                    case 'month': return 'ESTE MES';
+                    case 'custom': return `${startDate?.toLocaleDateString('es-PE')} - ${endDate?.toLocaleDateString('es-PE')}`;
+                    default: return 'TODOS LOS PERÍODOS';
+                }
+            };
 
-            // =========================================================================
-            // TOTALES
-            // =========================================================================
-            
-            pdf.setFont('helvetica', 'bold');
-            pdf.setFontSize(10); // Fuente más pequeña para los totales
-            
-            // Se corrige la posición para que no se superponga con la línea
-            pdf.text('TOTAL:', pageWidth - margin - 50, currentY);
-            pdf.text(`S/. ${totalGeneral.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-            currentY += 6;
-
-            // Pie de página
-            pdf.setFontSize(8);
-            pdf.setFont('helvetica', 'normal');
-            pdf.text(`Reporte generado el ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-            
-            // Guardar PDF
-            const fileName = `reporte-credito-${cliente.nombre.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`;
-            pdf.save(fileName);
-            
-            showAlert(`Reporte PDF generado exitosamente para ${cliente.nombre} ${cliente.apellido || ''}`);
+            const mensaje = await generarPDFPorPeriodo(clientesFiltrados, getPeriodoNombre());
+            showAlert(mensaje);
             
         } catch (error) {
-            console.error('Error al generar PDF:', error);
+            console.error('Error al generar PDF por período:', error);
             showAlert('Error al generar el reporte PDF. Por favor, inténtalo de nuevo.');
+        } finally {
+            setGeneratingPDF(false);
         }
     };
-
 
     if (!user) return null;
 
@@ -472,43 +395,148 @@ const ClientesConCreditoActivos = () => {
             <ClientePDFModal 
                 isOpen={showPDFModal}
                 onClose={() => setShowPDFModal(false)}
-                clientes={clientes.filter(c => c.montoCreditoActual > 0)}
-                onGeneratePDF={generarPDFCliente}
+                clientes={clientesFiltrados.filter(c => c.montoCreditoActual > 0)}
+                onGeneratePDF={generarPDFClienteHandler}
                 loading={generatingPDF}
             />
             
             <div className="flex flex-col mx-4 py-4">
                 <div className="w-full p-4 bg-white rounded-lg shadow-md flex flex-col">
 
-                    {/* Header principal */}
+                    {/* Header principal con botón Nueva Cotización */}
                     <div className="flex flex-col md:flex-row items-center justify-between mb-6 pb-4 border-b border-gray-200">
                         <div className="flex items-center mb-4 md:mb-0">
                             <UsersIcon className="h-8 w-8 text-blue-600 mr-2" />
                             <h1 className="text-xl font-bold text-gray-700">Sistema de Créditos Activos</h1>
                         </div>
 
-                        {/* Botón de Reporte */}
+                        {/* Botón Nueva Cotización */}
                         <div className="flex flex-col sm:flex-row items-center gap-3">
                             <button
-                                onClick={() => setShowPDFModal(true)}
-                                disabled={clientes.filter(c => c.montoCreditoActual > 0).length === 0}
-                                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm w-full sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                onClick={() => router.push('/creditos/nueva')}
+                                className="w-full md:w-auto inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
                             >
-                                <DocumentTextIcon className="h-4 w-4 mr-2" />
-                                Generar Reporte PDF
+                                <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
+                                Nueva Cotización
                             </button>
                         </div>
                     </div>
 
-                    {/* Estadísticas */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    {/* Contenedor de Botones, Fechas y Limitador */}
+                    <div className="flex flex-wrap items-center gap-2 md:gap-4 justify-center md:justify-start mb-6">
+                        
+                        {/* Botones de Filtro */}
+                        <div className="flex space-x-2 flex-wrap">
+                            <button
+                                onClick={() => handleFilterChange('all')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                                    filterPeriod === 'all'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                }`}
+                            >
+                                Todas
+                            </button>
+                            <button
+                                onClick={() => handleFilterChange('day')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                                    filterPeriod === 'day'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                }`}
+                            >
+                                Hoy
+                            </button>
+                            <button
+                                onClick={() => handleFilterChange('week')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                                    filterPeriod === 'week'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                }`}
+                            >
+                                Esta Semana
+                            </button>
+                            <button
+                                onClick={() => handleFilterChange('month')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                                    filterPeriod === 'month'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                                }`}
+                            >
+                                Este Mes
+                            </button>
+                        </div>
+
+                        {/* Selectores de Fecha */}
+                        <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-2 mt-2 md:mt-0">
+                            <DatePicker
+                                selected={startDate}
+                                onChange={(date) => {
+                                    setStartDate(date);
+                                    setFilterPeriod('custom');
+                                }}
+                                selectsStart
+                                startDate={startDate}
+                                endDate={endDate}
+                                placeholderText="Fecha de inicio"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            />
+                            <DatePicker
+                                selected={endDate}
+                                onChange={(date) => {
+                                    setEndDate(date);
+                                    setFilterPeriod('custom');
+                                }}
+                                selectsEnd
+                                startDate={startDate}
+                                endDate={endDate}
+                                minDate={startDate}
+                                placeholderText="Fecha de fin"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                            />
+                        </div>
+
+                        {/* Selector de límite por página */}
+                        <div className="flex-none min-w-[50px]">
+                            <select
+                                id="limit-per-page"
+                                className="mt-0 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-[38px]"
+                                value={limitPerPage}
+                                onChange={(e) => {
+                                    setLimitPerPage(Number(e.target.value));
+                                }}
+                            >
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+                        </div>
+
+                        {/* Botón de Reporte por Período */}
+                        <div className="flex-none">
+                            <button
+                                onClick={generarPDFPorPeriodoHandler}
+                                disabled={clientesFiltrados.length === 0 || generatingPDF}
+                                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
+                            >
+                                <DocumentTextIcon className="h-4 w-4 mr-2" />
+                                {generatingPDF ? 'Generando...' : 'Reporte PDF'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Estadísticas - Solo Total Adeudado y Clientes con Crédito */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                             <div className="flex items-center">
                                 <CreditCardIcon className="h-6 w-6 text-red-600 mr-3" />
                                 <div>
                                     <h3 className="text-sm font-semibold text-red-800">Total Adeudado</h3>
                                     <p className="text-xl font-bold text-red-600">
-                                        S/. {clientes.reduce((total, cliente) => total + (cliente.montoCreditoActual || 0), 0).toFixed(2)}
+                                        S/. {clientesFiltrados.reduce((total, cliente) => total + (cliente.montoCreditoActual || 0), 0).toFixed(2)}
                                     </p>
                                 </div>
                             </div>
@@ -519,22 +547,7 @@ const ClientesConCreditoActivos = () => {
                                 <UsersIcon className="h-6 w-6 text-blue-600 mr-3" />
                                 <div>
                                     <h3 className="text-sm font-semibold text-blue-800">Clientes con Crédito</h3>
-                                    <p className="text-xl font-bold text-blue-600">{clientes.length}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                            <div className="flex items-center">
-                                <CubeIcon className="h-6 w-6 text-green-600 mr-3" />
-                                <div>
-                                    <h3 className="text-sm font-semibold text-green-800">Promedio por Cliente</h3>
-                                    <p className="text-xl font-bold text-green-600">
-                                        S/. {clientes.length > 0 ?
-                                            (clientes.reduce((total, cliente) => total + (cliente.montoCreditoActual || 0), 0) / clientes.length).toFixed(2) :
-                                            '0.00'
-                                        }
-                                    </p>
+                                    <p className="text-xl font-bold text-blue-600">{clientesFiltrados.length}</p>
                                 </div>
                             </div>
                         </div>
@@ -555,12 +568,17 @@ const ClientesConCreditoActivos = () => {
                     )}
 
                     {/* Sin resultados */}
-                    {!loading && !error && clientes.length === 0 && (
-                        <p className="p-4 text-center text-gray-500">No hay clientes con crédito pendiente en este momento.</p>
+                    {!loading && !error && clientesFiltrados.length === 0 && (
+                        <p className="p-4 text-center text-gray-500">
+                            {filterPeriod === 'all' 
+                                ? 'No hay clientes con crédito pendiente en este momento.'
+                                : 'No hay clientes con crédito para el período seleccionado.'
+                            }
+                        </p>
                     )}
 
                     {/* Tabla de clientes */}
-                    {!loading && !error && clientes.length > 0 && (
+                    {!loading && !error && clientesFiltrados.length > 0 && (
                         <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                             <table className="min-w-full border-collapse">
                                 <thead className="bg-gray-50">
@@ -572,7 +590,7 @@ const ClientesConCreditoActivos = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white">
-                                    {clientes.map((cliente, index) => (
+                                    {clientesFiltrados.map((cliente, index) => (
                                         <tr key={cliente.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
                                             <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
                                                 <div className="font-semibold">{cliente.nombre || 'N/A'} {cliente.apellido || ''}</div>
@@ -596,7 +614,7 @@ const ClientesConCreditoActivos = () => {
                                                     </button>
                                                     {cliente.montoCreditoActual > 0 && (
                                                         <button
-                                                            onClick={() => generarPDFCliente(cliente)}
+                                                            onClick={() => generarPDFClienteHandler(cliente)}
                                                             disabled={generatingPDF}
                                                             className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs flex items-center disabled:bg-gray-400"
                                                         >
