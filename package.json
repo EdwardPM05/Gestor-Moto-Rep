@@ -16,8 +16,9 @@
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.536.0",
     "next": "14.0.3",
+    "nodemailer": "^7.0.5",
     "react": "^18",
-    "react-datepicker": "^8.4.0",
+    "react-datepicker": "^8.5.0",
     "react-dom": "^18",
     "react-select": "^5.10.2",
     "react-toastify": "^11.0.5"

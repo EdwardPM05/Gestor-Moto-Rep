@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../contexts/AuthContext';
+import NotificationDropdown from './NotificationDropdown';
 import {
   HomeIcon,
   CubeIcon,
@@ -53,17 +54,16 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Productos',
       icon: CubeIcon,
       adminOnly: true,
-      path: '/productos'
-    },
-    {
-      name: 'Inventario',
-      icon: ClipboardDocumentListIcon,
-      adminOnly: true,
       submenu: [
-        { name: 'Ingresos', path: '/inventario/ingresos' },
-        { name: 'Stock Actual', path: '/inventario/stock' },
+        { name: 'Productos', path: '/productos' },
         { name: 'Faltos', path: '/productos/faltos' }
       ]
+    },
+    {
+      name: 'Ingresos',
+      icon: ClipboardDocumentListIcon,
+      adminOnly: true,
+      path: '/inventario/ingresos'
     },
     {
       name: 'Cotizaciones',
@@ -75,10 +75,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Ventas',
       icon: BanknotesIcon,
       adminOnly: true,
-      submenu: [
-        { name: 'Ventas', path: '/ventas' },
-        { name: 'Ventas del Día', path: '/ventas/ventas-del-dia' }
-      ]
+      path: '/ventas' 
     },
     {
       name: 'Clientes',
@@ -96,10 +93,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Créditos',
       icon: CreditCardIcon,
       adminOnly: true,
-      path: '/creditos/activos' 
+      path: '/creditos/activos'
     },
     {
-      name: 'Empleados', // Este es el apartado que querías
+      name: 'Empleados',
       icon: UserGroupIcon,
       adminOnly: true,
       submenu: [
@@ -110,26 +107,20 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     {
       name: 'Caja',
       icon: ChartBarIcon,
-      adminOnly: true, // Se cambió a true para seguir la lógica de isAdmin
-      submenu: [
-        { name: 'Estado de Caja', path: '/caja/estado' },
-        { name: 'Movimientos', path: '/caja/movimientos' },
-        { name: 'Retiros', path: '/caja/retiros' },
-        { name: 'Ganancias del Día', path: '/caja/ganancias-dia' },
-        { name: 'Ganancias Reales', path: '/caja/ganancias-reales' }
-      ]
-    },
-    {
-      name: 'Reportes',
-      icon: PrinterIcon,
       adminOnly: true,
-      submenu: [
-        { name: 'Reporte de Ventas', path: '/reportes/ventas' },
-        { name: 'Reporte de Inventory', path: '/reportes/inventario' },
-        { name: 'Reporte de Cotizaciones', path: '/reportes/cotizaciones' },
-        { name: 'Reporte de Empleados', path: '/reportes/empleados' }
-      ]
-    }
+      path:'/caja'
+    },
+     /* {
+        name: 'Reportes',
+        icon: PrinterIcon,
+        adminOnly: true,
+        submenu: [
+          { name: 'Reporte de Ventas', path: '/reportes/ventas' },
+          { name: 'Reporte de Inventory', path: '/reportes/inventario' },
+          { name: 'Reporte de Cotizaciones', path: '/reportes/cotizaciones' },
+          { name: 'Reporte de Empleados', path: '/reportes/empleados' }
+        ]
+      }*/
   ];
 
   return (
@@ -152,17 +143,24 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       `}>
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-700">
           <h1 className="text-xl font-bold text-blue-400">GestorMoto</h1>
-          {/* Botón para cerrar el sidebar (siempre visible cuando el sidebar está abierto) */}
-          <button
-            onClick={toggleSidebar}
-            className="p-2 rounded-md hover:bg-gray-800"
-            title="Cerrar Menú"
-          >
-            <ArrowLeftOnRectangleIcon className="h-5 w-5" />
-          </button>
+          
+          {/* Contenedor para notificaciones y botón cerrar */}
+          <div className="flex items-center space-x-2">
+            {/* Componente de notificaciones - solo visible para admin */}
+            {isAdmin && <NotificationDropdown />}
+            
+            {/* Botón para cerrar el sidebar */}
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-md hover:bg-gray-800"
+              title="Cerrar Menú"
+            >
+              <ArrowLeftOnRectangleIcon className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
-        {/* User Info and Navigation (sin cambios) */}
+        {/* User Info and Navigation */}
         <div className="p-4 border-b border-gray-700">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
@@ -230,7 +228,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
           })}
         </nav>
 
-        {/* Logout (sin cambios) */}
+        {/* Logout */}
         <div className="p-4 border-t border-gray-700">
           <button
             onClick={handleLogout}

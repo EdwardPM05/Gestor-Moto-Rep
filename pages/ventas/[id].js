@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, collection, query, getDocs, orderBy } from 'firebase/firestore';
-import { ArrowLeftIcon, ReceiptPercentIcon, UserIcon, CalendarDaysIcon, TagIcon, BanknotesIcon, ShoppingCartIcon, TruckIcon, IdentificationIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ReceiptPercentIcon, UserIcon, CalendarDaysIcon, TagIcon, BanknotesIcon, ShoppingCartIcon, TruckIcon, IdentificationIcon, CreditCardIcon } from '@heroicons/react/24/outline';
 
 const VentaDetailPage = () => {
   const { user } = useAuth();
@@ -96,6 +96,37 @@ const VentaDetailPage = () => {
     fetchVentaDetails();
   }, [id, user, router]);
 
+  // Función para obtener el ícono del método de pago
+  const getPaymentMethodIcon = (method) => {
+    const icons = {
+      'efectivo': '💵',
+      'tarjeta_credito': '💳',
+      'tarjeta_debito': '💳',
+      'transferencia': '🏦',
+      'yape': '📱',
+      'plin': '📲',
+      'deposito': '🏛️',
+      'cheque': '📄'
+    };
+    return icons[method] || '💰';
+  };
+
+  // Función para obtener la etiqueta del método de pago
+  const getPaymentMethodLabel = (method) => {
+    const labels = {
+      'efectivo': 'Efectivo',
+      'tarjeta_credito': 'Tarjeta de Crédito',
+      'tarjeta_debito': 'Tarjeta de Débito',
+      'transferencia': 'Transferencia Bancaria',
+      'yape': 'Yape',
+      'plin': 'Plin',
+      'deposito': 'Depósito Bancario',
+      'cheque': 'Cheque',
+      'mixto': 'Pago Mixto'
+    };
+    return labels[method] || method.charAt(0).toUpperCase() + method.slice(1);
+  };
+
   if (loading) {
     return (
       <Layout title="Cargando Venta...">
@@ -163,6 +194,67 @@ const VentaDetailPage = () => {
     return <ShoppingCartIcon className="h-5 w-5 mr-2" />;
   };
 
+  // Renderizar los métodos de pago
+  const renderPaymentMethods = () => {
+    if (!venta.paymentData) {
+      // Fallback para ventas antiguas sin paymentData
+      return (
+        <div className="flex items-center text-gray-700">
+          <BanknotesIcon className="h-5 w-5 mr-2 text-gray-500" />
+          <p><span className="font-semibold">Método de Pago:</span> {getPaymentMethodLabel(venta.metodoPago || 'efectivo')}</p>
+        </div>
+      );
+    }
+
+    if (venta.paymentData.isMixedPayment && venta.paymentData.paymentMethods) {
+      // Pago mixto - mostrar todos los métodos
+      return (
+        <div className="md:col-span-2">
+          <div className="flex items-start text-gray-700 mb-2">
+            <CreditCardIcon className="h-5 w-5 mr-2 text-gray-500 mt-1" />
+            <div className="flex-1">
+              <p className="font-semibold mb-3">Métodos de Pago (Mixto):</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {venta.paymentData.paymentMethods
+                  .filter(pm => pm.amount > 0)
+                  .map((paymentMethod, index) => (
+                    <div key={index} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-lg border">
+                      <span className="inline-flex items-center text-sm font-medium text-gray-700">
+                        <span className="mr-2 text-lg" role="img" aria-label={paymentMethod.label || paymentMethod.method}>
+                          {getPaymentMethodIcon(paymentMethod.method)}
+                        </span>
+                        {paymentMethod.label || getPaymentMethodLabel(paymentMethod.method)}
+                      </span>
+                      <span className="font-bold text-gray-900">
+                        S/. {parseFloat(paymentMethod.amount).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      // Pago único
+      const singlePayment = venta.paymentData.paymentMethods?.[0] || { method: venta.metodoPago || 'efectivo', amount: venta.totalVenta };
+      return (
+        <div className="flex items-center text-gray-700">
+          <BanknotesIcon className="h-5 w-5 mr-2 text-gray-500" />
+          <p>
+            <span className="font-semibold">Método de Pago:</span>
+            <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              <span className="mr-1" role="img" aria-label={singlePayment.method}>
+                {getPaymentMethodIcon(singlePayment.method)}
+              </span>
+              {getPaymentMethodLabel(singlePayment.method)}
+            </span>
+          </p>
+        </div>
+      );
+    }
+  };
+
   return (
     <Layout title={`Detalle Venta #${venta.numeroVenta || venta.id.substring(0, 8)}`}>
       <div className="flex flex-col mx-4 py-4">
@@ -199,10 +291,10 @@ const VentaDetailPage = () => {
                 </span>
               </p>
             </div>
-            <div className="flex items-center text-gray-700">
-              <BanknotesIcon className="h-5 w-5 mr-2 text-gray-500" />
-              <p><span className="font-semibold">Método de Pago:</span> {venta.metodoPago ? venta.metodoPago.charAt(0).toUpperCase() + venta.metodoPago.slice(1) : 'N/A'}</p>
-            </div>
+            
+            {/* SECCIÓN DE MÉTODOS DE PAGO ACTUALIZADA */}
+            {renderPaymentMethods()}
+
             <div className="flex items-center text-gray-700">
               <ReceiptPercentIcon className="h-5 w-5 mr-2 text-gray-500" />
               <p><span className="font-semibold">Descuento:</span> {parseFloat(venta.descuentoPorcentaje || 0).toFixed(0)}%</p>
@@ -239,7 +331,6 @@ const VentaDetailPage = () => {
               <p><span className="font-semibold">Observaciones:</span> {venta.observaciones || 'Sin observaciones'}</p>
             </div>
           </div>
-
 
           <div className="mb-8">
             <h3 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Productos Vendidos</h3>

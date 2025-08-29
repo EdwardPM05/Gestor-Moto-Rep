@@ -4,6 +4,7 @@ import { useState, useEffect, Fragment } from 'react';
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
+import MixedPaymentModal from '../../components/modals/MixedPaymentModal';
 import { db } from '../../lib/firebase';
 import {
   collection,
@@ -75,6 +76,22 @@ const NuevaCotizacionPage = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
+
+  // Estados para pagos mixtos
+  const [paymentData, setPaymentData] = useState({
+    totalAmount: 0,
+    paymentMethods: [
+      {
+        method: 'efectivo',
+        amount: 0,
+        label: 'EFECTIVO',
+        icon: '💵'
+      }
+    ],
+    isMixedPayment: false
+  });
+
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Cargar datos iniciales (sin productos)
   useEffect(() => {
@@ -178,6 +195,8 @@ const NuevaCotizacionPage = () => {
     return () => clearTimeout(timeoutId);
   }, [searchTerm]);
 
+
+
   // Escuchar cotizaciones pendientes
   useEffect(() => {
     if (!user) return;
@@ -251,6 +270,18 @@ const NuevaCotizacionPage = () => {
     }
   }, [cotizacionActiva, clientes, empleados]);
 
+    // Actualizar el total cuando cambian los items
+  useEffect(() => {
+    const total = parseFloat(cotizacionActiva?.totalCotizacion || 0);
+    setPaymentData(prev => ({
+      ...prev,
+      totalAmount: total,
+      paymentMethods: prev.isMixedPayment 
+        ? prev.paymentMethods 
+        : [{ ...prev.paymentMethods[0], amount: total }]
+    }));
+  }, [cotizacionActiva?.totalCotizacion]);
+
   // Crear nueva cotización
   const handleNuevaCotizacion = async () => {
     setLoading(true);
@@ -284,6 +315,20 @@ const NuevaCotizacionPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePaymentConfirm = (newPaymentData) => {
+    setPaymentData(newPaymentData);
+    setShowPaymentModal(false);
+  };
+
+  const openPaymentModal = () => {
+    const total = parseFloat(cotizacionActiva?.totalCotizacion || 0);
+    if (total <= 0) {
+      setError('Debe añadir al menos un producto antes de configurar el pago.');
+      return;
+    }
+    setShowPaymentModal(true);
   };
 
   // Seleccionar cotización pendiente
@@ -419,86 +464,116 @@ const NuevaCotizacionPage = () => {
   };
 
   // Agregar producto a cotización
+  // Agregar producto a cotización - VERSIÓN ACTUALIZADA CON PRECIO DE COMPRA OCULTO
   const handleAddProductToCotizacion = async () => {
-  if (!cotizacionActiva?.id || !selectedProduct) return;
+    if (!cotizacionActiva?.id || !selectedProduct) return;
 
-  try {
-    const cotizacionItemsRef = collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion');
-    const existingItemQuery = query(cotizacionItemsRef, where('productoId', '==', selectedProduct.id));
-    const existingItemSnapshot = await getDocs(existingItemQuery);
+    try {
+      const cotizacionItemsRef = collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion');
+      const existingItemQuery = query(cotizacionItemsRef, where('productoId', '==', selectedProduct.id));
+      const existingItemSnapshot = await getDocs(existingItemQuery);
 
-    await runTransaction(db, async (transaction) => {
-      const productRef = doc(db, 'productos', selectedProduct.id);
-      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+      await runTransaction(db, async (transaction) => {
+        const productRef = doc(db, 'productos', selectedProduct.id);
+        const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
 
-      const productSnap = await transaction.get(productRef);
-      const cotizacionSnap = await transaction.get(cotizacionRef);
+        const productSnap = await transaction.get(productRef);
+        const cotizacionSnap = await transaction.get(cotizacionRef);
 
-      if (!productSnap.exists() || !cotizacionSnap.exists()) {
-        throw new Error("Producto o cotización no encontrada");
-      }
+        if (!productSnap.exists() || !cotizacionSnap.exists()) {
+          throw new Error("Producto o cotización no encontrada");
+        }
 
-      // OBTENER LOS DATOS MÁS RECIENTES DEL PRODUCTO
-      const productData = productSnap.data();
+        // OBTENER LOS DATOS MÁS RECIENTES DEL PRODUCTO
+        const productData = productSnap.data();
+        
+        // OBTENER PRECIO DE COMPRA (OCULTO PARA EMPLEADOS)
+        const precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
+        
+        // CALCULAR GANANCIA UNITARIA (PRECIO VENTA - PRECIO COMPRA)
+        const gananciaUnitaria = precioVenta - precioCompraUnitario;
+        
+        let itemRef;
+        let newQuantity;
+        let oldSubtotal = 0;
+        let oldGananciaTotal = 0;
 
-      let itemRef;
-      let newQuantity;
-      let oldSubtotal = 0;
+        if (!existingItemSnapshot.empty) {
+          const existingItemDoc = existingItemSnapshot.docs[0];
+          itemRef = existingItemDoc.ref;
+          const existingItemData = existingItemDoc.data();
+          oldSubtotal = parseFloat(existingItemData.subtotal || 0);
+          oldGananciaTotal = parseFloat(existingItemData.gananciaTotal || 0);
+          newQuantity = existingItemData.cantidad + quantity;
+          
+          const newSubtotal = newQuantity * precioVenta;
+          const newGananciaTotal = newQuantity * gananciaUnitaria;
 
-      if (!existingItemSnapshot.empty) {
-        const existingItemDoc = existingItemSnapshot.docs[0];
-        itemRef = existingItemDoc.ref;
-        const existingItemData = existingItemDoc.data();
-        oldSubtotal = parseFloat(existingItemData.subtotal || 0);
-        newQuantity = existingItemData.cantidad + quantity;
-        const newSubtotal = newQuantity * precioVenta;
+          transaction.update(itemRef, {
+            cantidad: newQuantity,
+            subtotal: newSubtotal,
+            precioVentaUnitario: precioVenta,
+            // CAMPOS OCULTOS PARA CÁLCULO DE GANANCIA
+            precioCompraUnitario: precioCompraUnitario, // OCULTO - NO SE MUESTRA EN UI
+            gananciaUnitaria: gananciaUnitaria, // OCULTO - NO SE MUESTRA EN UI  
+            gananciaTotal: newGananciaTotal, // OCULTO - NO SE MUESTRA EN UI
+            // ACTUALIZAR TAMBIÉN EL COLOR DEL PRODUCTO
+            color: productData.color || '',
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          itemRef = doc(cotizacionItemsRef);
+          newQuantity = quantity;
+          const newSubtotal = newQuantity * precioVenta;
+          const newGananciaTotal = newQuantity * gananciaUnitaria;
 
-        transaction.update(itemRef, {
-          cantidad: newQuantity,
-          subtotal: newSubtotal,
-          precioVentaUnitario: precioVenta,
-          // ACTUALIZAR TAMBIÉN EL COLOR DEL PRODUCTO
-          color: productData.color || '',
+          // GUARDAR TODOS LOS DATOS DEL PRODUCTO, INCLUYENDO CAMPOS OCULTOS
+          transaction.set(itemRef, {
+            productoId: selectedProduct.id,
+            nombreProducto: productData.nombre || selectedProduct.nombre,
+            marca: productData.marca || selectedProduct.marca || '',
+            codigoTienda: productData.codigoTienda || selectedProduct.codigoTienda || '',
+            descripcion: productData.descripcion || selectedProduct.descripcion || '',
+            color: productData.color || selectedProduct.color || '',
+            cantidad: newQuantity,
+            precioVentaUnitario: precioVenta,
+            subtotal: newSubtotal,
+            // CAMPOS OCULTOS PARA CÁLCULO DE GANANCIA (NO SE MUESTRAN EN LA INTERFAZ)
+            precioCompraUnitario: precioCompraUnitario, // OCULTO
+            gananciaUnitaria: gananciaUnitaria, // OCULTO
+            gananciaTotal: newGananciaTotal, // OCULTO
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          
+          oldGananciaTotal = 0; // Para el cálculo del total de ganancia
+        }
+
+        // ACTUALIZAR TOTALES EN LA COTIZACIÓN
+        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+        const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
+        
+        const finalItemSubtotal = newQuantity * precioVenta;
+        const finalItemGanancia = newQuantity * gananciaUnitaria;
+        
+        const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
+        const updatedGananciaTotal = currentGananciaTotal - oldGananciaTotal + finalItemGanancia;
+
+        transaction.update(cotizacionRef, {
+          totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+          // CAMPO OCULTO - GANANCIA TOTAL DE LA COTIZACIÓN
+          gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // OCULTO
           updatedAt: serverTimestamp(),
         });
-      } else {
-        itemRef = doc(cotizacionItemsRef);
-        newQuantity = quantity;
-        const newSubtotal = newQuantity * precioVenta;
-
-        // GUARDAR TODOS LOS DATOS DEL PRODUCTO, INCLUYENDO COLOR
-        transaction.set(itemRef, {
-          productoId: selectedProduct.id,
-          nombreProducto: productData.nombre || selectedProduct.nombre,
-          marca: productData.marca || selectedProduct.marca || '',
-          codigoTienda: productData.codigoTienda || selectedProduct.codigoTienda || '',
-          descripcion: productData.descripcion || selectedProduct.descripcion || '',
-          color: productData.color || selectedProduct.color || '', // ASEGURAR QUE SE GUARDE EL COLOR
-          cantidad: newQuantity,
-          precioVentaUnitario: precioVenta,
-          subtotal: newSubtotal,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-
-      const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
-      const finalItemSubtotal = newQuantity * precioVenta;
-      const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
-
-      transaction.update(cotizacionRef, {
-        totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
-        updatedAt: serverTimestamp(),
       });
-    });
 
-    setShowQuantityModal(false);
-    alert('Producto agregado exitosamente');
-  } catch (err) {
-    console.error("Error al agregar producto:", err);
-    setError("Error al agregar producto a la cotización");
-  }
-};
+      setShowQuantityModal(false);
+      alert('Producto agregado exitosamente');
+    } catch (err) {
+      console.error("Error al agregar producto:", err);
+      setError("Error al agregar producto a la cotización");
+    }
+  };
 
   // Abrir modal de edición de item
   const handleEditItem = (item) => {
@@ -509,6 +584,7 @@ const NuevaCotizacionPage = () => {
   };
 
   // Actualizar item de cotización
+  // Actualizar item de cotización - VERSIÓN ACTUALIZADA CON GANANCIA OCULTA
   const handleUpdateItem = async () => {
     if (!cotizacionActiva?.id || !editingItem) return;
 
@@ -516,27 +592,53 @@ const NuevaCotizacionPage = () => {
       await runTransaction(db, async (transaction) => {
         const itemRef = doc(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion', editingItem.id);
         const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+        const productRef = doc(db, 'productos', editingItem.productoId);
 
         const cotizacionSnap = await transaction.get(cotizacionRef);
-        if (!cotizacionSnap.exists()) {
-          throw new Error("Cotización no encontrada");
+        const productSnap = await transaction.get(productRef);
+        
+        if (!cotizacionSnap.exists() || !productSnap.exists()) {
+          throw new Error("Cotización o producto no encontrado");
         }
 
+        // OBTENER PRECIO DE COMPRA ACTUAL DEL PRODUCTO
+        const productData = productSnap.data();
+        const precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
+        
+        // CALCULAR NUEVA GANANCIA UNITARIA
+        const nuevaGananciaUnitaria = editPrecio - precioCompraUnitario;
+        
+        // CÁLCULOS ANTIGUOS PARA RESTAR DEL TOTAL
         const oldSubtotal = parseFloat(editingItem.subtotal || 0);
+        const oldGananciaTotal = parseFloat(editingItem.gananciaTotal || 0);
+        
+        // CÁLCULOS NUEVOS
         const newSubtotal = editQuantity * editPrecio;
+        const newGananciaTotal = editQuantity * nuevaGananciaUnitaria;
 
+        // ACTUALIZAR EL ITEM
         transaction.update(itemRef, {
           cantidad: editQuantity,
           precioVentaUnitario: editPrecio,
           subtotal: newSubtotal,
+          // ACTUALIZAR CAMPOS OCULTOS DE GANANCIA
+          precioCompraUnitario: precioCompraUnitario, // OCULTO
+          gananciaUnitaria: nuevaGananciaUnitaria, // OCULTO
+          gananciaTotal: newGananciaTotal, // OCULTO
           updatedAt: serverTimestamp(),
         });
 
+        // ACTUALIZAR TOTALES EN LA COTIZACIÓN
         const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+        const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
+        
         const updatedTotal = currentTotal - oldSubtotal + newSubtotal;
+        const updatedGananciaTotal = currentGananciaTotal - oldGananciaTotal + newGananciaTotal;
 
         transaction.update(cotizacionRef, {
           totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+          // ACTUALIZAR GANANCIA TOTAL OCULTA
+          gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // OCULTO
           updatedAt: serverTimestamp(),
         });
       });
@@ -550,6 +652,7 @@ const NuevaCotizacionPage = () => {
   };
 
   // Eliminar item de cotización
+  // Eliminar item de cotización - VERSIÓN ACTUALIZADA CON GANANCIA OCULTA
   const handleRemoveItem = async (itemId, subtotal) => {
     if (!cotizacionActiva?.id || !itemId) return;
 
@@ -561,16 +664,31 @@ const NuevaCotizacionPage = () => {
         const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
 
         const cotizacionSnap = await transaction.get(cotizacionRef);
-        if (!cotizacionSnap.exists()) {
-          throw new Error("Cotización no encontrada");
+        const itemSnap = await transaction.get(itemRef);
+        
+        if (!cotizacionSnap.exists() || !itemSnap.exists()) {
+          throw new Error("Cotización o item no encontrado");
         }
 
-        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
-        const updatedTotal = currentTotal - parseFloat(subtotal);
+        // OBTENER DATOS DEL ITEM A ELIMINAR
+        const itemData = itemSnap.data();
+        const itemGananciaTotal = parseFloat(itemData.gananciaTotal || 0);
 
+        // ACTUALIZAR TOTALES DE LA COTIZACIÓN
+        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+        const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
+        
+        const updatedTotal = currentTotal - parseFloat(subtotal);
+        const updatedGananciaTotal = currentGananciaTotal - itemGananciaTotal;
+
+        // ELIMINAR ITEM
         transaction.delete(itemRef);
+        
+        // ACTUALIZAR TOTALES EN COTIZACIÓN
         transaction.update(cotizacionRef, {
           totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+          // ACTUALIZAR GANANCIA TOTAL OCULTA
+          gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // OCULTO
           updatedAt: serverTimestamp(),
         });
       });
@@ -602,14 +720,15 @@ const NuevaCotizacionPage = () => {
 
     try {
       const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
-      await updateDoc(cotizacionRef, {
-        estado: 'pendiente',
-        metodoPago: metodoPago || 'efectivo',
-        placaMoto: placaMoto || null,
-        observaciones: observaciones || '',
-        fechaGuardado: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+    await updateDoc(cotizacionRef, {
+      estado: 'pendiente',
+      metodoPago: paymentData.isMixedPayment ? 'mixto' : (paymentData.paymentMethods[0]?.method || metodoPago || 'efectivo'),
+      paymentData: paymentData, // AÑADIR ESTA LÍNEA
+      placaMoto: placaMoto || null,
+      observaciones: observaciones || '',
+      fechaGuardado: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
 
       alert('Cotización guardada como PENDIENTE exitosamente. Ve al índice de cotizaciones para confirmarla.');
       
@@ -640,6 +759,8 @@ const NuevaCotizacionPage = () => {
     value: empleado.id,
     label: `${empleado.nombre} ${empleado.apellido || ''} - ${empleado.puesto || ''}`.trim()
   }));
+
+  
 
   if (!user) return null;
 
@@ -743,21 +864,50 @@ const NuevaCotizacionPage = () => {
                         />
                       </div>
 
-                      {/* Método de Pago */}
+                      {/* Configuración de Pago */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Método de Pago:</label>
-                        <select
-                          value={metodoPago}
-                          onChange={(e) => handleUpdateMetodoPago(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="">Seleccionar...</option>
-                          <option value="efectivo">Efectivo</option>
-                          <option value="tarjeta">Tarjeta</option>
-                          <option value="transferencia">Transferencia</option>
-                          <option value="yape">Yape</option>
-                          <option value="plin">Plin</option>
-                        </select>
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="block text-sm font-medium text-gray-700">Pago:</label>
+                          <button
+                            type="button"
+                            onClick={openPaymentModal}
+                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200"
+                          >
+                            <CreditCardIcon className="h-4 w-4 mr-1" />
+                            Configurar
+                          </button>
+                        </div>
+
+                        <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-700">Total:</span>
+                            <span className="text-lg font-bold text-gray-900">
+                              S/. {parseFloat(cotizacionActiva?.totalCotizacion || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          
+                          {paymentData.isMixedPayment ? (
+                            <div className="space-y-1">
+                              {paymentData.paymentMethods.map((pm, index) => (
+                                <div key={index} className="flex justify-between items-center text-sm">
+                                  <span className="inline-flex items-center">
+                                    <span className="mr-1">{pm.icon}</span>
+                                    {pm.label}
+                                  </span>
+                                  <span>S/. {pm.amount.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="inline-flex items-center">
+                                <span className="mr-1">{paymentData.paymentMethods[0]?.icon}</span>
+                                {paymentData.paymentMethods[0]?.label}
+                              </span>
+                              <span>S/. {paymentData.paymentMethods[0]?.amount.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Observaciones */}
@@ -912,11 +1062,6 @@ const NuevaCotizacionPage = () => {
                       <h3 className="text-xl font-semibold text-gray-800">
                         Items de la Cotización: {cotizacionActiva.numeroCotizacion || 'Nueva'}
                       </h3>
-                      <div className="mt-3 bg-gradient-to-r from-blue-50 to-blue-100 p-3 rounded-lg border border-blue-200">
-                        <div className="text-lg font-bold text-blue-800">
-                          Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
-                        </div>
-                      </div>
                     </div>
 
                     <div className="p-4">
@@ -933,7 +1078,7 @@ const NuevaCotizacionPage = () => {
     <div className="overflow-x-auto">
       <table className="w-full border-collapse">
         {/* Encabezados */}
-        <thead className="bg-gray-50">
+        <thead className="bg-blue-50">
           <tr className="border-b border-gray-300">
             <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
             <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">CÓDIGO</th>
@@ -1317,6 +1462,16 @@ const NuevaCotizacionPage = () => {
     </div>
   </Dialog>
 </Transition.Root>
+
+{/* Mixed Payment Modal */}
+<MixedPaymentModal
+  isOpen={showPaymentModal}
+  onClose={() => setShowPaymentModal(false)}
+  totalAmount={parseFloat(cotizacionActiva?.totalCotizacion || 0)}
+  onPaymentConfirm={handlePaymentConfirm}
+  initialPaymentMethod={paymentData.paymentMethods[0]?.method || 'efectivo'}
+/>
+
     </Layout>
   );
 };

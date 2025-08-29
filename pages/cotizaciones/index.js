@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
+import { generarPDFCotizacionCompleta } from '../../components/utils/pdfGeneratorCotizaciones';
 import {
   collection,
   getDocs,
@@ -16,7 +17,8 @@ import {
   serverTimestamp,
   updateDoc,
   addDoc,
-  limit, // ¡Importante! Importar la función limit de Firestore
+  limit,
+  getDoc // ¡Importante! Importar la función limit de Firestore
 } from 'firebase/firestore';
 import { useRouter } from 'next/router';
 import {
@@ -28,6 +30,7 @@ import {
   PlusIcon,
   MagnifyingGlassIcon,
   PencilIcon,
+  PrinterIcon
 } from '@heroicons/react/24/outline';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -187,6 +190,7 @@ const CotizacionesIndexPage = () => {
     setFilteredCotizaciones(filtered);
   }, [searchTerm, cotizaciones]);
 
+  // FUNCIÓN CORREGIDA - handleConfirmarCotizacion
   const handleConfirmarCotizacion = async (cotizacionId) => {
     if (
       !window.confirm(
@@ -259,22 +263,28 @@ const CotizacionesIndexPage = () => {
           }
         }
 
+        // CREAR LA VENTA CON GANANCIA TOTAL OCULTA
         const newVentaRef = doc(collection(db, 'ventas'));
         transaction.set(newVentaRef, {
           cotizacionId: cotizacionId,
           clienteId: currentCotizacionData.clienteId,
           clienteNombre: currentCotizacionData.clienteNombre,
           totalVenta: currentCotizacionData.totalCotizacion,
+          // *** CAMPO OCULTO - GANANCIA TOTAL DE LA VENTA ***
+          gananciaTotalVenta: currentCotizacionData.gananciaTotalCotizacion || 0,
           fechaVenta: serverTimestamp(),
           empleadoId: user.email || user.uid,
           observaciones: currentCotizacionData.observaciones || 'Convertido de cotización',
           estado: 'completada',
           metodoPago: currentCotizacionData.metodoPago || 'Efectivo',
           tipoVenta: currentCotizacionData.tipoVenta || 'cotizacionAprobada',
+          // TRANSFERIR DATOS DE PAGO MIXTO SI EXISTEN
+          paymentData: currentCotizacionData.paymentData || null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
 
+        // ACTUALIZAR STOCK Y CREAR ITEMS DE VENTA CON CAMPOS OCULTOS DE GANANCIA
         for (const { itemData, productoRef, currentProductoData } of productoRefsAndData) {
           const currentStock =
             typeof currentProductoData.stockActual === 'number'
@@ -283,22 +293,37 @@ const CotizacionesIndexPage = () => {
           const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
           const newStock = currentStock - cantidadVendida;
 
+          // Actualizar stock del producto
           transaction.update(productoRef, {
             stockActual: newStock,
             updatedAt: serverTimestamp(),
           });
 
+          // *** CREAR ITEM DE VENTA CON CAMPOS OCULTOS DE GANANCIA ***
           transaction.set(doc(collection(newVentaRef, 'itemsVenta')), {
             productoId: itemData.productoId,
             nombreProducto: itemData.nombreProducto,
+            marca: itemData.marca || '',
+            codigoTienda: itemData.codigoTienda || '',
+            descripcion: itemData.descripcion || '',
+            color: itemData.color || '',
             cantidad: itemData.cantidad,
             precioVentaUnitario: itemData.precioVentaUnitario,
             subtotal: itemData.subtotal,
+            // *** CAMPOS OCULTOS TRANSFERIDOS DE LA COTIZACIÓN ***
+            precioCompraUnitario: itemData.precioCompraUnitario || 0, // OCULTO
+            gananciaUnitaria: itemData.gananciaUnitaria || 0, // OCULTO  
+            gananciaTotal: itemData.gananciaTotal || 0, // OCULTO
             createdAt: serverTimestamp(),
           });
         }
 
-        transaction.update(cotizacionRef, { estado: 'confirmada', updatedAt: serverTimestamp() });
+        // Marcar cotización como confirmada
+        transaction.update(cotizacionRef, { 
+          estado: 'confirmada', 
+          fechaConfirmacion: serverTimestamp(),
+          updatedAt: serverTimestamp() 
+        });
       });
 
       alert('Cotización confirmada y convertida en Venta con éxito. Stock actualizado.');
@@ -406,6 +431,123 @@ const CotizacionesIndexPage = () => {
     setFilterPeriod(period);
     setStartDate(null);
     setEndDate(null);
+  };
+
+  // 2. FUNCIÓN PARA IMPRIMIR COTIZACIÓN - Añade esta función después de tus funciones existentes
+
+  const handleImprimirCotizacion = async (cotizacion) => {
+    try {
+      // Mostrar indicador de carga
+      const loadingToast = document.createElement('div');
+      loadingToast.innerHTML = `
+        <div class="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+          <div class="flex items-center">
+            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+            Generando PDF...
+          </div>
+        </div>
+      `;
+      document.body.appendChild(loadingToast);
+
+      // Obtener información del cliente si existe
+      let clienteData = null;
+      if (cotizacion.clienteId && cotizacion.clienteId !== 'general') {
+        try {
+          const clienteDoc = await getDoc(doc(db, 'clientes', cotizacion.clienteId));
+          if (clienteDoc.exists()) {
+            clienteData = clienteDoc.data();
+          }
+        } catch (error) {
+          console.warn('No se pudo obtener información del cliente:', error);
+        }
+      }
+
+      // Generar PDF
+      await generarPDFCotizacionCompleta(cotizacion.id, cotizacion, clienteData);
+      
+      // Mostrar mensaje de éxito
+      document.body.removeChild(loadingToast);
+      
+      const successToast = document.createElement('div');
+      successToast.innerHTML = `
+        <div class="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+          <div class="flex items-center">
+            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            PDF generado exitosamente
+          </div>
+        </div>
+      `;
+      document.body.appendChild(successToast);
+      
+      setTimeout(() => {
+        if (document.body.contains(successToast)) {
+          document.body.removeChild(successToast);
+        }
+      }, 3000);
+
+    } catch (error) {
+      // Remover indicador de carga si existe
+      const loadingElements = document.querySelectorAll('div[class*="fixed top-4 right-4 bg-blue-500"]');
+      loadingElements.forEach(el => {
+        if (document.body.contains(el.parentElement)) {
+          document.body.removeChild(el.parentElement);
+        }
+      });
+
+      console.error('Error al generar PDF:', error);
+      
+      // Mostrar mensaje de error
+      const errorToast = document.createElement('div');
+      errorToast.innerHTML = `
+        <div class="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+          <div class="flex items-center">
+            <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+            Error al generar PDF
+          </div>
+        </div>
+      `;
+      document.body.appendChild(errorToast);
+      
+      setTimeout(() => {
+        if (document.body.contains(errorToast)) {
+          document.body.removeChild(errorToast);
+        }
+      }, 3000);
+    }
+  };
+
+  const [selectedCotizaciones, setSelectedCotizaciones] = useState(new Set());
+
+  const handleSelectCotizacion = (cotizacionId) => {
+    const newSelected = new Set(selectedCotizaciones);
+    if (newSelected.has(cotizacionId)) {
+      newSelected.delete(cotizacionId);
+    } else {
+      newSelected.add(cotizacionId);
+    }
+    setSelectedCotizaciones(newSelected);
+  };
+
+  const handleImprimirSeleccionadas = async () => {
+    if (selectedCotizaciones.size === 0) {
+      alert('Selecciona al menos una cotización para imprimir');
+      return;
+    }
+
+    for (const cotizacionId of selectedCotizaciones) {
+      const cotizacion = filteredCotizaciones.find(v => v.id === cotizacionId);
+      if (cotizacion) {
+        await handleImprimirCotizacion(cotizacion);
+        // Pequeña pausa entre impresiones
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    setSelectedCotizaciones(new Set()); // Limpiar selección
   };
 
   if (!user) {
@@ -516,7 +658,7 @@ const CotizacionesIndexPage = () => {
                   placeholderText="Fecha de fin"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
                 />
-              </div>
+              </div>  
 
               {/* Selector de límite por página */}
               <div className="flex-none min-w-[50px]">
@@ -543,6 +685,16 @@ const CotizacionesIndexPage = () => {
                 <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
                 Nueva Cotización
               </button>
+              {selectedCotizaciones.size > 0 && (
+                <button
+                  onClick={handleImprimirSeleccionadas}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out ml-2"
+                >
+                  <PrinterIcon className="-ml-1 mr-2 h-4 w-4" aria-hidden="true" />
+                  Imprimir Seleccionadas ({selectedCotizaciones.size})
+                </button>
+              )}
+
             </div>
           </div>
           {/* Fin de la Sección de Filtros y Búsqueda */}
@@ -562,6 +714,20 @@ const CotizacionesIndexPage = () => {
               <table className="min-w-full border-collapse">
                 <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedCotizaciones.size === filteredCotizaciones.length && filteredCotizaciones.length > 0}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedCotizaciones(new Set(filteredCotizaciones.map(c => c.id)));
+                          } else {
+                            setSelectedCotizaciones(new Set());
+                          }
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </th>
                     <th
                       scope="col"
                       className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
@@ -615,6 +781,14 @@ const CotizacionesIndexPage = () => {
                 <tbody className="bg-white">
                   {filteredCotizaciones.map((cotizacion, index) => (
                     <tr key={cotizacion.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedCotizaciones.has(cotizacion.id)}
+                          onChange={() => handleSelectCotizacion(cotizacion.id)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                      </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">
                         {cotizacion.numeroCotizacion || 'N/A'}
                       </td>
@@ -682,6 +856,15 @@ const CotizacionesIndexPage = () => {
                             title="Ver Detalles de la Cotización"
                           >
                             <EyeIcon className="h-5 w-5" />
+                          </button>
+                          {/* NUEVO BOTÓN - Imprimir PDF */}
+                          <button
+                            onClick={() => handleImprimirCotizacion(cotizacion)}
+                            className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                            title="Generar PDF de Cotización"
+                            disabled={false} // Las cotizaciones siempre pueden imprimirse
+                          >
+                            <PrinterIcon className="h-5 w-5" />
                           </button>
                           <button
                             onClick={() => handleDeleteCotizacion(cotizacion.id, cotizacion.estado)}

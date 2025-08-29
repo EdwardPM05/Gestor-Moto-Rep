@@ -14,7 +14,8 @@ import {
   deleteDoc,
   getDocs,
   orderBy,
-  getDoc
+  getDoc,
+  limit
 } from 'firebase/firestore';
 import {
   CreditCardIcon,
@@ -24,7 +25,9 @@ import {
   ArrowLeftIcon,
   DocumentIcon,
   PlusIcon,
-  BanknotesIcon
+  BanknotesIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon
 } from '@heroicons/react/24/outline';
 
 // Modal de alerta personalizado
@@ -56,12 +59,17 @@ const ClienteCreditoDetalle = () => {
 
   const [cliente, setCliente] = useState(null);
   const [creditosConItems, setCreditosConItems] = useState([]);
-  const [abonos, setAbonos] = useState([]); // Nuevo estado para abonos
+  const [abonos, setAbonos] = useState([]); // Todos los abonos
+  const [abonosPaginados, setAbonosPaginados] = useState([]); // Abonos mostrados en la página actual
   const [montoAbono, setMontoAbono] = useState(''); // Monto del abono a registrar
   const [metodoPago, setMetodoPago] = useState('efectivo');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [alertMessage, setAlertMessage] = useState('');
+  
+  // Estados para paginación de abonos
+  const [limitAbonosPerPage, setLimitAbonosPerPage] = useState(10);
+  const [currentPageAbonos, setCurrentPageAbonos] = useState(1);
 
   const showAlert = (message) => setAlertMessage(message);
   const closeAlert = () => setAlertMessage('');
@@ -167,7 +175,14 @@ const ClienteCreditoDetalle = () => {
     fetchClientAndCreditos();
   }, [clienteId, user]);
 
-  // Procesar abono
+  // Efecto para manejar la paginación de abonos
+  useEffect(() => {
+    const startIndex = (currentPageAbonos - 1) * limitAbonosPerPage;
+    const endIndex = startIndex + limitAbonosPerPage;
+    setAbonosPaginados(abonos.slice(startIndex, endIndex));
+  }, [abonos, currentPageAbonos, limitAbonosPerPage]);
+
+  // Función procesarAbono optimizada e integrada
   const procesarAbono = async () => {
     const monto = parseFloat(montoAbono);
     
@@ -177,7 +192,7 @@ const ClienteCreditoDetalle = () => {
     }
 
     if (monto > cliente.montoCreditoActual) {
-      showAlert('El monto del abono no puede ser mayor al saldo pendiente');
+      showAlert('El monto del abono no puede ser mayor al saldo que debe');
       return;
     }
 
@@ -206,27 +221,87 @@ const ClienteCreditoDetalle = () => {
       const abonoRef = await addDoc(collection(db, 'abonos'), abonoData);
       console.log("Abono creado con ID:", abonoRef.id);
 
-      // 2. Registrar abono como ganancia inmediata (venta tipo abono)
+      // 2. Preparar información de productos para la venta
+      let productosEnCredito = [];
+      let totalProductosCredito = 0;
+      
+      // Recopilar todos los productos de todos los créditos activos
+      creditosConItems.forEach(credito => {
+        credito.items.forEach(item => {
+          productosEnCredito.push({
+            nombreProducto: item.nombreProducto || 'Producto sin nombre',
+            cantidad: item.cantidad || 1,
+            precioVentaUnitario: item.precioVentaUnitario || 0,
+            subtotal: item.subtotal || 0,
+            creditoId: credito.id,
+            numeroCredito: credito.numeroCredito || 'N/A',
+            itemId: item.id,
+            productoId: item.productoId || item.id
+          });
+          totalProductosCredito += (item.subtotal || 0);
+        });
+      });
+
+      // Crear descripción detallada de productos
+      const descripcionProductos = productosEnCredito.map(producto => 
+        `${producto.nombreProducto} (Cant: ${producto.cantidad}, P.Unit: S/${producto.precioVentaUnitario?.toFixed(2)}, Subtotal: S/${producto.subtotal?.toFixed(2)})`
+      ).join(' | ');
+
+      // 3. Registrar venta de abono con detalle de productos
       const ventaAbonoData = {
         clienteId: cliente.id,
         clienteNombre: cliente.nombre,
         clienteDNI: cliente.dni,
         metodoPago: metodoPago,
         totalVenta: monto,
-        tipoVenta: 'abono', // Esto debe aparecer en la tabla de ventas
+        tipoVenta: 'abono',
         estado: 'completada',
         fechaVenta: new Date(),
-        observaciones: `Abono a cuenta de crédito - Saldo anterior: S/. ${cliente.montoCreditoActual.toFixed(2)}`,
+        observaciones: `Abono a crédito - Saldo anterior: S/. ${cliente.montoCreditoActual.toFixed(2)}`,
         empleadoId: user.email || user.uid,
-        abonoId: abonoRef.id, // Referencia al abono
+        abonoId: abonoRef.id,
+        // Nuevos campos para mejor tracking
+        creditoInfo: {
+          totalCreditosAbonados: creditosConItems.length,
+          totalProductosEnCredito: productosEnCredito.length,
+          montoTotalCredito: totalProductosCredito,
+          productosDetalle: productosEnCredito
+        },
         createdAt: new Date(),
         updatedAt: new Date()
       };
 
-      await addDoc(collection(db, 'ventas'), ventaAbonoData);
-      console.log("Venta de abono registrada como ganancia");
+      // 4. Crear la venta y agregar productos en la subcolección
+      const ventaRef = await addDoc(collection(db, 'ventas'), ventaAbonoData);
+      console.log("Venta de abono registrada con ID:", ventaRef.id);
+      
+      // 5. Agregar cada producto como item individual en la subcolección itemsVenta
+      console.log("Agregando productos a subcolección itemsVenta...");
+      for (const producto of productosEnCredito) {
+        const itemVentaData = {
+          nombreProducto: producto.nombreProducto,
+          cantidad: producto.cantidad,
+          precioVentaUnitario: producto.precioVentaUnitario,
+          subtotal: producto.subtotal,
+          creditoId: producto.creditoId,
+          numeroCredito: producto.numeroCredito,
+          itemCreditoId: producto.itemId,
+          productoId: producto.productoId,
+          esAbono: true,
+          montoAbono: monto,
+          porcentajeAbono: totalProductosCredito > 0 ? ((producto.subtotal / totalProductosCredito) * 100).toFixed(2) : '0.00',
+          tipoOperacion: 'abono_credito',
+          estadoOriginal: 'credito',
+          fechaAbono: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        
+        const itemRef = await addDoc(collection(db, 'ventas', ventaRef.id, 'itemsVenta'), itemVentaData);
+        console.log("Producto agregado a itemsVenta:", itemRef.id, "-", producto.nombreProducto);
+      }
 
-      // 3. Obtener el saldo actual más reciente del cliente y actualizarlo
+      // 6. Obtener el saldo actual más reciente del cliente y actualizarlo
       const clientDocRef = doc(db, 'cliente', cliente.id);
       const clientDocSnap = await getDoc(clientDocRef);
       if (!clientDocSnap.exists()) {
@@ -245,7 +320,7 @@ const ClienteCreditoDetalle = () => {
       
       console.log(`Saldo anterior: S/. ${saldoActualReal.toFixed(2)}, Abono: S/. ${monto.toFixed(2)}, Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
 
-      // 4. Si el saldo llega a 0, marcar todos los items como saldados
+      // 7. Si el saldo llega a 0, marcar todos los items como saldados
       if (nuevoSaldo === 0) {
         console.log("Saldo llegó a 0, marcando productos como saldados");
         for (const credito of creditosConItems) {
@@ -257,7 +332,7 @@ const ClienteCreditoDetalle = () => {
               updatedAt: new Date()
             });
 
-            // Marcar todos los items como saldados (opcional: mover a historial)
+            // Marcar todos los items como saldados
             for (const item of credito.items) {
               await updateDoc(doc(db, 'creditos', credito.id, 'itemsCredito', item.id), {
                 estado: 'saldado',
@@ -276,7 +351,7 @@ const ClienteCreditoDetalle = () => {
         setCliente(prev => ({ ...prev, montoCreditoActual: nuevoSaldo }));
         setAbonos(prev => [{ id: abonoRef.id, ...abonoData }, ...prev]);
         setMontoAbono('');
-        showAlert(`Abono de S/. ${monto.toFixed(2)} registrado exitosamente. Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
+        showAlert(`Abono de S/. ${monto.toFixed(2)} registrado exitosamente. Nuevo saldo que debe: S/. ${nuevoSaldo.toFixed(2)}`);
       }
 
     } catch (error) {
@@ -285,7 +360,24 @@ const ClienteCreditoDetalle = () => {
     }
   };
 
+  // Funciones para paginación de abonos
+  const totalPagesAbonos = Math.ceil(abonos.length / limitAbonosPerPage);
 
+  const goToPageAbonos = (page) => {
+    setCurrentPageAbonos(page);
+  };
+
+  const nextPageAbonos = () => {
+    if (currentPageAbonos < totalPagesAbonos) {
+      setCurrentPageAbonos(currentPageAbonos + 1);
+    }
+  };
+
+  const prevPageAbonos = () => {
+    if (currentPageAbonos > 1) {
+      setCurrentPageAbonos(currentPageAbonos - 1);
+    }
+  };
 
   if (loading) {
     return (
@@ -334,6 +426,8 @@ const ClienteCreditoDetalle = () => {
 
   const totalProductosEnCredito = creditosConItems.reduce((count, credito) => count + credito.items.length, 0);
   const totalAbonos = abonos.reduce((sum, abono) => sum + (abono.monto || 0), 0);
+  const saldoQueDebe = cliente.montoCreditoActual || 0; // Total que debe
+  const montoOriginalCredito = creditosConItems.reduce((sum, credito) => sum + (credito.totalCredito || 0), 0);
 
   return (
     <Layout title={`Crédito - ${cliente.nombre}`}>
@@ -357,21 +451,30 @@ const ClienteCreditoDetalle = () => {
                 <p className="text-gray-600">DNI: {cliente.dni}</p>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-600">Saldo pendiente</p>
-              <p className="text-2xl font-bold text-red-600">
-                S/. {(cliente.montoCreditoActual || 0).toFixed(2)}
-              </p>
-              {totalAbonos > 0 && (
-                <p className="text-sm text-green-600">
-                  Total abonado: S/. {totalAbonos.toFixed(2)}
+            <div className="text-right space-y-1">
+              <div>
+                <p className="text-sm text-gray-600">Monto Original</p>
+                <p className="text-lg font-semibold text-blue-600">
+                  S/. {montoOriginalCredito.toFixed(2)}
                 </p>
-              )}
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Total Abonado</p>
+                <p className="text-lg font-semibold text-green-600">
+                  S/. {totalAbonos.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Saldo que Debe</p>
+                <p className="text-2xl font-bold text-red-600">
+                  S/. {saldoQueDebe.toFixed(2)}
+                </p>
+              </div>
             </div>
           </div>
 
           {/* Sistema de Abonos */}
-          {cliente.montoCreditoActual > 0 && (
+          {saldoQueDebe > 0 && (
             <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
               <h3 className="text-lg font-semibold mb-4 flex items-center text-green-800">
                 <BanknotesIcon className="h-5 w-5 mr-2" />
@@ -387,7 +490,7 @@ const ClienteCreditoDetalle = () => {
                     type="number"
                     step="0.01"
                     min="0.01"
-                    max={cliente.montoCreditoActual}
+                    max={saldoQueDebe}
                     value={montoAbono}
                     onChange={(e) => setMontoAbono(e.target.value)}
                     placeholder="0.00"
@@ -425,16 +528,40 @@ const ClienteCreditoDetalle = () => {
             </div>
           )}
 
-          {/* Historial de Abonos */}
+          {/* Historial de Abonos con Paginación */}
           {abonos.length > 0 && (
             <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <DocumentIcon className="h-5 w-5 mr-2" />
-                Historial de Abonos ({abonos.length})
-              </h3>
-              <div className="bg-gray-50 rounded-lg p-4 max-h-60 overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold flex items-center">
+                  <DocumentIcon className="h-5 w-5 mr-2" />
+                  Historial de Abonos ({abonos.length})
+                </h3>
+                
+                {/* Selector de límite por página */}
+                <div className="flex items-center gap-2">
+                  <label htmlFor="limit-abonos-per-page" className="text-sm text-gray-600">
+                    Mostrar:
+                  </label>
+                  <select
+                    id="limit-abonos-per-page"
+                    className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={limitAbonosPerPage}
+                    onChange={(e) => {
+                      setLimitAbonosPerPage(Number(e.target.value));
+                      setCurrentPageAbonos(1);
+                    }}
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                  </select>
+                  <span className="text-sm text-gray-600">por página</span>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 rounded-lg p-4">
                 <div className="space-y-2">
-                  {abonos.map((abono) => (
+                  {abonosPaginados.map((abono) => (
                     <div key={abono.id} className="flex justify-between items-center p-3 bg-white rounded border">
                       <div>
                         <p className="font-semibold text-green-600">S/. {abono.monto?.toFixed(2)}</p>
@@ -450,6 +577,52 @@ const ClienteCreditoDetalle = () => {
                     </div>
                   ))}
                 </div>
+                
+                {/* Controles de paginación para abonos */}
+                {totalPagesAbonos > 1 && (
+                  <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200">
+                    <div className="text-sm text-gray-600">
+                      Mostrando {((currentPageAbonos - 1) * limitAbonosPerPage) + 1} a {Math.min(currentPageAbonos * limitAbonosPerPage, abonos.length)} de {abonos.length} abonos
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={prevPageAbonos}
+                        disabled={currentPageAbonos === 1}
+                        className="p-2 text-gray-600 hover:text-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      >
+                        <ChevronLeftIcon className="h-4 w-4" />
+                      </button>
+                      
+                      <div className="flex space-x-1">
+                        {[...Array(totalPagesAbonos)].map((_, index) => {
+                          const page = index + 1;
+                          return (
+                            <button
+                              key={page}
+                              onClick={() => goToPageAbonos(page)}
+                              className={`px-3 py-1 rounded text-sm ${
+                                currentPageAbonos === page
+                                  ? 'bg-blue-500 text-white'
+                                  : 'text-gray-600 hover:bg-gray-100'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      
+                      <button
+                        onClick={nextPageAbonos}
+                        disabled={currentPageAbonos === totalPagesAbonos}
+                        className="p-2 text-gray-600 hover:text-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRightIcon className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -529,8 +702,6 @@ const ClienteCreditoDetalle = () => {
               </div>
             )}
           </div>
-
-        
         </div>
       </div>
     </Layout>

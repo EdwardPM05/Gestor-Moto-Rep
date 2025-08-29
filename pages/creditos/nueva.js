@@ -1,4 +1,4 @@
-// pages/creditos/nueva.js
+// pages/creditos/nueva.js - SISTEMA CORREGIDO
 
 import { useState, useEffect, Fragment } from 'react';
 import React from 'react';
@@ -51,10 +51,9 @@ const NuevoCreditoPage = () => {
 
   // Estados para datos de referencia - SOLO CLIENTES CON CRÉDITO ACTIVADO
   const [clientesConCredito, setClientesConCredito] = useState([]);
-  const [empleados, setEmpleados] = useState([]);
 
-  // Estados para créditos
-  const [creditosPendientes, setCreditosPendientes] = useState([]);
+  // Estados para créditos (cambio: borrador -> temporal)
+  const [creditosTemporales, setCreditosTemporales] = useState([]);
   const [creditoActivo, setCreditoActivo] = useState(null);
   const [itemsCreditoActivo, setItemsCreditoActivo] = useState([]);
 
@@ -100,15 +99,6 @@ const NuevoCreditoPage = () => {
         ...doc.data()
       }));
       setClientesConCredito(clientesCreditoList);
-
-      // Cargar empleados
-      const qEmpleados = query(collection(db, 'empleado'), orderBy('nombre', 'asc'));
-      const empleadosSnapshot = await getDocs(qEmpleados);
-      const empleadosList = empleadosSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setEmpleados(empleadosList);
 
       console.log('Clientes con crédito cargados:', clientesCreditoList.length);
 
@@ -183,20 +173,20 @@ const NuevoCreditoPage = () => {
     return () => clearTimeout(timeoutId);
   }, [searchTerm]);
 
-  // Escuchar créditos pendientes (borrador)
+  // Escuchar créditos temporales (cambio de borrador a temporal)
   useEffect(() => {
     if (!user) return;
 
-    console.log('Setting up pending credits listener...');
+    console.log('Setting up temporary credits listener...');
 
-    const qPendientes = query(
+    const qTemporales = query(
       collection(db, 'creditos'),
-      where('estado', '==', 'borrador'),
+      where('estado', '==', 'temporal'),
       orderBy('fechaCreacion', 'desc')
     );
 
-    const unsubscribe = onSnapshot(qPendientes, (snapshot) => {
-      console.log('Snapshot received for pending credits:', snapshot.size, 'documents');
+    const unsubscribe = onSnapshot(qTemporales, (snapshot) => {
+      console.log('Snapshot received for temporary credits:', snapshot.size, 'documents');
       
       const creditosList = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -207,14 +197,14 @@ const NuevoCreditoPage = () => {
         };
       });
       
-      console.log('Setting creditosPendientes:', creditosList);
-      setCreditosPendientes(creditosList);
+      console.log('Setting creditosTemporales:', creditosList);
+      setCreditosTemporales(creditosList);
     }, (err) => {
-      console.error("Error al escuchar créditos pendientes:", err);
+      console.error("Error al escuchar créditos temporales:", err);
     });
 
     return () => {
-      console.log('Cleaning up pending credits listener');
+      console.log('Cleaning up temporary credits listener');
       unsubscribe();
     };
   }, [user]);
@@ -277,6 +267,7 @@ const NuevoCreditoPage = () => {
         label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || ''} - Crédito: S/.${parseFloat(cliente.montoCreditoActual || 0).toFixed(2)}`.trim()
       } : null);
 
+      setObservaciones(creditoActivo.observaciones || '');
 
       // Formatear fecha de vencimiento
       if (creditoActivo.fechaVencimiento) {
@@ -286,9 +277,9 @@ const NuevoCreditoPage = () => {
         setFechaVencimiento(fechaVenc.toISOString().split('T')[0]);
       }
     }
-  }, [creditoActivo, clientesConCredito, empleados]);
+  }, [creditoActivo, clientesConCredito]);
 
-  // Crear nuevo crédito
+  // Crear nuevo crédito temporal
   const handleNuevoCredito = async () => {
     setLoading(true);
     try {
@@ -296,7 +287,7 @@ const NuevoCreditoPage = () => {
       const fechaVencimientoDefault = new Date();
       fechaVencimientoDefault.setDate(fechaVencimientoDefault.getDate() + 30);
 
-      console.log('Creating new credit...');
+      console.log('Creating new temporary credit...');
       
       const newCreditData = {
         numeroCredito: `CRE-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
@@ -306,8 +297,9 @@ const NuevoCreditoPage = () => {
         totalCredito: 0,
         fechaCreacion: serverTimestamp(),
         fechaVencimiento: fechaVencimientoDefault,
-        estado: 'borrador',
+        estado: 'temporal', // CAMBIO: de 'borrador' a 'temporal'
         observaciones: '',
+        empleadoId: user.email || user.uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
@@ -318,7 +310,7 @@ const NuevoCreditoPage = () => {
       console.log('New credit created with ID:', newCreditRef.id);
 
       setCreditoActivo({ id: newCreditRef.id });
-      alert('Nuevo crédito creado exitosamente');
+      alert('Nuevo crédito temporal creado exitosamente');
     } catch (err) {
       console.error("Error al crear crédito:", err);
       setError("Error al crear nuevo crédito");
@@ -328,7 +320,7 @@ const NuevoCreditoPage = () => {
     }
   };
 
-  // Seleccionar crédito pendiente
+  // Seleccionar crédito temporal
   const handleSelectCredito = (credito) => {
     console.log('Selecting credit:', credito.id);
     setCreditoActivo(credito);
@@ -376,7 +368,6 @@ const NuevoCreditoPage = () => {
     }
   };
 
-  
   // Actualizar observaciones
   const handleUpdateObservaciones = async (nuevasObservaciones) => {
     if (!creditoActivo?.id) return;
@@ -421,7 +412,7 @@ const NuevoCreditoPage = () => {
     setShowQuantityModal(true);
   };
 
-  // Agregar producto a crédito
+  // Agregar producto a crédito (SIN CREAR VENTA)
   const handleAddProductToCredito = async () => {
     if (!creditoActivo?.id || !selectedProduct) return;
 
@@ -443,6 +434,12 @@ const NuevoCreditoPage = () => {
 
         // Obtener los datos más recientes del producto
         const productData = productSnap.data();
+
+        // VERIFICAR STOCK DISPONIBLE
+        const stockActual = productData.stockActual || 0;
+        if (stockActual < quantity) {
+          throw new Error(`Stock insuficiente. Disponible: ${stockActual}, Solicitado: ${quantity}`);
+        }
 
         let itemRef;
         let newQuantity;
@@ -492,22 +489,17 @@ const NuevoCreditoPage = () => {
           totalCredito: parseFloat(updatedTotal.toFixed(2)),
           updatedAt: serverTimestamp(),
         });
+
+        // NO REDUCIR STOCK AÚN - Se hace cuando se registra el crédito
       });
 
       setShowQuantityModal(false);
-      alert('Producto agregado exitosamente');
+      alert('Producto agregado exitosamente al crédito temporal');
     } catch (err) {
       console.error("Error al agregar producto:", err);
-      setError("Error al agregar producto al crédito");
+      setError("Error al agregar producto al crédito: " + err.message);
+      alert("Error al agregar producto al crédito: " + err.message);
     }
-  };
-
-  // Abrir modal de edición de item
-  const handleEditItem = (item) => {
-    setEditingItem(item);
-    setEditQuantity(item.cantidad);
-    setEditPrecio(parseFloat(item.precioVentaUnitario || 0));
-    setShowEditItemModal(true);
   };
 
   // Actualizar item de crédito
@@ -584,60 +576,173 @@ const NuevoCreditoPage = () => {
     }
   };
 
-  // Guardar crédito como pendiente
-  const handleGuardarCredito = async () => {
+  // REGISTRAR CRÉDITO - FUNCIÓN CORREGIDA
+const handleRegistrarCredito = async () => {
+  if (!creditoActivo?.id) return;
+
+  if (!selectedCliente) {
+    alert('Por favor selecciona un cliente con crédito activado');
+    return;
+  }
+
+  if (itemsCreditoActivo.length === 0) {
+    alert('El crédito debe tener al menos un producto');
+    return;
+  }
+
+  if (!window.confirm('¿REGISTRAR este crédito? Esto reducirá el stock de los productos pero NO generará una venta (es un préstamo).')) {
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const creditoRef = doc(db, 'creditos', creditoActivo.id);
+      const clienteRef = doc(db, 'cliente', selectedCliente.value);
+
+      // ========================================
+      // FASE 1: TODAS LAS LECTURAS PRIMERO
+      // ========================================
+      
+      // Leer cliente
+      const clienteSnap = await transaction.get(clienteRef);
+      if (!clienteSnap.exists()) {
+        throw new Error("Cliente no encontrado");
+      }
+
+      // Leer todos los productos y verificar stock
+      const productSnapshots = {};
+      const stockInsuficiente = [];
+      
+      for (const item of itemsCreditoActivo) {
+        const productRef = doc(db, 'productos', item.productoId);
+        const productSnap = await transaction.get(productRef);
+        
+        if (!productSnap.exists()) {
+          throw new Error(`Producto ${item.nombreProducto} no encontrado`);
+        }
+        
+        productSnapshots[item.productoId] = productSnap;
+        
+        const stockActual = productSnap.data().stockActual || 0;
+        if (stockActual < item.cantidad) {
+          stockInsuficiente.push(`${item.nombreProducto}: disponible ${stockActual}, requerido ${item.cantidad}`);
+        }
+      }
+
+      if (stockInsuficiente.length > 0) {
+        throw new Error(`Stock insuficiente:\n${stockInsuficiente.join('\n')}`);
+      }
+
+      // ========================================
+      // FASE 2: TODAS LAS ESCRITURAS DESPUÉS
+      // ========================================
+
+      // 1. Reducir stock de todos los productos
+      for (const item of itemsCreditoActivo) {
+        const productRef = doc(db, 'productos', item.productoId);
+        const productSnap = productSnapshots[item.productoId];
+        const stockActual = productSnap.data().stockActual || 0;
+        const nuevoStock = stockActual - item.cantidad;
+
+        transaction.update(productRef, {
+          stockActual: nuevoStock,
+          updatedAt: serverTimestamp(),
+        });
+
+        console.log(`Stock reducido para ${item.nombreProducto}: ${stockActual} -> ${nuevoStock}`);
+      }
+
+      // 2. Actualizar el saldo del cliente
+      const clienteData = clienteSnap.data();
+      const montoActual = parseFloat(clienteData.montoCreditoActual || 0);
+      const nuevoMonto = montoActual + parseFloat(creditoActivo.totalCredito || 0);
+
+      transaction.update(clienteRef, {
+        montoCreditoActual: nuevoMonto,
+        updatedAt: serverTimestamp(),
+      });
+
+      // 3. Cambiar estado del crédito a 'activo'
+      transaction.update(creditoRef, {
+        estado: 'activo',
+        fechaActivacion: serverTimestamp(),
+        observaciones: observaciones || '',
+        fechaVencimiento: fechaVencimiento ? new Date(fechaVencimiento) : null,
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log(`Crédito registrado: Cliente ${selectedCliente.label} - Monto anterior: S/. ${montoActual.toFixed(2)} - Nuevo monto: S/. ${nuevoMonto.toFixed(2)}`);
+    });
+
+    alert(`¡Crédito registrado exitosamente!\n\nTotal: S/. ${parseFloat(creditoActivo.totalCredito || 0).toFixed(2)}\nCliente: ${selectedCliente.label}\n\nStock reducido, crédito activado.`);
+    
+    // Limpiar formulario
+    setCreditoActivo(null);
+    setItemsCreditoActivo([]);
+    setSelectedCliente(null);
+    setObservaciones('');
+    setFechaVencimiento('');
+    
+    // Redirigir al índice de créditos activos
+    router.push('/creditos/activos');
+    
+  } catch (err) {
+    console.error("Error al registrar crédito:", err);
+    alert('Error al registrar crédito: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // Eliminar crédito temporal
+  const handleEliminarCreditoTemporal = async () => {
     if (!creditoActivo?.id) return;
 
-    if (!selectedCliente) {
-      alert('Por favor selecciona un cliente con crédito activado');
-      return;
-    }
-
-    if (itemsCreditoActivo.length === 0) {
-      alert('El crédito debe tener al menos un producto');
-      return;
-    }
-
-    if (!window.confirm('¿Guardar este crédito como PENDIENTE? Podrás activarlo desde el índice de créditos.')) {
+    if (!window.confirm('¿Eliminar este crédito temporal? Se perderán todos los productos agregados.')) {
       return;
     }
 
     try {
-      const creditoRef = doc(db, 'creditos', creditoActivo.id);
-      await updateDoc(creditoRef, {
-        estado: 'pendiente',
-        observaciones: observaciones || '',
-        fechaVencimiento: fechaVencimiento ? new Date(fechaVencimiento) : null,
-        fechaGuardado: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-
-      alert('Crédito guardado como PENDIENTE exitosamente. Ve al índice de créditos para activarlo.');
+      // Eliminar items primero
+      const qItems = query(
+        collection(db, 'creditos', creditoActivo.id, 'itemsCredito')
+      );
+      const itemsSnapshot = await getDocs(qItems);
       
-      // Limpiar formulario
+      for (const itemDoc of itemsSnapshot.docs) {
+        await deleteDoc(itemDoc.ref);
+      }
+
+      // Eliminar el crédito
+      await deleteDoc(doc(db, 'creditos', creditoActivo.id));
+
+      // Limpiar estado
       setCreditoActivo(null);
       setItemsCreditoActivo([]);
       setSelectedCliente(null);
       setObservaciones('');
       setFechaVencimiento('');
-      
-      // Opcional: redirigir al índice de créditos
-      router.push('/creditos');
-      
+
+      alert('Crédito temporal eliminado exitosamente');
     } catch (err) {
-      console.error("Error al guardar crédito:", err);
-      alert('Error al guardar crédito: ' + err.message);
+      console.error("Error al eliminar crédito temporal:", err);
+      alert('Error al eliminar crédito temporal: ' + err.message);
     }
+  };
+
+  // Abrir modal de edición de item
+  const handleEditItem = (item) => {
+    setEditingItem(item);
+    setEditQuantity(item.cantidad);
+    setEditPrecio(parseFloat(item.precioVentaUnitario || 0));
+    setShowEditItemModal(true);
   };
 
   const clienteOptions = clientesConCredito.map(cliente => ({
     value: cliente.id,
     label: `${cliente.nombre} ${cliente.apellido || ''} - ${cliente.dni || ''} - Crédito Actual: S/.${parseFloat(cliente.montoCreditoActual || 0).toFixed(2)}`.trim()
-  }));
-
-  const empleadoOptions = empleados.map(empleado => ({
-    value: empleado.id,
-    label: `${empleado.nombre} ${empleado.apellido || ''} - ${empleado.puesto || ''}`.trim()
   }));
 
   if (!user) return null;
@@ -655,10 +760,10 @@ const NuevoCreditoPage = () => {
           <div className="bg-white rounded-xl shadow-lg overflow-hidden">
 
             <div className="grid grid-cols-12 gap-6 p-6">
-              {/* Panel Izquierdo - Créditos Borrador */}
+              {/* Panel Izquierdo - Créditos Temporales */}
               <div className="col-span-12 lg:col-span-4">
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                  <h2 className="text-lg font-semibold mb-4 text-gray-800">Créditos Borrador</h2>
+                  <h2 className="text-lg font-semibold mb-4 text-gray-800">Créditos Temporales</h2>
                   <button
                     onClick={handleNuevoCredito}
                     className="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
@@ -669,10 +774,10 @@ const NuevoCreditoPage = () => {
                   </button>
 
                   <div className="max-h-64 overflow-y-auto space-y-2">
-                    {creditosPendientes.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No hay créditos en borrador</p>
+                    {creditosTemporales.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No hay créditos temporales</p>
                     ) : (
-                      creditosPendientes.map(credito => (
+                      creditosTemporales.map(credito => (
                         <div
                           key={credito.id}
                           className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
@@ -714,14 +819,7 @@ const NuevoCreditoPage = () => {
                           className="text-sm"
                           isClearable
                         />
-                        {selectedCliente && (
-                          <div className="mt-2 text-xs text-yellow-600 bg-yellow-50 p-2 rounded border border-yellow-200">
-                            <strong>Historial de Crédito:</strong> Cliente habilitado para créditos
-                          </div>
-                        )}
                       </div>
-
-                      
 
                       {/* Fecha de Vencimiento */}
                       <div>
@@ -734,7 +832,6 @@ const NuevoCreditoPage = () => {
                         />
                       </div>
 
-                      
                       {/* Observaciones */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
@@ -757,12 +854,21 @@ const NuevoCreditoPage = () => {
                       {/* Botones de acción */}
                       <div className="space-y-3">
                         <button
-                          onClick={handleGuardarCredito}
-                          disabled={!selectedCliente || itemsCreditoActivo.length === 0}
-                          className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                          onClick={handleRegistrarCredito}
+                          disabled={!selectedCliente || itemsCreditoActivo.length === 0 || loading}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
                         >
                           <BanknotesIcon className="h-5 w-5 mr-2" />
-                          Guardar como Pendiente
+                          {loading ? 'Registrando...' : 'Registrar Crédito'}
+                        </button>
+                        
+                        <button
+                          onClick={handleEliminarCreditoTemporal}
+                          disabled={loading}
+                          className="w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                        >
+                          <TrashIcon className="h-5 w-5 mr-2" />
+                          Eliminar Temporal
                         </button>
                         
                         <button
@@ -770,7 +876,7 @@ const NuevoCreditoPage = () => {
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
                         >
                           <CheckIcon className="h-5 w-5 mr-2" />
-                          Ver Todos los Créditos
+                          Ver Créditos Activos
                         </button>
                       </div>
                     </div>
@@ -878,7 +984,7 @@ const NuevoCreditoPage = () => {
                   <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
                     <CreditCardIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
                     <h3 className="text-xl font-medium text-gray-600 mb-2">Selecciona o crea un crédito</h3>
-                    <p className="text-gray-500">Crea un nuevo crédito o selecciona uno existente para comenzar a agregar productos</p>
+                    <p className="text-gray-500">Crea un nuevo crédito o selecciona uno temporal para comenzar a agregar productos</p>
                   </div>
                 ) : (
                   <div className="bg-white border border-gray-200 rounded-lg">
@@ -886,17 +992,6 @@ const NuevoCreditoPage = () => {
                       <h3 className="text-xl font-semibold text-gray-800">
                         Items del Crédito: {creditoActivo.numeroCredito || 'Nuevo'}
                       </h3>
-                      <div className="mt-3 bg-gradient-to-r from-yellow-50 to-yellow-100 p-3 rounded-lg border border-yellow-200">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <div className="text-lg font-bold text-yellow-800">
-                              Total: S/. {parseFloat(creditoActivo.totalCredito || 0).toFixed(2)}
-                            </div>
-                          </div>
-                          <div>
-                          </div>
-                        </div>
-                      </div>
                     </div>
 
                     <div className="p-4">
@@ -1137,6 +1232,12 @@ const NuevoCreditoPage = () => {
                               <span className="font-bold text-yellow-800 text-2xl">S/. {(quantity * precioVenta).toFixed(2)}</span>
                             </div>
                           </div>
+
+                          <div className="bg-red-50 p-3 rounded-lg border border-red-200 mt-4">
+                            <p className="text-sm text-red-700">
+                              ⚠️ <strong>Importante:</strong> Este producto se agregará al crédito temporal. El stock NO se reducirá hasta que registres el crédito.
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1165,6 +1266,7 @@ const NuevoCreditoPage = () => {
           </div>
         </Dialog>
       </Transition.Root>
+
 
       {/* Modal de Edición de Item - VERSIÓN MEJORADA */}
 <Transition.Root show={showEditItemModal} as={Fragment}>

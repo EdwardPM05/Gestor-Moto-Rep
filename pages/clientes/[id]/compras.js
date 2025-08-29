@@ -144,7 +144,7 @@ const ComprasPage = () => {
               <table className="min-w-full border-collapse">
                 <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"></th> {/* Columna para el botón de expansión */}
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"></th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE VENTA</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TOTAL</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MÉTODO DE PAGO</th>
@@ -153,55 +153,84 @@ const ComprasPage = () => {
                 <tbody className="bg-white">
                   {ventas.map((venta, index) => (
                     <>
-                      <tr key={venta.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
+                      <tr 
+                        key={venta.id} 
+                        className={`
+                          ${expandedVentaId === venta.id 
+                            ? 'bg-blue-50 border-2 border-blue-200' 
+                            : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                          } 
+                          hover:bg-gray-100 transition-colors
+                        `}
+                      >
                         {/* Celda para el botón de expansión */}
                         <td className="border border-gray-300 w-10 px-1 py-2 text-sm text-black text-center">
                           {venta.items?.length > 0 && (
-                            <button onClick={() => handleToggleExpand(venta.id)} className="focus:outline-none p-1">
+                            <button 
+                              onClick={() => handleToggleExpand(venta.id)} 
+                              className={`focus:outline-none p-1 rounded ${expandedVentaId === venta.id ? 'bg-blue-200' : ''}`}
+                            >
                               {expandedVentaId === venta.id ? (
-                                <ChevronUpIcon className="h-5 w-5 text-gray-500" />
+                                <ChevronUpIcon className="h-5 w-5 text-blue-600" />
                               ) : (
                                 <ChevronDownIcon className="h-5 w-5 text-gray-500" />
                               )}
                             </button>
                           )}
                         </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center ${expandedVentaId === venta.id ? 'font-bold' : ''}`}>
                           {venta.fechaVenta ? venta.fechaVenta.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A'}
                         </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center font-bold">
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center font-bold ${expandedVentaId === venta.id ? 'text-blue-700' : ''}`}>
                           S/. {parseFloat(venta.totalVenta || 0).toFixed(2)}
                         </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center ${expandedVentaId === venta.id ? 'font-semibold' : ''}`}>
                           {venta.metodoPago || 'N/A'}
                         </td>
                       </tr>
                       {/* Fila expandible para mostrar los detalles de la compra */}
                       {expandedVentaId === venta.id && venta.items && (
                         <tr>
-                          <td colSpan="4" className="border border-gray-300 p-4 bg-gray-100">
-                            <h4 className="text-sm font-bold text-gray-700 mb-2">Productos comprados:</h4>
-                            <div className="overflow-x-auto">
-                              <table className="min-w-full border-collapse bg-white">
-                                <thead className="bg-gray-200">
-                                  <tr>
-                                    <th scope="col" className="border px-3 py-2 text-xs font-semibold text-gray-600 text-left">Producto</th>
-                                    <th scope="col" className="border px-3 py-2 text-xs font-semibold text-gray-600 text-center">Cantidad</th>
-                                    <th scope="col" className="border px-3 py-2 text-xs font-semibold text-gray-600 text-center">Precio Unitario</th>
-                                    <th scope="col" className="border px-3 py-2 text-xs font-semibold text-gray-600 text-center">Subtotal</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {venta.items.map((item, itemIndex) => (
-                                    <tr key={itemIndex} className={itemIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                      <td className="border px-3 py-2 text-sm text-black">{item.nombreProducto}</td>
-                                      <td className="border px-3 py-2 text-sm text-black text-center">{item.cantidad}</td>
-                                      <td className="border px-3 py-2 text-sm text-black text-center">S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}</td>
-                                      <td className="border px-3 py-2 text-sm text-black text-center">S/. {(parseFloat(item.cantidad) * parseFloat(item.precioVentaUnitario)).toFixed(2)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                          <td colSpan="4" className="border-0 p-0">
+                            {/* Contenedor con fondo distintivo y borde */}
+                            <div className="bg-gradient-to-r from-blue-100 via-blue-50 to-blue-100 border-l-4 border-blue-400 mx-2 mb-2 rounded-lg shadow-inner">
+                              <div className="p-4">
+                                {/* Header con información de la venta seleccionada */}
+                                <div className="flex items-center justify-between mb-3 pb-2 border-b border-blue-200">
+                                  <h4 className="text-sm font-bold text-blue-800">
+                                    📦 Productos comprados el {venta.fechaVenta ? venta.fechaVenta.toLocaleDateString('es-ES', { 
+                                      weekday: 'long',
+                                      day: '2-digit', 
+                                      month: 'long', 
+                                      year: 'numeric' 
+                                    }) : 'N/A'}
+                                  </h4>
+                                </div>
+                                
+                                {/* Tabla de productos con fondo distintivo */}
+                                <div className="overflow-x-auto rounded-lg">
+                                  <table className="min-w-full border-collapse bg-white shadow-sm rounded-lg overflow-hidden">
+                                    <thead className="bg-blue-200">
+                                      <tr>
+                                        <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-left">Producto</th>
+                                        <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-center">Cantidad</th>
+                                        <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-center">Precio Unitario</th>
+                                        <th scope="col" className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-800 text-center">Subtotal</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {venta.items.map((item, itemIndex) => (
+                                        <tr key={itemIndex} className={itemIndex % 2 === 0 ? 'bg-white' : 'bg-blue-25'}>
+                                          <td className="border border-blue-200 px-3 py-2 text-sm text-gray-800 font-medium">{item.nombreProducto}</td>
+                                          <td className="border border-blue-200 px-3 py-2 text-sm text-gray-700 text-center">{item.cantidad}</td>
+                                          <td className="border border-blue-200 px-3 py-2 text-sm text-gray-700 text-center">S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}</td>
+                                          <td className="border border-blue-200 px-3 py-2 text-sm text-gray-800 text-center font-semibold">S/. {(parseFloat(item.cantidad) * parseFloat(item.precioVentaUnitario)).toFixed(2)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
                             </div>
                           </td>
                         </tr>
