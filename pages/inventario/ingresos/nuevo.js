@@ -9,19 +9,25 @@ import {
   getDocs,
   doc,
   addDoc,
-  // updateDoc, // REMOVIDO: Ya no se actualizará stock aquí
   serverTimestamp,
   query,
   orderBy,
-  // getDoc, // REMOVIDO: Ya no se leerá stock aquí
 } from 'firebase/firestore';
-import { ArrowDownTrayIcon, PlusIcon, MagnifyingGlassIcon, TrashIcon } from '@heroicons/react/24/outline'; // Se remueven ChevronUpIcon, ChevronDownIcon
+import { 
+  ArrowDownTrayIcon, 
+  PlusIcon, 
+  MagnifyingGlassIcon, 
+  TrashIcon,
+  ArrowLeftIcon,
+  PencilIcon,
+  XMarkIcon
+} from '@heroicons/react/24/outline';
 
 const NuevoIngresoPage = () => {
   const router = useRouter();
   const { user } = useAuth();
 
-  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [loadingData, setLoadingData] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [products, setProducts] = useState([]);
@@ -33,14 +39,24 @@ const NuevoIngresoPage = () => {
     observaciones: '',
   });
 
-  const [currentSearchTerm, setCurrentSearchTerm] = useState('');
-  const [currentSearchResults, setCurrentSearchResults] = useState([]);
-  const [showCurrentSearchResults, setShowCurrentSearchResults] = useState(false);
-  const [selectedProductToAdd, setSelectedProductToAdd] = useState(null);
+  // Estados para búsqueda mejorada (estilo nueva venta)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredProductos, setFilteredProductos] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const [itemsIngreso, setItemsIngreso] = useState([]);
 
-  const searchResultRef = useRef(null);
+  // Estados para modal de cantidad
+  const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [quantity, setQuantity] = useState(1);
+  const [precioCompra, setPrecioCompra] = useState(0);
+
+  // Estados para modal de edición
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [editQuantity, setEditQuantity] = useState(1);
+  const [editPrecio, setEditPrecio] = useState(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -48,7 +64,10 @@ const NuevoIngresoPage = () => {
         router.push('/auth');
         return;
       }
-      setLoadingProducts(true);
+      
+      setLoadingData(true);
+      setError(null);
+      
       try {
         const qProducts = query(collection(db, 'productos'), orderBy('nombre', 'asc'));
         const productSnapshot = await getDocs(qProducts);
@@ -67,134 +86,144 @@ const NuevoIngresoPage = () => {
         setProveedores(proveedoresList);
 
       } catch (err) {
-        console.error("Error al cargar productos o proveedores:", err);
-        setError("Error al cargar datos necesarios. " + err.message);
+        console.error("Error al cargar datos:", err);
+        setError("Error al cargar los datos: " + err.message);
       } finally {
-        setLoadingProducts(false);
+        setLoadingData(false);
       }
     };
 
-    fetchData();
-  }, [user, router]);
+    if (router.isReady) {
+      fetchData();
+    }
+  }, [user, router.isReady]);
 
+  // Búsqueda de productos mejorada
+  const searchProducts = async (searchTerm) => {
+    if (!searchTerm.trim()) {
+      setFilteredProductos([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const searchTermLower = searchTerm.toLowerCase();
+      
+      const filtered = products.filter(producto => {
+        const nombre = (producto.nombre || '').toLowerCase();
+        const marca = (producto.marca || '').toLowerCase();
+        const codigoTienda = (producto.codigoTienda || '').toLowerCase();
+        const codigoProveedor = (producto.codigoProveedor || '').toLowerCase();
+        const descripcion = (producto.descripcion || '').toLowerCase();
+        const modelosCompatiblesIds = (producto.modelosCompatiblesIds || []).join(' ').toLowerCase();
+        const modelosCompatiblesTexto = (producto.modelosCompatiblesTexto || '').toLowerCase();
+
+        return nombre.includes(searchTermLower) ||
+               marca.includes(searchTermLower) ||
+               codigoTienda.includes(searchTermLower) ||
+               codigoProveedor.includes(searchTermLower) ||
+               descripcion.includes(searchTermLower) ||
+               modelosCompatiblesIds.includes(searchTermLower) ||
+               modelosCompatiblesTexto.includes(searchTermLower);
+      });
+
+      setFilteredProductos(filtered);
+    } catch (err) {
+      console.error("Error al buscar productos:", err);
+      setError("Error al buscar productos");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Efecto para buscar productos con debounce
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (searchResultRef.current && !searchResultRef.current.contains(event.target)) {
-        setShowCurrentSearchResults(false);
+    const timeoutId = setTimeout(() => {
+      if (searchTerm.trim()) {
+        searchProducts(searchTerm);
+      } else {
+        setFilteredProductos([]);
       }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm]);
 
   const handleIngresoPrincipalChange = (e) => {
     const { name, value } = e.target;
     setIngresoPrincipalData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleItemChange = (index, e) => {
-    const { name, value } = e.target;
+  // Abrir modal de cantidad para agregar producto
+  const handleSelectProduct = (product) => {
+    setSelectedProduct(product);
+    setPrecioCompra(parseFloat(product.precioCompraDefault || 0));
+    setQuantity(1);
+    setShowQuantityModal(true);
+    setSearchTerm(''); // Limpiar búsqueda
+  };
+
+  // Agregar producto al ingreso
+  const handleAddProductToIngreso = async () => {
+    if (!selectedProduct) return;
+
+    const exists = itemsIngreso.some(item => item.productoId === selectedProduct.id);
+    if (exists) {
+      alert('Este producto ya ha sido añadido al ingreso. Edite la cantidad en la tabla.');
+      setShowQuantityModal(false);
+      return;
+    }
+
+    const newItem = {
+      id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      productoId: selectedProduct.id,
+      nombreProducto: selectedProduct.nombre,
+      marca: selectedProduct.marca || '',
+      codigoTienda: selectedProduct.codigoTienda || '',
+      color: selectedProduct.color || '',
+      cantidad: quantity,
+      precioCompraUnitario: precioCompra.toFixed(2),
+      stockRestanteLote: quantity, // Inicializar stockRestanteLote con la cantidad ingresada
+      subtotal: (quantity * precioCompra).toFixed(2),
+    };
+
+    setItemsIngreso(prev => [...prev, newItem]);
+    setShowQuantityModal(false);
+    setError(null);
+  };
+
+  // Abrir modal de edición
+  const handleEditItem = (item) => {
+    setEditingItem(item);
+    setEditQuantity(item.cantidad);
+    setEditPrecio(parseFloat(item.precioCompraUnitario || 0));
+    setShowEditItemModal(true);
+  };
+
+  // Actualizar item
+  const handleUpdateItem = async () => {
+    if (!editingItem) return;
+
     const newItems = [...itemsIngreso];
-    let parsedValue = value;
-
-    if (name === 'cantidad') {
-      // Permitir cadena vacía para que el usuario pueda borrar el número
-      if (value === '') {
-        parsedValue = '';
-      } else {
-        parsedValue = parseInt(value, 10);
-        if (isNaN(parsedValue) || parsedValue < 0) { // Asegura que sea un número entero y no negativo
-            parsedValue = 0; // O puedes dejarlo como cadena vacía para validación posterior
-        }
-      }
-    } else if (name === 'precioCompraUnitario') {
-      // Permitir cadena vacía y números decimales con flexibilidad en la entrada
-      if (value === '') {
-        parsedValue = '';
-      } else {
-        // Usar parseFloat para permitir decimales
-        const floatValue = parseFloat(value);
-        if (isNaN(floatValue) || floatValue < 0) {
-          parsedValue = '0.00'; // Valor por defecto si es inválido
-        } else {
-          // Mantener la cadena tal cual para permitir escribir "6." o "6.0" antes de completar
-          parsedValue = value;
-        }
-      }
+    const index = newItems.findIndex(item => item.id === editingItem.id);
+    
+    if (index !== -1) {
+      newItems[index] = {
+        ...newItems[index],
+        cantidad: editQuantity,
+        precioCompraUnitario: editPrecio.toFixed(2),
+        stockRestanteLote: editQuantity, // Actualizar stockRestanteLote
+        subtotal: (editQuantity * editPrecio).toFixed(2),
+      };
+      setItemsIngreso(newItems);
     }
-
-    newItems[index][name] = parsedValue;
-
-    // Recalcular subtotal solo si ambos campos son números válidos
-    const cantidad = parseFloat(newItems[index].cantidad || 0);
-    const precio = parseFloat(newItems[index].precioCompraUnitario || 0);
-
-    if (!isNaN(cantidad) && !isNaN(precio)) {
-      newItems[index].subtotal = (cantidad * precio).toFixed(2);
-      newItems[index].stockRestanteLote = cantidad; // Inicializar stockRestanteLote con la cantidad ingresada
-    } else {
-      newItems[index].subtotal = '0.00';
-      newItems[index].stockRestanteLote = 0;
-    }
-
-    setItemsIngreso(newItems);
-  };
-
-  const handleProductSearchChange = (e) => {
-    const searchTerm = e.target.value;
-    setCurrentSearchTerm(searchTerm);
-    setSelectedProductToAdd(null);
-
-    if (searchTerm.length > 1) {
-      const filtered = products.filter(p =>
-        p.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.codigoTienda && p.codigoTienda.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
-      setCurrentSearchResults(filtered);
-      setShowCurrentSearchResults(true);
-    } else {
-      setCurrentSearchResults([]);
-      setShowCurrentSearchResults(false);
-    }
-  };
-
-  const handleProductSelectFromSearch = (product) => {
-    setCurrentSearchTerm(product.nombre);
-    setSelectedProductToAdd(product);
-    setCurrentSearchResults([]);
-    setShowCurrentSearchResults(false);
-  };
-
-  const addProductToItems = () => {
-    if (selectedProductToAdd) {
-      const exists = itemsIngreso.some(item => item.productoId === selectedProductToAdd.id);
-      if (exists) {
-        alert('Este producto ya ha sido añadido a la boleta. Edite la cantidad en la tabla.');
-        return;
-      }
-
-      setItemsIngreso([...itemsIngreso, {
-        productoId: selectedProductToAdd.id,
-        nombreProducto: selectedProductToAdd.nombre,
-        cantidad: 1, // Cantidad inicial predeterminada
-        precioCompraUnitario: selectedProductToAdd.precioCompraDefault ? selectedProductToAdd.precioCompraDefault.toFixed(2) : '0.00', // Formato a 2 decimales
-        stockRestanteLote: 1, // El stock restante inicial de este lote es la cantidad ingresada
-        subtotal: parseFloat((1 * (selectedProductToAdd.precioCompraDefault || 0)).toFixed(2)),
-      }]);
-      setCurrentSearchTerm('');
-      setSelectedProductToAdd(null);
-      setError(null);
-    } else {
-      setError('Por favor, seleccione un producto de la lista antes de intentar agregarlo.');
-    }
+    
+    setShowEditItemModal(false);
   };
 
   const removeItem = (index) => {
-    if (confirm('¿Está seguro de que desea eliminar este producto de la boleta?')) {
-      const newItems = itemsIngreso.filter((_, i) => i !== index);
-      setItemsIngreso(newItems);
+    if (window.confirm('¿Está seguro de que desea eliminar este producto del ingreso?')) {
+      setItemsIngreso(prevItems => prevItems.filter((_, i) => i !== index));
     }
   };
 
@@ -211,7 +240,7 @@ const NuevoIngresoPage = () => {
     }
 
     if (itemsIngreso.length === 0) {
-      setError('Debe añadir al menos un producto a la boleta.');
+      setError('Debe añadir al menos un producto al ingreso.');
       setSaving(false);
       return;
     }
@@ -251,12 +280,14 @@ const NuevoIngresoPage = () => {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
-      console.log("Documento principal de ingreso (Boleta) creado con ID: ", ingresoDocRef.id);
 
       for (const item of itemsIngreso) {
         await addDoc(collection(ingresoDocRef, 'itemsIngreso'), {
           productoId: item.productoId,
           nombreProducto: item.nombreProducto,
+          marca: item.marca || '',
+          codigoTienda: item.codigoTienda || '',
+          color: item.color || '',
           cantidad: parseFloat(item.cantidad),
           precioCompraUnitario: parseFloat(item.precioCompraUnitario),
           stockRestanteLote: parseFloat(item.cantidad), // Inicialmente, el stock restante del lote es la cantidad total ingresada
@@ -279,9 +310,9 @@ const NuevoIngresoPage = () => {
     }
   };
 
-  const totalGeneralBoleta = itemsIngreso.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
+  const totalGeneralIngreso = itemsIngreso.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
 
-  if (!user || loadingProducts) {
+  if (!router.isReady || !user || loadingData) {
     return (
       <Layout title="Cargando Formulario de Ingreso">
         <div className="flex justify-center items-center h-64">
@@ -293,220 +324,552 @@ const NuevoIngresoPage = () => {
 
   return (
     <Layout title="Registrar Nueva Boleta de Ingreso">
-      <div className="max-w-4xl mx-auto p-6 bg-white rounded-xl shadow-lg">
-
-        {error && (
-          <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
-            <span className="block sm:inline font-medium">{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Top section: Numero de Boleta and Proveedor */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label htmlFor="numeroBoleta" className="block text-sm font-medium text-gray-700 mb-1">Número de Boleta</label>
-              <input
-                type="text"
-                name="numeroBoleta"
-                id="numeroBoleta"
-                value={ingresoPrincipalData.numeroBoleta}
-                onChange={handleIngresoPrincipalChange}
-                className="block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
-                placeholder="Ej: B-00001"
-              />
+      <div className="min-h-screen bg-gray-50 py-6">
+        <div className="max-w-full mx-auto px-6 sm:px-8 lg:px-12">
+          {error && (
+            <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
+              {error}
             </div>
-            <div>
-              <label htmlFor="proveedorId" className="block text-sm font-medium text-gray-700 mb-1">Proveedor</label>
-              <select
-                id="proveedorId"
-                name="proveedorId"
-                value={ingresoPrincipalData.proveedorId}
-                onChange={handleIngresoPrincipalChange}
-                required
-                className="block w-full pl-4 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-lg shadow-sm bg-white"
-              >
-                <option value="">Seleccione un proveedor</option>
-                {proveedores.map((prov) => (
-                  <option key={prov.id} value={prov.id}>
-                    {prov.nombreEmpresa}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+          )}
 
-          {/* Product Search and Add Button */}
-          <div className="relative flex items-center space-x-3 mt-8" ref={searchResultRef}>
-            <div className="relative flex-grow">
-              <input
-                type="text"
-                value={currentSearchTerm}
-                onChange={handleProductSearchChange}
-                onFocus={() => {
-                  if (currentSearchTerm.length > 1 && currentSearchResults.length > 0) {
-                    setShowCurrentSearchResults(true);
-                  }
-                }}
-                className="block w-full pl-12 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400 shadow-sm"
-                placeholder="Buscar producto por nombre o código..."
-                autoComplete="off"
-              />
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <MagnifyingGlassIcon className="h-6 w-6 text-gray-400" aria-hidden="true" />
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="grid grid-cols-12 gap-6 p-6">
+              
+              {/* Panel Izquierdo - Información del Ingreso */}
+              <div className="col-span-12 lg:col-span-4">
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-semibold text-gray-800">Nueva Boleta de Ingreso</h2>
+                    <button
+                      onClick={() => router.push('/inventario/ingresos')}
+                      className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      <ArrowLeftIcon className="h-4 w-4 mr-1" />
+                      Volver
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    {/* Número de Boleta */}
+                    <div>
+                      <label htmlFor="numeroBoleta" className="block text-sm font-medium text-gray-700 mb-2">
+                        Número de Boleta (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        name="numeroBoleta"
+                        id="numeroBoleta"
+                        value={ingresoPrincipalData.numeroBoleta}
+                        onChange={handleIngresoPrincipalChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Ej: B-00001"
+                      />
+                    </div>
+
+                    {/* Proveedor */}
+                    <div>
+                      <label htmlFor="proveedorId" className="block text-sm font-medium text-gray-700 mb-2">
+                        Proveedor
+                      </label>
+                      <select
+                        id="proveedorId"
+                        name="proveedorId"
+                        value={ingresoPrincipalData.proveedorId}
+                        onChange={handleIngresoPrincipalChange}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Seleccione un proveedor</option>
+                        {proveedores.map((prov) => (
+                          <option key={prov.id} value={prov.id}>
+                            {prov.nombreEmpresa}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Observaciones */}
+                    <div>
+                      <label htmlFor="observaciones" className="block text-sm font-medium text-gray-700 mb-2">
+                        Observaciones (Opcional)
+                      </label>
+                      <textarea
+                        id="observaciones"
+                        name="observaciones"
+                        rows="3"
+                        value={ingresoPrincipalData.observaciones}
+                        onChange={handleIngresoPrincipalChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Notas adicionales sobre esta boleta de ingreso..."
+                      />
+                    </div>
+
+                    {/* Total del Ingreso */}
+                    <div className="border-t border-gray-200 pt-4">
+                      <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">Total del Ingreso:</span>
+                          <span className="text-lg font-bold text-gray-900">S/. {totalGeneralIngreso}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Botón Submit */}
+                    <div className="pt-4">
+                      <button
+                        type="submit"
+                        disabled={saving || itemsIngreso.length === 0 || !ingresoPrincipalData.proveedorId}
+                        className="w-full inline-flex items-center justify-center px-4 py-3 border border-transparent text-base font-semibold rounded-lg shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {saving ? (
+                          <>
+                            <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                            </svg>
+                            Registrando...
+                          </>
+                        ) : (
+                          <>
+                            <ArrowDownTrayIcon className="h-5 w-5 mr-2" />
+                            Registrar Ingreso
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              {/* Panel Derecho - Buscador y Items */}
+              <div className="col-span-12 lg:col-span-8">
+                {/* Buscador de Productos */}
+                <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
+                  <div className="p-4">
+                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
+                    <div className="relative">
+                      <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
+                        className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      {isSearching && (
+                        <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="text-sm text-gray-600 mt-2">
+                      {searchTerm.trim() === '' ? (
+                        'Escribe para buscar productos...'
+                      ) : (
+                        `${filteredProductos.length} productos encontrados`
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dropdown de productos */}
+                  {searchTerm.trim() !== '' && (
+                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+                      {isSearching ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        </div>
+                      ) : filteredProductos.length === 0 ? (
+                        <div className="p-4 text-center text-gray-500">
+                          <p>No se encontraron productos</p>
+                        </div>
+                      ) : (
+                        <div className="max-h-80">
+                          {filteredProductos.slice(0, 20).map(producto => (
+                            <div
+                              key={producto.id}
+                              className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                              onClick={() => handleSelectProduct(producto)}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-medium text-gray-900 truncate">
+                                    {producto.nombre} ({producto.codigoTienda})
+                                  </h4>
+                                  <p className="text-sm text-gray-600 truncate">
+                                    <span className="font-medium">Marca:</span> {producto.marca}
+                                  </p>
+                                  <p className="text-sm text-gray-600 truncate">
+                                    <span className="font-medium">Color:</span> {producto.color || 'N/A'}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    <span className="font-medium">Stock:</span> {producto.stockActual || 0}
+                                  </p>
+                                  {producto.modelosCompatiblesTexto && (
+                                    <p className="text-sm text-blue-600 truncate">
+                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesTexto}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-4">
+                                  <p className="font-semibold text-blue-600 text-lg">
+                                    S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    Precio Compra
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {filteredProductos.length > 20 && (
+                            <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                              Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Items del Ingreso */}
+                <div className="bg-white border border-gray-200 rounded-lg">
+                  <div className="p-4 border-b border-gray-200">
+                    <h3 className="text-xl font-semibold text-gray-800">
+                      Items del Ingreso
+                    </h3>
+                  </div>
+
+                  <div className="p-4">
+                    {itemsIngreso.length === 0 ? (
+                      <div className="text-center py-12">
+                        <ArrowDownTrayIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                        <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en este ingreso</h4>
+                        <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead className="bg-blue-50">
+                              <tr className="border-b border-gray-300">
+                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">CÓDIGO</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">MARCA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-16">CANT.</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">COLOR</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P. COMPRA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-28">SUBTOTAL</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">ACCIONES</th>
+                              </tr>
+                            </thead>
+                            
+                            <tbody>
+                              {itemsIngreso.map((item, index) => (
+                                <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                  <td className="px-4 py-3">
+                                    <div className="font-medium text-gray-900 text-sm">
+                                      {item.nombreProducto}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {item.codigoTienda || 'N/A'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm text-gray-700">
+                                      {item.marca || 'Sin marca'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {item.cantidad}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm text-gray-600">
+                                      {item.color || "N/A"}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      S/. {parseFloat(item.precioCompraUnitario || 0).toFixed(2)}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm font-semibold text-gray-900">
+                                      S/. {parseFloat(item.subtotal || 0).toFixed(2)}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <div className="flex justify-center space-x-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleEditItem(item)}
+                                        className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
+                                        title="Editar"
+                                      >
+                                        <PencilIcon className="h-4 w-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeItem(index)}
+                                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
+                                        title="Eliminar"
+                                      >
+                                        <TrashIcon className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Total final */}
+                        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 border-t border-gray-300">
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <h3 className="text-lg font-semibold">Total del Ingreso</h3>
+                              <p className="text-blue-100 text-sm">{itemsIngreso.length} producto{itemsIngreso.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-3xl font-bold">
+                                S/. {totalGeneralIngreso}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={addProductToItems}
-              className="p-2.5 rounded-lg shadow-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Añadir producto a la lista"
-              disabled={!selectedProductToAdd}
-            >
-              <PlusIcon className="h-6 w-6" aria-hidden="true" />
-            </button>
-
-            {showCurrentSearchResults && currentSearchResults.length > 0 && (
-              <ul className="absolute top-full z-10 mt-2 w-full bg-white shadow-xl max-h-60 rounded-lg py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-                {currentSearchResults.map((product) => (
-                  <li
-                    key={product.id}
-                    className="cursor-pointer select-none relative py-2 px-4 hover:bg-blue-50 text-gray-900"
-                    onClick={() => handleProductSelectFromSearch(product)}
-                  >
-                    <span className="font-medium block truncate">
-                      {product.nombre} <span className="text-gray-500">({product.codigoTienda})</span>
-                    </span>
-                    <span className="text-sm text-gray-500">Stock: {product.stockActual || 0}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {showCurrentSearchResults && currentSearchTerm.length > 1 && currentSearchResults.length === 0 && (
-              <div className="absolute top-full z-10 mt-2 w-full bg-white shadow-lg rounded-lg py-3 px-4 text-sm text-gray-500">
-                No se encontraron productos.
-              </div>
-            )}
           </div>
-
-          {/* Table for Products in this Boleta */}
-          <div className="overflow-hidden shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg mt-8">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="py-3.5 pl-6 pr-3 text-left text-sm font-semibold text-gray-700">Nombre Producto</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-700 w-32">Cantidad</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-700 w-36">Precio Compra</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-700 w-32">Subtotal</th>
-                  <th scope="col" className="relative py-3.5 pl-3 pr-6">
-                    <span className="sr-only">Acciones</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {itemsIngreso.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-6 text-base text-gray-500">
-                      Utilice el buscador para añadir productos a esta boleta.
-                    </td>
-                  </tr>
-                ) : (
-                  itemsIngreso.map((item, index) => (
-                    <tr key={item.productoId || `item-${index}`} className="hover:bg-gray-50">
-                      <td className="py-4 pl-6 pr-3 text-sm font-medium text-gray-900">
-                          {item.nombreProducto}
-                      </td>
-                      <td className="px-3 py-4 text-sm text-gray-500">
-                        {/* Input de Cantidad - Vuelve a un input normal, pero con estilo mejorado */}
-                        <input
-                          type="number"
-                          name="cantidad"
-                          value={item.cantidad}
-                          onChange={(e) => handleItemChange(index, e)}
-                          required
-                          min="0"
-                          className="w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm text-center"
-                          placeholder="0"
-                        />
-                      </td>
-                      <td className="px-3 py-4 text-sm text-gray-500">
-                        {/* Input de Precio de Compra - Corrección para permitir múltiples dígitos y decimales */}
-                        <input
-                          type="number"
-                          name="precioCompraUnitario"
-                          value={item.precioCompraUnitario}
-                          onChange={(e) => handleItemChange(index, e)}
-                          required
-                          min="0"
-                          step="0.01" // Permite decimales
-                          className="w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm text-right"
-                          placeholder="0.00"
-                        />
-                      </td>
-                      <td className="px-3 py-4 text-sm text-gray-800 font-semibold">
-                        S/. {parseFloat(item.subtotal).toFixed(2)}
-                      </td>
-                      <td className="relative py-4 pl-3 pr-6 text-right text-sm font-medium">
-                          <button
-                            type="button"
-                            onClick={() => removeItem(index)}
-                            className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out"
-                            title="Eliminar este producto"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Observaciones (Mantenido por utilidad) */}
-          <div className="mt-8">
-              <label htmlFor="observaciones" className="block text-sm font-medium text-gray-700 mb-1">Observaciones (Opcional)</label>
-              <textarea
-                id="observaciones"
-                name="observaciones"
-                rows="3"
-                value={ingresoPrincipalData.observaciones}
-                onChange={handleIngresoPrincipalChange}
-                className="block w-full px-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
-                placeholder="Notas adicionales sobre esta boleta de ingreso..."
-              ></textarea>
-          </div>
-
-          {/* Total and Register Button */}
-          <div className="flex justify-between items-center mt-8 pt-4 border-t border-gray-200">
-            <span className="text-xl font-bold text-gray-800">Total:</span>
-            <span className="text-2xl font-extrabold text-blue-700">S/. {totalGeneralBoleta}</span>
-          </div>
-
-          <div className="flex justify-center mt-8">
-            <button
-              type="submit"
-              className="inline-flex items-center px-8 py-3 border border-transparent text-lg font-semibold rounded-lg shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={saving || itemsIngreso.length === 0}
-            >
-              {saving ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Registrando...
-                </>
-              ) : (
-                <>
-                  <ArrowDownTrayIcon className="-ml-1 mr-3 h-6 w-6" aria-hidden="true" />
-                  Registrar Ingresos
-                </>
-              )}
-            </button>
-          </div>
-        </form>
+        </div>
       </div>
+
+      {/* Modal de Cantidad */}
+      {showQuantityModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowQuantityModal(false)}></div>
+            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+              <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+                <button
+                  type="button"
+                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  onClick={() => setShowQuantityModal(false)}
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="sm:flex sm:items-start">
+                <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                  <ArrowDownTrayIcon className="h-6 w-6 text-blue-600" />
+                </div>
+                <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                  <h3 className="text-xl font-semibold leading-6 text-gray-900 mb-4">
+                    Agregar Producto a Ingreso
+                  </h3>
+                  
+                  {selectedProduct && (
+                    <div className="mt-4">
+                      <div className="bg-gray-50 p-6 rounded-lg mb-6">
+                        <h4 className="font-semibold text-lg text-gray-900 mb-2">
+                          {selectedProduct.nombre}
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="font-medium text-gray-700">Código: </span>
+                            <span className="text-gray-600">{selectedProduct.codigoTienda}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700">Marca: </span>
+                            <span className="text-gray-600">{selectedProduct.marca || 'Sin marca'}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700">Stock actual: </span>
+                            <span className="text-gray-600">{selectedProduct.stockActual || 0}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700">Color: </span>
+                            <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Cantidad
+                          </label>
+                          <input
+                            type="number"
+                            value={quantity}
+                            onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                            min="1"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Precio de Compra (S/.)
+                          </label>
+                          <input
+                            type="number"
+                            value={precioCompra}
+                            onChange={(e) => setPrecioCompra(parseFloat(e.target.value) || 0)}
+                            min="0"
+                            step="0.01"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200 mt-6">
+                        <div className="flex justify-between items-center">
+                          <span className="text-lg font-medium text-gray-700">Subtotal:</span>
+                          <span className="font-bold text-blue-800 text-2xl">S/. {(quantity * precioCompra).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
+                <button
+                  type="button"
+                  className="inline-flex w-full justify-center rounded-md bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  onClick={handleAddProductToIngreso}
+                  disabled={quantity <= 0 || precioCompra < 0}
+                >
+                  Agregar a Ingreso
+                </button>
+                <button
+                  type="button"
+                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
+                  onClick={() => setShowQuantityModal(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edición */}
+      {showEditItemModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditItemModal(false)}></div>
+            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+              <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+                <button
+                  type="button"
+                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  onClick={() => setShowEditItemModal(false)}
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="sm:flex sm:items-start">
+                <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
+                  <PencilIcon className="h-6 w-6 text-yellow-600" />
+                </div>
+                <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                  <h3 className="text-xl font-semibold leading-6 text-gray-900 mb-4">
+                    Editar Producto
+                  </h3>
+                  
+                  {editingItem && (
+                    <div className="mt-4">
+                      <div className="bg-gray-50 p-6 rounded-lg mb-6">
+                        <h4 className="font-semibold text-lg text-gray-900 mb-2">
+                          {editingItem.nombreProducto}
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="font-medium text-gray-700">Código: </span>
+                            <span className="text-gray-600">{editingItem.codigoTienda}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700">Marca: </span>
+                            <span className="text-gray-600">{editingItem.marca}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Cantidad
+                          </label>
+                          <input
+                            type="number"
+                            value={editQuantity}
+                            onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                            min="1"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            Precio de Compra (S/.)
+                          </label>
+                          <input
+                            type="number"
+                            value={editPrecio}
+                            onChange={(e) => setEditPrecio(parseFloat(e.target.value) || 0)}
+                            min="0"
+                            step="0.01"
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg border border-yellow-200 mt-6">
+                        <div className="flex justify-between items-center">
+                          <span className="text-lg font-medium text-gray-700">Nuevo Subtotal:</span>
+                          <span className="font-bold text-yellow-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 sm:flex sm:flex-row-reverse gap-3">
+                <button
+                  type="button"
+                  className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-yellow-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  onClick={handleUpdateItem}
+                  disabled={editQuantity <= 0 || editPrecio < 0}
+                >
+                  Actualizar
+                </button>
+                <button
+                  type="button"
+                  className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
+                  onClick={() => setShowEditItemModal(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };

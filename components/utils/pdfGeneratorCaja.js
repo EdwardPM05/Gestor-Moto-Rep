@@ -380,6 +380,11 @@ const generarPDFCaja = async (cierreData) => {
         
         // Crear tabla de resumen final
         const resumenFinal = cierreData.resumenFinal || {};
+        const dineroInicial = cierreData.dineroInicial || 0;
+
+        pdf.text('Dinero Inicial:', margin + 5, currentY);
+        pdf.text(`S/. ${dineroInicial.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+        currentY += 5;
         
         pdf.text('Total de Ventas del Día:', margin + 5, currentY);
         pdf.text(`${resumenFinal.totalVentas || 0}`, pageWidth - margin, currentY, { align: 'right' });
@@ -430,7 +435,7 @@ const generarPDFCaja = async (cierreData) => {
     }
 };
 
-// Función principal exportada
+// Función principal exportada - MANTENER ORIGINAL
 export const generarPDFCajaCompleta = async (fechaString) => {
     try {
         // Obtener datos del cierre de caja desde Firestore

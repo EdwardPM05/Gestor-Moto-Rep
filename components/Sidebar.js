@@ -78,6 +78,12 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       path: '/ventas' 
     },
     {
+      name: 'Devoluciones',
+      icon: BanknotesIcon,
+      adminOnly: true,
+      path: '/devoluciones' 
+    },
+    {
       name: 'Clientes',
       icon: UsersIcon,
       adminOnly: true,
@@ -99,10 +105,11 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Empleados',
       icon: UserGroupIcon,
       adminOnly: true,
-      submenu: [
+      path: '/empleados'
+      /*submenu: [
         { name: 'Lista de Empleados', path: '/empleados' },
         { name: 'Rendimiento', path: '/empleados/rendimiento' }
-      ]
+      ]*/
     },
     {
       name: 'Caja',

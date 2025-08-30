@@ -5,11 +5,20 @@ import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
 import { db } from '../../../lib/firebase';
 import { doc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { ArrowLeftIcon, CubeTransparentIcon } from '@heroicons/react/24/outline'; // Importa el icono de flecha izquierda
+import { 
+  ArrowLeftIcon, 
+  CubeTransparentIcon,
+  ClipboardDocumentListIcon,
+  BuildingOfficeIcon,
+  CalendarDaysIcon,
+  BanknotesIcon,
+  UserIcon,
+  ChatBubbleLeftRightIcon
+} from '@heroicons/react/24/outline';
 
 const IngresoDetailsPage = () => {
   const router = useRouter();
-  const { id } = router.query; // Obtiene el ID del ingreso de la URL
+  const { id } = router.query;
   const { user } = useAuth();
 
   const [ingreso, setIngreso] = useState(null);
@@ -23,7 +32,7 @@ const IngresoDetailsPage = () => {
         router.push('/auth');
         return;
       }
-      if (!id) return; // Espera hasta que el ID esté disponible
+      if (!id) return;
 
       setLoading(true);
       setError(null);
@@ -67,10 +76,10 @@ const IngresoDetailsPage = () => {
     };
 
     fetchIngresoDetails();
-  }, [id, user, router]); // Dependencia del ID de la URL y el usuario
+  }, [id, user, router]);
 
   if (!user) {
-    return null; // O un spinner/mensaje de carga mientras redirige
+    return null;
   }
 
   if (loading) {
@@ -86,108 +95,288 @@ const IngresoDetailsPage = () => {
   if (error) {
     return (
       <Layout title="Error al Cargar Ingreso">
-        <div className="max-w-4xl mx-auto p-4 bg-white rounded-lg shadow-md">
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-            <span className="block sm:inline">{error}</span>
+        <div className="min-h-screen bg-gray-50 py-6">
+          <div className="max-w-4xl mx-auto px-6 sm:px-8 lg:px-12">
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <span className="block sm:inline">{error}</span>
+              </div>
+              <button
+                onClick={() => router.push('/inventario/ingresos')}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              >
+                <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
+                Volver a Ingresos
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => router.push('/inventario/ingresos')}
-            className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
-            Volver a Ingresos
-          </button>
         </div>
       </Layout>
     );
   }
 
   if (!ingreso) {
-      return (
-          <Layout title="Boleta No Encontrada">
-              <div className="max-w-4xl mx-auto p-4 bg-white rounded-lg shadow-md">
-                  <p className="text-gray-600">No se pudo cargar la boleta de ingreso.</p>
-                  <button
-                      onClick={() => router.push('/inventario/ingresos')}
-                      className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                      <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
-                      Volver a Ingresos
-                  </button>
-              </div>
-          </Layout>
-      );
+    return (
+      <Layout title="Boleta No Encontrada">
+        <div className="min-h-screen bg-gray-50 py-6">
+          <div className="max-w-4xl mx-auto px-6 sm:px-8 lg:px-12">
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <p className="text-gray-600 mb-4">No se pudo cargar la boleta de ingreso.</p>
+              <button
+                onClick={() => router.push('/inventario/ingresos')}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+              >
+                <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
+                Volver a Ingresos
+              </button>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
   }
 
+  const getEstadoBadge = (estado) => {
+    const estadoConfig = {
+      'pendiente': { 
+        bg: 'bg-yellow-100', 
+        text: 'text-yellow-800', 
+        label: 'Pendiente',
+        border: 'border-yellow-200'
+      },
+      'recibido': { 
+        bg: 'bg-green-100', 
+        text: 'text-green-800', 
+        label: 'Confirmado',
+        border: 'border-green-200'
+      },
+      'cancelado': { 
+        bg: 'bg-red-100', 
+        text: 'text-red-800', 
+        label: 'Cancelado',
+        border: 'border-red-200'
+      }
+    };
+    
+    const config = estadoConfig[estado] || estadoConfig['pendiente'];
+    
+    return (
+      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${config.bg} ${config.text} ${config.border}`}>
+        {config.label}
+      </span>
+    );
+  };
+
+  const totalCantidadItems = items.reduce((sum, item) => sum + (item.cantidad || 0), 0);
+
   return (
-    <Layout title={`Detalles de Boleta: ${ingreso.id.substring(0, 8)}...`}>
-      <div className="max-w-4xl mx-auto p-4 bg-white rounded-lg shadow-md">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center">
-            <CubeTransparentIcon className="h-7 w-7 text-green-600 mr-2" />
-            Detalles de Boleta de Ingreso
-          </h1>
-          <button
-            onClick={() => router.push('/inventario/ingresos')}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-          >
-            <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
-            Volver a Boletas
-          </button>
-        </div>
-
-        {/* Detalles de la Boleta Principal */}
-        <div className="bg-blue-50 p-4 rounded-md border border-blue-200 mb-6">
-          <h2 className="text-xl font-semibold text-blue-800 mb-4">Información de la Boleta</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
-            <div>
-              <p><strong className="font-medium">ID de Boleta:</strong> {ingreso.id}</p>
-              <p><strong className="font-medium">Proveedor:</strong> {ingreso.proveedorNombre || 'N/A'}</p>
-              {/* Si habilitaste numeroBoleta: <p><strong className="font-medium">N° Boleta:</strong> {ingreso.numeroBoleta || 'N/A'}</p> */}
-              <p><strong className="font-medium">Costo Total:</strong> S/. {parseFloat(ingreso.costoTotalLote || 0).toFixed(2)}</p>
+    <Layout title={`Boleta ${ingreso.numeroBoleta || ingreso.id.substring(0, 8)}`}>
+      <div className="min-h-screen bg-gray-50 py-6">
+        <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-8">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center">
+                  <CubeTransparentIcon className="h-8 w-8 text-white mr-3" />
+                  <div>
+                    <h1 className="text-2xl font-bold text-white">
+                      Boleta {ingreso.numeroBoleta || `#${ingreso.id.substring(0, 8)}`}
+                    </h1>
+                    <p className="text-blue-100 mt-1">
+                      Detalles de la boleta de ingreso
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => router.push('/inventario/ingresos')}
+                  className="inline-flex items-center px-4 py-2 border border-blue-500 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-300 transition-colors"
+                >
+                  <ArrowLeftIcon className="-ml-1 mr-2 h-5 w-5" />
+                  Volver a Boletas
+                </button>
+              </div>
             </div>
-            <div>
-              <p><strong className="font-medium">Fecha de Ingreso:</strong> {ingreso.fechaIngreso}</p>
-              <p><strong className="font-medium">Registrado Por:</strong> {ingreso.empleadoId || 'Desconocido'}</p>
-              <p><strong className="font-medium">Observaciones:</strong> {ingreso.observaciones || 'Sin observaciones'}</p>
+
+            <div className="p-6">
+              {/* Información de la Boleta */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                
+                {/* Información General */}
+                <div className="lg:col-span-2">
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <ClipboardDocumentListIcon className="h-5 w-5 text-blue-600 mr-2" />
+                      Información General
+                    </h2>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center">
+                          <BuildingOfficeIcon className="h-4 w-4 text-gray-500 mr-2" />
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Proveedor</p>
+                            <p className="text-sm font-medium text-gray-900">{ingreso.proveedorNombre || 'N/A'}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center">
+                          <CalendarDaysIcon className="h-4 w-4 text-gray-500 mr-2" />
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Fecha de Ingreso</p>
+                            <p className="text-sm font-medium text-gray-900">{ingreso.fechaIngreso}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center">
+                          <UserIcon className="h-4 w-4 text-gray-500 mr-2" />
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Registrado por</p>
+                            <p className="text-sm font-medium text-gray-900">{ingreso.empleadoId || 'Desconocido'}</p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Estado</p>
+                          {getEstadoBadge(ingreso.estado)}
+                        </div>
+                        
+                        <div className="flex items-center">
+                          <BanknotesIcon className="h-4 w-4 text-gray-500 mr-2" />
+                          <div>
+                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Costo Total</p>
+                            <p className="text-lg font-bold text-green-600">S/. {parseFloat(ingreso.costoTotalLote || 0).toFixed(2)}</p>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total de Items</p>
+                          <p className="text-sm font-medium text-gray-900">{totalCantidadItems} unidades</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Observaciones */}
+                <div>
+                  <div className="bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 rounded-lg p-6 h-full">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                      <ChatBubbleLeftRightIcon className="h-5 w-5 text-gray-600 mr-2" />
+                      Observaciones
+                    </h3>
+                    <div className="bg-white rounded-md p-4 border border-gray-200">
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        {ingreso.observaciones || 'Sin observaciones registradas'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de Productos */}
+              <div className="bg-white border border-gray-200 rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                    <CubeTransparentIcon className="h-6 w-6 text-blue-600 mr-2" />
+                    Productos en esta Boleta
+                    <span className="ml-2 bg-blue-100 text-blue-800 text-sm font-medium px-2.5 py-0.5 rounded-full">
+                      {items.length} producto{items.length !== 1 ? 's' : ''}
+                    </span>
+                  </h2>
+                </div>
+
+                <div className="p-6">
+                  {items.length === 0 ? (
+                    <div className="text-center py-12">
+                      <CubeTransparentIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                      <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos registrados</h4>
+                      <p className="text-gray-500">Esta boleta no contiene productos</p>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-lg overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse">
+                          <thead className="bg-blue-50">
+                            <tr className="border-b border-gray-300">
+                              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide">Producto</th>
+                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Código</th>
+                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Marca</th>
+                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Color</th>
+                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Cantidad</th>
+                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. Compra</th>
+                              <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">Subtotal</th>
+                            </tr>
+                          </thead>
+                          
+                          <tbody>
+                            {items.map((item, index) => (
+                              <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                <td className="px-4 py-4">
+                                  <div className="font-medium text-gray-900 text-sm">
+                                    {item.nombreProducto || 'N/A'}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-4 text-center">
+                                  <span className="text-sm text-gray-900 font-medium bg-gray-100 px-2 py-1 rounded">
+                                    {item.codigoTienda || 'N/A'}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-4 text-center">
+                                  <span className="text-sm text-gray-700">
+                                    {item.marca || 'Sin marca'}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-4 text-center">
+                                  <span className="text-sm text-gray-600">
+                                    {item.color || 'N/A'}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-4 text-center">
+                                  <span className="text-sm font-medium text-gray-900 bg-blue-100 px-2 py-1 rounded">
+                                    {item.cantidad || 0}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-4 text-center">
+                                  <span className="text-sm font-medium text-green-700">
+                                    S/. {parseFloat(item.precioCompraUnitario || 0).toFixed(2)}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-4 text-center">
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    S/. {parseFloat(item.subtotal || 0).toFixed(2)}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Total final */}
+                      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 border-t border-gray-300">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <h3 className="text-lg font-semibold">Total de la Boleta</h3>
+                            <p className="text-blue-100 text-sm">{items.length} producto{items.length !== 1 ? 's' : ''} • {totalCantidadItems} unidades</p>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-3xl font-bold">
+                              S/. {parseFloat(ingreso.costoTotalLote || 0).toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
-        {/* Lista de Productos en esta Boleta */}
-        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-          <CubeTransparentIcon className="h-6 w-6 text-indigo-600 mr-2" />
-          Productos en esta Boleta
-        </h2>
-
-        {items.length === 0 ? (
-          <p className="text-gray-500">No hay productos registrados para esta boleta.</p>
-        ) : (
-          <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table className="min-w-full divide-y divide-gray-300">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Producto</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Cantidad</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Precio Compra Unitario</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Lote Producto</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">{item.nombreProducto}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{item.cantidad}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">S/. {parseFloat(item.precioCompraUnitario || 0).toFixed(2)}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{item.lote || 'N/A'}</td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">S/. {parseFloat(item.subtotal || 0).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </Layout>
   );

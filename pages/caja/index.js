@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import DatePicker from 'react-datepicker';
+import emailjs from '@emailjs/browser';
 import "react-datepicker/dist/react-datepicker.css";
 import {
   collection,
@@ -48,6 +49,12 @@ const CajaPage = () => {
   const [error, setError] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   
+  // Estados para dinero inicial
+  const [dineroInicial, setDineroInicial] = useState(0);
+  const [showDineroInicialModal, setShowDineroInicialModal] = useState(false);
+  const [inputDineroInicial, setInputDineroInicial] = useState('');
+  const [processingDineroInicial, setProcessingDineroInicial] = useState(false);
+  
   // Estados para retiro de dinero
   const [showRetiroModal, setShowRetiroModal] = useState(false);
   const [retiroAmount, setRetiroAmount] = useState('');
@@ -88,6 +95,77 @@ const CajaPage = () => {
   // Verificar permisos de usuario
   const isAdmin = user?.role === 'admin' || user?.email === 'admin@gmail.com';
 
+  // Función para cargar dinero inicial del día
+  const cargarDineroInicial = async (fecha) => {
+    try {
+      const fechaString = fecha.toISOString().split('T')[0];
+      const dineroInicialDoc = await getDoc(doc(db, 'dineroInicial', fechaString));
+      
+      if (dineroInicialDoc.exists()) {
+        const data = dineroInicialDoc.data();
+        setDineroInicial(data.monto || 0);
+      } else {
+        setDineroInicial(0);
+      }
+    } catch (error) {
+      console.error('Error al cargar dinero inicial:', error);
+      setDineroInicial(0);
+    }
+  };
+
+  // Función para establecer dinero inicial
+  const establecerDineroInicial = async () => {
+    if (!isAdmin) {
+      alert('Solo el administrador puede establecer el dinero inicial');
+      return;
+    }
+
+    if (cajaCerrada) {
+      alert('No se puede modificar el dinero inicial. La caja del día ya está cerrada.');
+      return;
+    }
+
+    if (!inputDineroInicial) {
+      alert('Por favor ingrese el monto del dinero inicial');
+      return;
+    }
+
+    const monto = parseFloat(inputDineroInicial);
+    if (isNaN(monto) || monto < 0) {
+      alert('El monto debe ser un número positivo o cero');
+      return;
+    }
+
+    if (!window.confirm(`¿Confirma establecer S/. ${monto.toFixed(2)} como dinero inicial del día?`)) {
+      return;
+    }
+
+    setProcessingDineroInicial(true);
+
+    try {
+      const fechaString = selectedDate.toISOString().split('T')[0];
+      
+      await setDoc(doc(db, 'dineroInicial', fechaString), {
+        monto: monto,
+        fecha: Timestamp.fromDate(selectedDate),
+        fechaString: fechaString,
+        establecidoPor: user.email,
+        fechaCreacion: serverTimestamp()
+      });
+
+      setDineroInicial(monto);
+      setInputDineroInicial('');
+      setShowDineroInicialModal(false);
+      alert('Dinero inicial establecido exitosamente');
+
+    } catch (error) {
+      console.error('Error al establecer dinero inicial:', error);
+      alert('Error al establecer el dinero inicial: ' + error.message);
+    } finally {
+      setProcessingDineroInicial(false);
+    }
+  };
+
   // Función para verificar si la caja está cerrada
   const verificarCierreCaja = async (fecha) => {
     try {
@@ -100,7 +178,7 @@ const CajaPage = () => {
     }
   };
 
-  // Función para cerrar la caja
+  // Función para cerrar la caja (actualizada para incluir dinero inicial)
   const cerrarCaja = async () => {
     if (!isAdmin) {
       alert('Solo el administrador puede cerrar la caja');
@@ -119,6 +197,7 @@ const CajaPage = () => {
       const cierreData = {
         fecha: Timestamp.fromDate(selectedDate),
         fechaString: fechaString,
+        dineroInicial: dineroInicial, // NUEVO: incluir dinero inicial
         totales: totalesDelDia,
         retiros: retiros.map(retiro => ({
           id: retiro.id,
@@ -139,7 +218,8 @@ const CajaPage = () => {
         resumenFinal: {
           totalVentas: ventas.length,
           totalRetiros: retiros.length,
-          efectivoFinal: Math.max(0, totalesDelDia.efectivo - dineroEnCaja.totalRetiros),
+          dineroInicial: dineroInicial,
+          efectivoFinal: Math.max(0, dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros),
           digitalTotal: totalesDelDia.yape + totalesDelDia.plin + totalesDelDia.tarjeta
         },
         cerradoPor: user.email,
@@ -161,14 +241,75 @@ const CajaPage = () => {
   };
 
   // Función para generar reporte PDF
+  // Función para generar reporte PDF y enviarlo por email - VERSIÓN CORREGIDA
   const generarReportePDF = async () => {
     try {
+      setLoading(true);
+      
       const { generarPDFCajaCompleta } = await import('../../components/utils/pdfGeneratorCaja');
-      const fechaString = selectedDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      const fechaString = selectedDate.toISOString().split('T')[0];
+      
+      // Generar el PDF (descarga local)
       await generarPDFCajaCompleta(fechaString);
+      
+      // Enviar email con resumen de la caja
+      await enviarResumenPorEmail(fechaString);
+      
+      alert('Reporte generado y resumen enviado por email exitosamente');
+      
     } catch (error) {
-      console.error('Error al generar PDF:', error);
+      console.error('Error al generar y enviar resumen:', error);
       alert('Error al generar el reporte: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Función para enviar resumen por email - SIN ATTACHMENTS (actualizada con dinero inicial)
+  const enviarResumenPorEmail = async (fechaString) => {
+    try {
+      const efectivoFinal = Math.max(0, dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros);
+      
+      const templateParams = {
+        to_email: 'leviatan05xs2@gmail.com',
+        subject: `Resumen de Caja - ${fechaString}`,
+        fecha_caja: fechaString,
+        dinero_inicial: formatCurrency(dineroInicial), // NUEVO
+        total_dia: formatCurrency(totalesDelDia.total),
+        efectivo: formatCurrency(totalesDelDia.efectivo),
+        yape: formatCurrency(totalesDelDia.yape),
+        plin: formatCurrency(totalesDelDia.plin),
+        tarjeta: formatCurrency(totalesDelDia.tarjeta),
+        ganancia_real: formatCurrency(totalesDelDia.gananciaReal),
+        total_retiros: formatCurrency(dineroEnCaja.totalRetiros),
+        efectivo_final: formatCurrency(efectivoFinal), // ACTUALIZADO
+        total_ventas: ventas.length,
+        cerrado_por: user?.email || 'N/A',
+        fecha_generacion: new Date().toLocaleString('es-PE'),
+        // Detalle de retiros si existen
+        detalle_retiros: retiros.length > 0 ? 
+          retiros.map(r => `${r.tipo.toUpperCase()}: ${formatCurrency(r.monto)} - ${r.motivo}`).join('\n') 
+          : 'No hubo retiros en el día'
+      };
+
+      const result = await emailjs.send(
+        process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID,
+        process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID,
+        templateParams,
+        process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY
+      );
+
+      console.log('Email enviado exitosamente:', result);
+      
+    } catch (error) {
+      console.error('Error al enviar email:', error);
+      // Más información del error para debugging
+      console.error('Detalles del error:', {
+        status: error.status,
+        text: error.text,
+        message: error.message
+      });
+      throw new Error(`Error al enviar el resumen por email: ${error.text || error.message}`);
     }
   };
 
@@ -391,7 +532,7 @@ const CajaPage = () => {
     }
   };
 
-  // useEffect modificado para cargar ventas con cálculo de ganancia real
+  // useEffect modificado para cargar ventas con cálculo de ganancia real y dinero inicial
   useEffect(() => {
     if (!user) {
       router.push('/auth');
@@ -403,6 +544,9 @@ const CajaPage = () => {
 
     // Verificar si la caja está cerrada para esta fecha
     verificarCierreCaja(selectedDate);
+    
+    // Cargar dinero inicial del día
+    cargarDineroInicial(selectedDate);
 
     const startOfDay = new Date(selectedDate);
     startOfDay.setHours(0, 0, 0, 0);
@@ -471,7 +615,7 @@ const CajaPage = () => {
     setDineroEnCaja(prev => ({
       ...prev,
       totalRetiros,
-      efectivoFisico: Math.max(0, totalesDelDia.efectivo - totalRetiros)
+      efectivoFisico: Math.max(0, dineroInicial + totalesDelDia.efectivo - totalRetiros) // ACTUALIZADO: incluye dinero inicial
     }));
   };
 
@@ -497,9 +641,9 @@ const CajaPage = () => {
       return;
     }
 
-    // Verificar si hay suficiente dinero disponible
+    // Verificar si hay suficiente dinero disponible - ACTUALIZADO: incluye dinero inicial para efectivo
     const disponible = retiroTipo === 'efectivo' 
-      ? totalesDelDia.efectivo - dineroEnCaja.totalRetiros
+      ? dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros
       : retiroTipo === 'yape' ? totalesDelDia.yape
       : retiroTipo === 'plin' ? totalesDelDia.plin
       : totalesDelDia.tarjeta;
@@ -573,7 +717,6 @@ const CajaPage = () => {
     );
   }
 
-
   return (
     <Layout title="Caja">
       <div className="flex flex-col mx-4 py-4 space-y-6">
@@ -607,6 +750,14 @@ const CajaPage = () => {
               
               {isAdmin && !cajaCerrada && (
                 <>
+                  <button
+                    onClick={() => setShowDineroInicialModal(true)}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors"
+                  >
+                    <BanknotesIcon className="h-5 w-5" />
+                    <span>Dinero Inicial</span>
+                  </button>
+                  
                   <button
                     onClick={() => setShowRetiroModal(true)}
                     className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors"
@@ -647,16 +798,40 @@ const CajaPage = () => {
           </div>
         )}
 
+        {/* Dinero Inicial del Día - NUEVO COMPONENTE */}
+        {dineroInicial > 0 && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="flex-shrink-0">
+                  <BanknotesIcon className="h-8 w-8 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-blue-900">Dinero Inicial del Día</p>
+                  <p className="text-2xl font-bold text-blue-600">{formatCurrency(dineroInicial)}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-blue-600">Efectivo disponible para vuelto</p>
+                <p className="text-sm text-blue-500">Establecido al inicio del día</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Resumen de Caja - Cards principales */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           
-          {/* Efectivo Físico */}
+          {/* Efectivo Físico - ACTUALIZADO: incluye dinero inicial */}
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm font-medium">Efectivo Físico</p>
-                <p className="text-2xl font-bold">{formatCurrency(Math.max(0, totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
+                <p className="text-2xl font-bold">{formatCurrency(Math.max(0, dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
                 <p className="text-green-200 text-xs mt-1">💵 Dinero en caja</p>
+                {dineroInicial > 0 && (
+                  <p className="text-green-200 text-xs">Incluye inicial: {formatCurrency(dineroInicial)}</p>
+                )}
               </div>
               <BanknotesIcon className="h-12 w-12 text-green-200" />
             </div>
@@ -856,7 +1031,84 @@ const CajaPage = () => {
           )}
         </div>
 
-        {/* Modal de Cierre de Caja */}
+        {/* Modal de Dinero Inicial - NUEVO MODAL */}
+        {showDineroInicialModal && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <BanknotesIcon className="h-6 w-6 text-green-600 mr-2" />
+                    Establecer Dinero Inicial
+                  </h3>
+                  <button
+                    onClick={() => setShowDineroInicialModal(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    ×
+                  </button>
+                </div>
+                
+                <div className="space-y-4">                  
+                  {dineroInicial > 0 && (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-sm text-gray-600">
+                        <strong>Dinero inicial actual:</strong> {formatCurrency(dineroInicial)}
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nuevo Dinero Inicial (Efectivo)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={inputDineroInicial}
+                      onChange={(e) => setInputDineroInicial(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
+                      placeholder="0.00"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Ingrese el monto en soles que se dejará como dinero inicial para vuelto
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => setShowDineroInicialModal(false)}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+                    disabled={processingDineroInicial}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={establecerDineroInicial}
+                    disabled={processingDineroInicial}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center space-x-2"
+                  >
+                    {processingDineroInicial ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Guardando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <BanknotesIcon className="h-4 w-4" />
+                        <span>Establecer</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Cierre de Caja - ACTUALIZADO para mostrar dinero inicial */}
         {showCierreModal && (
           <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
             <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
@@ -890,10 +1142,11 @@ const CajaPage = () => {
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <h4 className="font-medium text-gray-900 mb-2">Resumen del Día</h4>
                     <div className="text-sm text-gray-600 space-y-1">
+                      <p><strong>Dinero Inicial:</strong> {formatCurrency(dineroInicial)}</p>
                       <p><strong>Total Ventas:</strong> {ventas.length}</p>
                       <p><strong>Total Ingresos:</strong> {formatCurrency(totalesDelDia.total)}</p>
                       <p><strong>Total Retiros:</strong> {formatCurrency(dineroEnCaja.totalRetiros)}</p>
-                      <p><strong>Efectivo Final:</strong> {formatCurrency(Math.max(0, totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
+                      <p><strong>Efectivo Final:</strong> {formatCurrency(Math.max(0, dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros))}</p>
                     </div>
                   </div>
                 </div>
@@ -929,7 +1182,7 @@ const CajaPage = () => {
           </div>
         )}
 
-        {/* Modal de Retiro */}
+        {/* Modal de Retiro - ACTUALIZADO para mostrar dinero inicial disponible */}
         {showRetiroModal && (
           <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
             <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
@@ -957,7 +1210,7 @@ const CajaPage = () => {
                       onChange={(e) => setRetiroTipo(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500"
                     >
-                      <option value="efectivo">Efectivo (S/. {(totalesDelDia.efectivo - dineroEnCaja.totalRetiros).toFixed(2)} disponible)</option>
+                      <option value="efectivo">Efectivo (S/. {(dineroInicial + totalesDelDia.efectivo - dineroEnCaja.totalRetiros).toFixed(2)} disponible)</option>
                       <option value="yape">Yape (S/. {totalesDelDia.yape.toFixed(2)} disponible)</option>
                       <option value="plin">Plin (S/. {totalesDelDia.plin.toFixed(2)} disponible)</option>
                       <option value="tarjeta">Tarjeta (S/. {totalesDelDia.tarjeta.toFixed(2)} disponible)</option>
