@@ -49,7 +49,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
   // Definición de todos los elementos del menú en un solo lugar
   const menuItems = [
-    { name: 'Dashboard', icon: HomeIcon, path: '/dashboard', adminOnly: false },
     {
       name: 'Productos',
       icon: CubeIcon,
@@ -59,6 +58,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         { name: 'Faltos', path: '/productos/faltos' }
       ]
     },
+    //{ name: 'Dashboard', icon: HomeIcon, path: '/dashboard', adminOnly: false },
     {
       name: 'Ingresos',
       icon: ClipboardDocumentListIcon,
@@ -117,17 +117,17 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       adminOnly: true,
       path:'/caja'
     },
-     /* {
-        name: 'Reportes',
-        icon: PrinterIcon,
-        adminOnly: true,
-        submenu: [
-          { name: 'Reporte de Ventas', path: '/reportes/ventas' },
-          { name: 'Reporte de Inventory', path: '/reportes/inventario' },
-          { name: 'Reporte de Cotizaciones', path: '/reportes/cotizaciones' },
-          { name: 'Reporte de Empleados', path: '/reportes/empleados' }
-        ]
-      }*/
+      /* {
+         name: 'Reportes',
+         icon: PrinterIcon,
+         adminOnly: true,
+         submenu: [
+           { name: 'Reporte de Ventas', path: '/reportes/ventas' },
+           { name: 'Reporte de Inventory', path: '/reportes/inventario' },
+           { name: 'Reporte de Cotizaciones', path: '/reportes/cotizaciones' },
+           { name: 'Reporte de Empleados', path: '/reportes/empleados' }
+         ]
+       }*/
   ];
 
   return (

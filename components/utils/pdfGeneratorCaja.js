@@ -105,7 +105,6 @@ const getMetodoPagoLabel = (metodo) => {
     return metodos[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A';
 };
 
-// Función principal para generar el PDF de caja
 const generarPDFCaja = async (cierreData) => {
     try {
         const { jsPDF } = await import('jspdf');
@@ -127,7 +126,7 @@ const generarPDFCaja = async (cierreData) => {
         let currentY = 15;
 
         // =========================================================================
-        // ENCABEZADO: INFORMACIÓN DE LA EMPRESA Y REPORTE
+        // ENCABEZADO - MANTENER IGUAL
         // =========================================================================
 
         pdf.setFont(fontName, 'bold');
@@ -150,7 +149,7 @@ const generarPDFCaja = async (cierreData) => {
         pdf.text('Teléfono: 999 888 777', margin, currentY + 12);
         currentY += 16;
         
-        // Información del reporte (abajo del encabezado)
+        // Información del reporte
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'bold');
         
@@ -182,7 +181,7 @@ const generarPDFCaja = async (cierreData) => {
         currentY += 8;
 
         // =========================================================================
-        // RESUMEN DE TOTALES
+        // RESUMEN DE TOTALES - MANTENER IGUAL
         // =========================================================================
 
         pdf.setFontSize(10);
@@ -235,24 +234,114 @@ const generarPDFCaja = async (cierreData) => {
         currentY += 10;
 
         // =========================================================================
-        // GANANCIAS
+        // NUEVA SECCIÓN: DEVOLUCIONES DEL DÍA
         // =========================================================================
 
-        pdf.setFont(fontName, 'bold');
-        pdf.text('ANÁLISIS DE GANANCIAS', margin, currentY);
-        currentY += 6;
+        if (cierreData.devoluciones && cierreData.devoluciones.length > 0) {
+            pdf.setFont(fontName, 'bold');
+            pdf.text('DEVOLUCIONES DEL DÍA', margin, currentY);
+            currentY += 8;
 
-        pdf.setFont(fontName, 'normal');
-        pdf.text('Ganancia Bruta:', margin + 5, currentY);
-        pdf.text(`S/. ${(cierreData.totales?.gananciaBruta || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
+            // Headers de la tabla de devoluciones
+            const devolucionesHeaders = ['N° VENTA', 'CLIENTE', 'MONTO', 'MÉTODO PAGO', 'ESTADO'];
+            const devolucionesColWidths = [
+                totalWidth * 0.15, // N° Venta
+                totalWidth * 0.25, // Cliente  
+                totalWidth * 0.15, // Monto
+                totalWidth * 0.25, // Método Pago
+                totalWidth * 0.20  // Estado
+            ];
 
-        pdf.text('Ganancia Real:', margin + 5, currentY);
-        pdf.text(`S/. ${(cierreData.totales?.gananciaReal || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 8;
+            const devolucionesColPositions = [margin];
+            for (let i = 0; i < devolucionesColWidths.length - 1; i++) {
+                devolucionesColPositions.push(devolucionesColPositions[i] + devolucionesColWidths[i]);
+            }
+
+            pdf.setFontSize(8);
+            pdf.setFont(fontName, 'bold');
+            
+            // Línea superior de la tabla
+            pdf.line(margin, currentY, pageWidth - margin, currentY);
+            currentY += 3;
+
+            // Encabezados de devoluciones
+            devolucionesHeaders.forEach((header, index) => {
+                const x = devolucionesColPositions[index];
+                const maxWidth = devolucionesColWidths[index] - 2;
+                
+                let displayText = header;
+                if (pdf.getTextWidth(displayText) > maxWidth) {
+                    while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
+                        displayText = displayText.slice(0, -1);
+                    }
+                    displayText += '...';
+                }
+                
+                pdf.text(displayText, x + 1, currentY);
+            });
+            currentY += 3;
+
+            pdf.line(margin, currentY, pageWidth - margin, currentY);
+            currentY += 3;
+            
+            pdf.setFont(fontName, 'normal');
+
+            // Procesar devoluciones
+            cierreData.devoluciones.forEach((devolucion) => {
+                if (currentY > pageHeight - 30) {
+                    pdf.addPage();
+                    currentY = 15;
+                }
+
+                const devolucionData = [
+                    devolucion.numeroVenta || 'N/A',
+                    devolucion.clienteNombre || 'N/A',
+                    `S/. ${(devolucion.montoADevolver || 0).toFixed(2)}`,
+                    devolucion.metodoPagoOriginal?.toUpperCase() || 'N/A',
+                    devolucion.estado?.toUpperCase() || 'N/A'
+                ];
+
+                devolucionData.forEach((data, index) => {
+                    const x = devolucionesColPositions[index];
+                    const maxWidth = devolucionesColWidths[index] - 2;
+                    
+                    let displayText = String(data);
+                    if (pdf.getTextWidth(displayText) > maxWidth) {
+                        if (index === 1) { // Cliente - caso especial
+                            while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
+                                displayText = displayText.slice(0, -1);
+                            }
+                            displayText += '...';
+                        } else {
+                            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+                                displayText = displayText.slice(0, -1);
+                            }
+                        }
+                    }
+                    
+                    const alignment = index === 2 ? 'right' : 'left'; // Alinear monto a la derecha
+                    const textX = alignment === 'right' ? x + devolucionesColWidths[index] - 1 : x + 1;
+                    
+                    pdf.text(displayText, textX, currentY, { align: alignment });
+                });
+                
+                currentY += 5;
+            });
+
+            pdf.line(margin, currentY, pageWidth - margin, currentY);
+            currentY += 5;
+
+            // Total de devoluciones
+            pdf.setFont(fontName, 'bold');
+            pdf.text('TOTAL DEVOLUCIONES:', margin + 5, currentY);
+            const totalDevoluciones = cierreData.devolucionesDelDia?.totalDevuelto || 
+                cierreData.devoluciones.reduce((total, dev) => total + (dev.montoADevolver || 0), 0);
+            pdf.text(`S/. ${totalDevoluciones.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+            currentY += 10;
+        }
 
         // =========================================================================
-        // RETIROS DEL DÍA
+        // RETIROS DEL DÍA - CORREGIDO EL ALINEAMIENTO
         // =========================================================================
 
         if (cierreData.retiros && cierreData.retiros.length > 0) {
@@ -260,13 +349,13 @@ const generarPDFCaja = async (cierreData) => {
             pdf.text('RETIROS DEL DÍA', margin, currentY);
             currentY += 8;
 
-            // Headers de la tabla de retiros
+            // Headers de la tabla de retiros - AJUSTADOS
             const retirosHeaders = ['HORA', 'TIPO', 'MONTO', 'MOTIVO', 'REALIZADO POR'];
             const retirosColWidths = [
-                totalWidth * 0.15, // Hora
-                totalWidth * 0.15, // Tipo
-                totalWidth * 0.15, // Monto
-                totalWidth * 0.35, // Motivo
+                totalWidth * 0.12, // Hora - reducido
+                totalWidth * 0.12, // Tipo - reducido  
+                totalWidth * 0.18, // Monto - aumentado para mejor alineación
+                totalWidth * 0.38, // Motivo - aumentado
                 totalWidth * 0.20  // Realizado por
             ];
 
@@ -327,7 +416,7 @@ const generarPDFCaja = async (cierreData) => {
 
                 retiroData.forEach((data, index) => {
                     const x = retirosColPositions[index];
-                    const maxWidth = retirosColWidths[index] - 2;
+                    const maxWidth = retirosColWidths[index] - 4; // Más margen para evitar que se salga
                     
                     let displayText = String(data);
                     if (pdf.getTextWidth(displayText) > maxWidth) {
@@ -343,8 +432,13 @@ const generarPDFCaja = async (cierreData) => {
                         }
                     }
                     
-                    const alignment = index === 2 ? 'right' : 'left';
-                    const textX = alignment === 'right' ? x + retirosColWidths[index] - 1 : x + 1;
+                    // CORREGIDO: Mejor alineación del monto
+                    const alignment = index === 2 ? 'center' : 'left'; // Centrar monto en lugar de right
+                    let textX = x + 2; // Margen izquierdo estándar
+                    
+                    if (alignment === 'center') {
+                        textX = x + (retirosColWidths[index] / 2); // Centrar el monto
+                    }
                     
                     pdf.text(displayText, textX, currentY, { align: alignment });
                 });
@@ -355,16 +449,33 @@ const generarPDFCaja = async (cierreData) => {
             pdf.line(margin, currentY, pageWidth - margin, currentY);
             currentY += 5;
 
-            // Total de retiros
+            // Total de retiros - CORREGIDO
             pdf.setFont(fontName, 'bold');
             pdf.text('TOTAL RETIROS:', margin + 5, currentY);
             const totalRetiros = cierreData.retiros.reduce((total, retiro) => total + (retiro.monto || 0), 0);
-            pdf.text(`S/. ${totalRetiros.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+            pdf.text(`S/. ${totalRetiros.toFixed(2)}`, pageWidth - margin - 10, currentY, { align: 'right' }); // Ajustado margen
             currentY += 10;
         }
 
         // =========================================================================
-        // RESUMEN FINAL
+        // GANANCIAS - MANTENER IGUAL
+        // =========================================================================
+
+        pdf.setFont(fontName, 'bold');
+        pdf.text('ANÁLISIS DE GANANCIAS', margin, currentY);
+        currentY += 6;
+
+        pdf.setFont(fontName, 'normal');
+        pdf.text('Ganancia Bruta:', margin + 5, currentY);
+        pdf.text(`S/. ${(cierreData.totales?.gananciaBruta || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+        currentY += 5;
+
+        pdf.text('Ganancia Real:', margin + 5, currentY);
+        pdf.text(`S/. ${(cierreData.totales?.gananciaReal || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+        currentY += 8;
+
+        // =========================================================================
+        // RESUMEN FINAL - MANTENER IGUAL
         // =========================================================================
 
         if (currentY > pageHeight - 50) {
@@ -390,6 +501,13 @@ const generarPDFCaja = async (cierreData) => {
         pdf.text(`${resumenFinal.totalVentas || 0}`, pageWidth - margin, currentY, { align: 'right' });
         currentY += 5;
 
+        // NUEVO: Agregar información de devoluciones en el resumen
+        if (cierreData.devoluciones && cierreData.devoluciones.length > 0) {
+            pdf.text('Total de Devoluciones:', margin + 5, currentY);
+            pdf.text(`${resumenFinal.totalDevoluciones || 0}`, pageWidth - margin, currentY, { align: 'right' });
+            currentY += 5;
+        }
+
         pdf.text('Total de Retiros:', margin + 5, currentY);
         pdf.text(`${resumenFinal.totalRetiros || 0}`, pageWidth - margin, currentY, { align: 'right' });
         currentY += 5;
@@ -403,7 +521,7 @@ const generarPDFCaja = async (cierreData) => {
         currentY += 10;
 
         // =========================================================================
-        // INFORMACIÓN ADICIONAL
+        // INFORMACIÓN ADICIONAL - MANTENER IGUAL
         // =========================================================================
         
         pdf.setFont(fontName, 'bold');
@@ -418,6 +536,8 @@ const generarPDFCaja = async (cierreData) => {
         pdf.text('• Los montos digitales (Yape, Plin, Tarjeta) se mantienen en las cuentas respectivas.', margin + 5, currentY);
         currentY += 4;
         pdf.text('• El efectivo final debe coincidir con el dinero físico en caja.', margin + 5, currentY);
+        currentY += 4;
+        pdf.text('• Las devoluciones ya están descontadas de los totales por método de pago.', margin + 5, currentY);
         currentY += 4;
         pdf.text('• Conserve este documento para auditorías y controles internos.', margin + 5, currentY);
         currentY += 8;
@@ -434,7 +554,7 @@ const generarPDFCaja = async (cierreData) => {
         throw error;
     }
 };
-
+    
 // Función principal exportada - MANTENER ORIGINAL
 export const generarPDFCajaCompleta = async (fechaString) => {
     try {

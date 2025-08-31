@@ -9,7 +9,7 @@ const Home = () => {
 
   useEffect(() => {
     if (user) {
-      router.push('/dashboard');
+      router.push('/productos');
     } else {
       router.push('/auth');
     }

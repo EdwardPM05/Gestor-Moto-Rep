@@ -154,31 +154,138 @@ const NuevaDevolucionPage = () => {
     }
   };
 
-  // Agregar/quitar item para devolución
-  const toggleItemDevolucion = (item, cantidadADevolver = null) => {
-    const existe = itemsADevolver.find(i => i.id === item.id);
-    
-    if (existe) {
-      // Si existe, actualizar cantidad o remover
-      if (cantidadADevolver === null || cantidadADevolver === 0) {
-        setItemsADevolver(prev => prev.filter(i => i.id !== item.id));
-      } else {
-        setItemsADevolver(prev => prev.map(i => 
-          i.id === item.id 
-            ? { ...i, cantidadADevolver, montoDevolucion: cantidadADevolver * item.precioVentaUnitario }
-            : i
-        ));
-      }
+  // FUNCIÓN MODIFICADA para capturar ganancia al seleccionar items para devolución
+const toggleItemDevolucion = async (item, cantidadADevolver = null) => {
+  const existe = itemsADevolver.find(i => i.id === item.id);
+  
+  if (existe) {
+    // Si existe, actualizar cantidad o remover
+    if (cantidadADevolver === null || cantidadADevolver === 0) {
+      setItemsADevolver(prev => prev.filter(i => i.id !== item.id));
     } else {
-      // Si no existe, agregar
+      setItemsADevolver(prev => prev.map(i => 
+        i.id === item.id 
+          ? { 
+              ...i, 
+              cantidadADevolver, 
+              montoDevolucion: cantidadADevolver * item.precioVentaUnitario,
+              // CALCULAR GANANCIA PARA LA CANTIDAD DEVUELTA
+              gananciaDevolucion: calcularGananciaDevolucion(i, cantidadADevolver)
+            }
+          : i
+      ));
+    }
+  } else {
+    // NUEVO: Si no existe, agregar CON CAMPOS DE GANANCIA
+    try {
+      setLoading(true);
+      
+      // 1. OBTENER GANANCIA DEL ITEM ORIGINAL DE LA VENTA
+      let precioCompraUnitario = 0;
+      let gananciaUnitaria = 0;
+      let gananciaTotal = 0;
+      
+      // Verificar si el item ya tiene campos de ganancia (desde venta)
+      if (item.precioCompraUnitario && typeof item.precioCompraUnitario === 'number') {
+        precioCompraUnitario = item.precioCompraUnitario;
+        gananciaUnitaria = item.gananciaUnitaria || (item.precioVentaUnitario - precioCompraUnitario);
+        gananciaTotal = item.gananciaTotal || (gananciaUnitaria * item.cantidad);
+      } else {
+        // 2. SI NO TIENE CAMPOS DE GANANCIA, OBTENER DESDE PRODUCTO
+        console.log(`Obteniendo ganancia para producto: ${item.nombreProducto}`);
+        
+        const productRef = doc(db, 'productos', item.productoId);
+        const productSnap = await getDoc(productRef);
+        
+        if (productSnap.exists()) {
+          const productData = productSnap.data();
+          precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
+          gananciaUnitaria = item.precioVentaUnitario - precioCompraUnitario;
+          gananciaTotal = gananciaUnitaria * item.cantidad;
+          
+          console.log(`✓ Ganancia calculada: Venta ${item.precioVentaUnitario} - Compra ${precioCompraUnitario} = ${gananciaUnitaria}`);
+        } else {
+          console.warn(`⚠️ Producto ${item.productoId} no encontrado, usando estimación`);
+          // Fallback: estimar ganancia como 40% del precio de venta
+          gananciaUnitaria = item.precioVentaUnitario * 0.4;
+          gananciaTotal = gananciaUnitaria * item.cantidad;
+          precioCompraUnitario = item.precioVentaUnitario - gananciaUnitaria;
+        }
+      }
+      
+      // 3. CALCULAR GANANCIA ESPECÍFICA PARA LA CANTIDAD A DEVOLVER
       const cantidadFinal = cantidadADevolver || item.cantidad;
+      const gananciaDevolucion = gananciaUnitaria * cantidadFinal;
+      
+      // 4. CREAR ITEM CON TODOS LOS CAMPOS DE GANANCIA
+      const itemConGanancia = {
+        ...item,
+        cantidadADevolver: cantidadFinal,
+        montoDevolucion: cantidadFinal * item.precioVentaUnitario,
+        
+        // CAMPOS DE GANANCIA AGREGADOS:
+        precioCompraUnitario: precioCompraUnitario,
+        gananciaUnitaria: gananciaUnitaria,
+        gananciaTotal: gananciaTotal, // Ganancia total del item en la venta original
+        gananciaDevolucion: gananciaDevolucion, // Ganancia que se pierde con esta devolución específica
+      };
+      
+      setItemsADevolver(prev => [...prev, itemConGanancia]);
+      
+      console.log(`✅ Item agregado con ganancia:`, {
+        producto: item.nombreProducto,
+        cantidadADevolver: cantidadFinal,
+        precioCompraUnitario,
+        gananciaUnitaria,
+        gananciaDevolucion
+      });
+      
+    } catch (error) {
+      console.error('Error al obtener ganancia del producto:', error);
+      
+      // FALLBACK: Agregar item sin ganancia real (con estimación)
+      const cantidadFinal = cantidadADevolver || item.cantidad;
+      const gananciaEstimada = (item.precioVentaUnitario * 0.4) * cantidadFinal;
+      
       setItemsADevolver(prev => [...prev, {
         ...item,
         cantidadADevolver: cantidadFinal,
-        montoDevolucion: cantidadFinal * item.precioVentaUnitario
+        montoDevolucion: cantidadFinal * item.precioVentaUnitario,
+        precioCompraUnitario: 0,
+        gananciaUnitaria: item.precioVentaUnitario * 0.4,
+        gananciaTotal: item.precioVentaUnitario * 0.4 * item.cantidad,
+        gananciaDevolucion: gananciaEstimada,
+        esEstimacion: true // Flag para indicar que es estimación
       }]);
+      
+      alert('No se pudo obtener la ganancia exacta del producto. Se usará una estimación.');
+    } finally {
+      setLoading(false);
     }
-  };
+  }
+};
+
+// FUNCIÓN AUXILIAR para calcular ganancia de devolución cuando se cambia cantidad
+const calcularGananciaDevolucion = (itemDevolucion, nuevaCantidad) => {
+  if (itemDevolucion.gananciaUnitaria && typeof itemDevolucion.gananciaUnitaria === 'number') {
+    return itemDevolucion.gananciaUnitaria * nuevaCantidad;
+  }
+  
+  // Fallback a estimación
+  return (itemDevolucion.precioVentaUnitario * 0.4) * nuevaCantidad;
+};
+
+// FUNCIÓN MODIFICADA para calcular ganancia total afectada por la devolución
+const calcularGananciaRealAfectada = () => {
+  return itemsADevolver.reduce((total, item) => {
+    return total + (item.gananciaDevolucion || 0);
+  }, 0);
+};
+
+
+
+
+
 
   // Calcular monto total de devolución
   useEffect(() => {
@@ -209,90 +316,108 @@ const NuevaDevolucionPage = () => {
     return `DEV-${day}${month}${year}-${timestamp.toString().slice(-4)}`;
   };
 
-  // Enviar devolución
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
+  // MODIFICAR EL SUBMIT para incluir ganancia total afectada
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setSaving(true);
+  setError(null);
 
-    // Validaciones
-    if (!ventaSeleccionada) {
-      setError('Debe seleccionar una venta');
-      setSaving(false);
-      return;
-    }
+  // Validaciones existentes...
+  if (!ventaSeleccionada) {
+    setError('Debe seleccionar una venta');
+    setSaving(false);
+    return;
+  }
 
-    if (itemsADevolver.length === 0) {
-      setError('Debe seleccionar al menos un producto para devolver');
-      setSaving(false);
-      return;
-    }
+  if (itemsADevolver.length === 0) {
+    setError('Debe seleccionar al menos un producto para devolver');
+    setSaving(false);
+    return;
+  }
 
-    if (!devolucionData.motivo) {
-      setError('Debe seleccionar un motivo para la devolución');
-      setSaving(false);
-      return;
-    }
+  if (!devolucionData.motivo) {
+    setError('Debe seleccionar un motivo para la devolución');
+    setSaving(false);
+    return;
+  }
 
-    if (devolucionData.montoADevolver <= 0) {
-      setError('El monto a devolver debe ser mayor a 0');
-      setSaving(false);
-      return;
-    }
+  if (devolucionData.montoADevolver <= 0) {
+    setError('El monto a devolver debe ser mayor a 0');
+    setSaving(false);
+    return;
+  }
 
-    try {
-      await runTransaction(db, async (transaction) => {
-        // Crear registro de devolución
-        const devolucionRef = doc(collection(db, 'devoluciones'));
-        const numeroDevolucion = generarNumeroDevolucion();
+  try {
+    // CALCULAR GANANCIA TOTAL AFECTADA
+    const gananciaRealAfectada = calcularGananciaRealAfectada();
+    
+    await runTransaction(db, async (transaction) => {
+      // Crear registro de devolución CON GANANCIA AFECTADA
+      const devolucionRef = doc(collection(db, 'devoluciones'));
+      const numeroDevolucion = generarNumeroDevolucion();
+      
+      const devolucionCompleta = {
+        numeroDevolucion,
+        ventaId: ventaSeleccionada.id,
+        numeroVenta: ventaSeleccionada.numeroVenta,
+        clienteId: ventaSeleccionada.clienteId,
+        clienteNombre: ventaSeleccionada.clienteNombre,
+        clienteDNI: ventaSeleccionada.clienteDNI,
+        metodoPagoOriginal: ventaSeleccionada.metodoPago, // NUEVO: para el cálculo de caja
+        motivo: devolucionData.motivo,
+        descripcionMotivo: devolucionData.descripcionMotivo || null,
+        montoADevolver: devolucionData.montoADevolver,
         
-        const devolucionCompleta = {
-          numeroDevolucion,
-          ventaId: ventaSeleccionada.id,
-          numeroVenta: ventaSeleccionada.numeroVenta,
-          clienteId: ventaSeleccionada.clienteId,
-          clienteNombre: ventaSeleccionada.clienteNombre,
-          clienteDNI: ventaSeleccionada.clienteDNI,
-          motivo: devolucionData.motivo,
-          descripcionMotivo: devolucionData.descripcionMotivo || null,
-          montoADevolver: devolucionData.montoADevolver,
-          observaciones: devolucionData.observaciones || null,
-          estado: 'solicitada',
-          fechaSolicitud: serverTimestamp(),
-          solicitadoPor: user.email || user.uid,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        };
+        // CAMPO CLAVE: GANANCIA REAL AFECTADA
+        gananciaRealAfectada: gananciaRealAfectada,
+        
+        observaciones: devolucionData.observaciones || null,
+        estado: 'solicitada',
+        fechaSolicitud: serverTimestamp(),
+        solicitadoPor: user.email || user.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
 
-        transaction.set(devolucionRef, devolucionCompleta);
+      transaction.set(devolucionRef, devolucionCompleta);
 
-        // Crear registros de items a devolver
-        for (const item of itemsADevolver) {
-          const itemDevolucionRef = doc(collection(devolucionRef, 'itemsDevolucion'));
-          transaction.set(itemDevolucionRef, {
-            productoId: item.productoId,
-            nombreProducto: item.nombreProducto,
-            marca: item.marca || '',
-            codigoTienda: item.codigoTienda || '',
-            color: item.color || '',
-            cantidadOriginal: item.cantidad,
-            cantidadADevolver: item.cantidadADevolver,
-            precioVentaUnitario: item.precioVentaUnitario,
-            montoDevolucion: item.montoDevolucion,
-            createdAt: serverTimestamp()
-          });
-        }
-      });
+      // Crear registros de items a devolver CON CAMPOS DE GANANCIA
+      for (const item of itemsADevolver) {
+        const itemDevolucionRef = doc(collection(devolucionRef, 'itemsDevolucion'));
+        transaction.set(itemDevolucionRef, {
+          productoId: item.productoId,
+          nombreProducto: item.nombreProducto,
+          marca: item.marca || '',
+          codigoTienda: item.codigoTienda || '',
+          color: item.color || '',
+          cantidadOriginal: item.cantidad,
+          cantidadADevolver: item.cantidadADevolver,
+          precioVentaUnitario: item.precioVentaUnitario,
+          montoDevolucion: item.montoDevolucion,
+          
+          // CAMPOS DE GANANCIA AGREGADOS:
+          precioCompraUnitario: item.precioCompraUnitario || 0,
+          gananciaUnitaria: item.gananciaUnitaria || 0,
+          gananciaTotal: item.gananciaTotal || 0,
+          gananciaDevolucion: item.gananciaDevolucion || 0,
+          esEstimacion: item.esEstimacion || false,
+          
+          createdAt: serverTimestamp()
+        });
+      }
+    });
 
-      alert('Devolución registrada con éxito. Será revisada por el administrador.');
-      router.push('/devoluciones');
-    } catch (err) {
-      console.error('Error al registrar devolución:', err);
-      setError('Error al registrar la devolución: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+    console.log(`✅ Devolución creada con ganancia afectada: ${gananciaRealAfectada}`);
+    alert(`Devolución registrada con éxito. Ganancia afectada: S/. ${gananciaRealAfectada.toFixed(2)}`);
+    router.push('/devoluciones');
+    
+  } catch (err) {
+    console.error('Error al registrar devolución:', err);
+    setError('Error al registrar la devolución: ' + err.message);
+  } finally {
+    setSaving(false);
+  }
+};
 
   if (!user || loading) {
     return (

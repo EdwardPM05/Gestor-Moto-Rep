@@ -12,7 +12,7 @@ const AuthPage = () => {
 
   useEffect(() => {
     if (user) {
-      router.push('/dashboard');
+      router.push('/productos');
     }
   }, [user, router]);
 
