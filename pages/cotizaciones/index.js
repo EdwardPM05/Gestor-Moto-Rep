@@ -44,6 +44,95 @@ const CotizacionesIndexPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredCotizaciones, setFilteredCotizaciones] = useState([]);
 
+  // Función para consumir stock de lotes según FIFO (AGREGAR AL INICIO DEL ARCHIVO)
+const consumirStockFIFO = async (productoId, cantidadVendida, transaction) => {
+  try {
+    // Obtener todos los lotes disponibles de la colección principal
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc')
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let cantidadPendiente = cantidadVendida;
+    const movimientos = [];
+    
+    // Consumir de los lotes más antiguos primero
+    for (const loteDoc of lotesSnapshot.docs) {
+      if (cantidadPendiente <= 0) break;
+      
+      const lote = loteDoc.data();
+      const consumir = Math.min(cantidadPendiente, lote.stockRestante);
+      const nuevoStock = lote.stockRestante - consumir;
+      
+      // Actualizar el lote en la colección principal
+      const loteRef = doc(db, 'lotes', loteDoc.id);
+      transaction.update(loteRef, {
+        stockRestante: nuevoStock,
+        estado: nuevoStock <= 0 ? 'agotado' : 'activo',
+        updatedAt: serverTimestamp()
+      });
+      
+      // Registrar el movimiento para auditoría
+      movimientos.push({
+        loteId: loteDoc.id,
+        numeroLote: lote.numeroLote,
+        cantidadConsumida: consumir,
+        precioCompraUnitario: lote.precioCompraUnitario,
+        stockRestante: nuevoStock
+      });
+      
+      cantidadPendiente -= consumir;
+    }
+    
+    if (cantidadPendiente > 0) {
+      throw new Error(`Stock insuficiente. Faltan ${cantidadPendiente} unidades del producto.`);
+    }
+    
+    return movimientos;
+  } catch (error) {
+    console.error(`Error al consumir stock FIFO para producto ${productoId}:`, error);
+    throw error;
+  }
+};
+
+// Función para recalcular precio de compra del producto (AGREGAR AL INICIO DEL ARCHIVO)
+const recalcularPrecioCompraProducto = async (productoId, transaction) => {
+  try {
+    // Buscar el nuevo primer lote disponible después del consumo
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc'),
+      limit(1)
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let nuevoPrecioCompra = 0;
+    
+    if (!lotesSnapshot.empty) {
+      const primerLoteDisponible = lotesSnapshot.docs[0].data();
+      nuevoPrecioCompra = parseFloat(primerLoteDisponible.precioCompraUnitario || 0);
+    }
+    
+    // Actualizar el precio de compra del producto
+    const productRef = doc(db, 'productos', productoId);
+    transaction.update(productRef, {
+      precioCompraDefault: nuevoPrecioCompra,
+      updatedAt: serverTimestamp()
+    });
+    
+  } catch (error) {
+    console.error(`Error al recalcular precio de compra para producto ${productoId}:`, error);
+  }
+};
+
+
   // Estados para el filtrado por fecha
   const [filterPeriod, setFilterPeriod] = useState('all');
   const [startDate, setStartDate] = useState(null);
@@ -190,156 +279,245 @@ const CotizacionesIndexPage = () => {
     setFilteredCotizaciones(filtered);
   }, [searchTerm, cotizaciones]);
 
-  // FUNCIÓN CORREGIDA - handleConfirmarCotizacion
-  const handleConfirmarCotizacion = async (cotizacionId) => {
-    if (
-      !window.confirm(
-        '¿Estás seguro de que quieres CONFIRMAR esta cotización? Esto la convertirá en una VENTA y afectará el stock actual.'
-      )
-    ) {
-      return;
-    }
+// FUNCIÓN PRINCIPAL CORREGIDA - handleConfirmarCotizacion CON FIFO
+const handleConfirmarCotizacion = async (cotizacionId) => {
+  if (
+    !window.confirm(
+      '¿Estás seguro de que quieres CONFIRMAR esta cotización? Esto la convertirá en una VENTA y consumirá stock de lotes según FIFO.'
+    )
+  ) {
+    return;
+  }
 
-    setLoading(true);
-    setError(null);
-    try {
-      await runTransaction(db, async (transaction) => {
-        const cotizacionRef = doc(db, 'cotizaciones', cotizacionId);
-        const cotizacionSnap = await transaction.get(cotizacionRef);
+  setLoading(true);
+  setError(null);
+  try {
+    await runTransaction(db, async (transaction) => {
+      const cotizacionRef = doc(db, 'cotizaciones', cotizacionId);
+      const cotizacionSnap = await transaction.get(cotizacionRef);
 
-        if (!cotizacionSnap.exists()) {
-          throw new Error('Cotización no encontrada.');
-        }
+      if (!cotizacionSnap.exists()) {
+        throw new Error('Cotización no encontrada.');
+      }
 
-        const currentCotizacionData = cotizacionSnap.data();
-        if (
-          currentCotizacionData.estado === 'confirmada' ||
-          currentCotizacionData.estado === 'cancelada'
-        ) {
-          throw new Error('Esta cotización ya ha sido confirmada o cancelada.');
-        }
+      const currentCotizacionData = cotizacionSnap.data();
+      if (
+        currentCotizacionData.estado === 'confirmada' ||
+        currentCotizacionData.estado === 'cancelada'
+      ) {
+        throw new Error('Esta cotización ya ha sido confirmada o cancelada.');
+      }
 
-        const itemsCotizacionCollectionRef = collection(
-          db,
-          'cotizaciones',
-          cotizacionId,
-          'itemsCotizacion'
-        );
-        const itemsCotizacionSnapshot = await getDocs(itemsCotizacionCollectionRef);
+      const itemsCotizacionCollectionRef = collection(
+        db,
+        'cotizaciones',
+        cotizacionId,
+        'itemsCotizacion'
+      );
+      const itemsCotizacionSnapshot = await getDocs(itemsCotizacionCollectionRef);
 
-        if (itemsCotizacionSnapshot.empty) {
-          throw new Error('No se encontraron productos asociados a esta cotización.');
-        }
+      if (itemsCotizacionSnapshot.empty) {
+        throw new Error('No se encontraron productos asociados a esta cotización.');
+      }
 
-        const productoRefsAndData = [];
-        for (const itemDoc of itemsCotizacionSnapshot.docs) {
-          const itemData = itemDoc.data();
-          const productoRef = doc(db, 'productos', itemData.productoId);
-          const productoSnap = await transaction.get(productoRef);
+      // 1. Verificar productos y stock
+      const productoRefsAndData = [];
+      for (const itemDoc of itemsCotizacionSnapshot.docs) {
+        const itemData = itemDoc.data();
+        const productoRef = doc(db, 'productos', itemData.productoId);
+        const productoSnap = await transaction.get(productoRef);
 
-          if (productoSnap.exists()) {
-            productoRefsAndData.push({
-              itemData: itemData,
-              productoRef: productoRef,
-              currentProductoData: productoSnap.data(),
-            });
-          } else {
-            throw new Error(
-              `Producto con ID ${itemData.productoId} no encontrado. No se puede confirmar la venta.`
-            );
-          }
-        }
-
-        for (const { itemData, currentProductoData } of productoRefsAndData) {
-          const currentStock =
-            typeof currentProductoData.stockActual === 'number'
-              ? currentProductoData.stockActual
-              : 0;
+        if (productoSnap.exists()) {
+          const currentStock = typeof productoSnap.data().stockActual === 'number' ? productoSnap.data().stockActual : 0;
           const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
+          
           if (currentStock < cantidadVendida) {
             throw new Error(
               `Stock insuficiente para el producto "${itemData.nombreProducto}". Stock actual: ${currentStock}, Cantidad solicitada: ${cantidadVendida}.`
             );
           }
-        }
 
-        // CREAR LA VENTA CON GANANCIA TOTAL OCULTA
-        const newVentaRef = doc(collection(db, 'ventas'));
-        transaction.set(newVentaRef, {
-          cotizacionId: cotizacionId,
-          clienteId: currentCotizacionData.clienteId,
-          clienteNombre: currentCotizacionData.clienteNombre,
-          totalVenta: currentCotizacionData.totalCotizacion,
-          // *** CAMPO OCULTO - GANANCIA TOTAL DE LA VENTA ***
-          gananciaTotalVenta: currentCotizacionData.gananciaTotalCotizacion || 0,
-          fechaVenta: serverTimestamp(),
-          empleadoId: user.email || user.uid,
-          observaciones: currentCotizacionData.observaciones || 'Convertido de cotización',
-          estado: 'completada',
-          metodoPago: currentCotizacionData.metodoPago || 'Efectivo',
-          tipoVenta: currentCotizacionData.tipoVenta || 'cotizacionAprobada',
-          // TRANSFERIR DATOS DE PAGO MIXTO SI EXISTEN
-          paymentData: currentCotizacionData.paymentData || null,
-          createdAt: serverTimestamp(),
+          productoRefsAndData.push({
+            itemData: itemData,
+            productoRef: productoRef,
+            currentProductoData: productoSnap.data(),
+          });
+        } else {
+          throw new Error(
+            `Producto con ID ${itemData.productoId} no encontrado. No se puede confirmar la venta.`
+          );
+        }
+      }
+
+      // 2. CREAR LA VENTA CON GANANCIA TOTAL
+      const newVentaRef = doc(collection(db, 'ventas'));
+      const clienteNombre = currentCotizacionData.clienteNombre || 'Cliente No Especificado';
+      const numeroVenta = `V-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      
+      transaction.set(newVentaRef, {
+        numeroVenta: numeroVenta,
+        cotizacionId: cotizacionId,
+        clienteId: currentCotizacionData.clienteId,
+        clienteNombre: clienteNombre,
+        clienteDNI: currentCotizacionData.clienteDNI || null,
+        totalVenta: currentCotizacionData.totalCotizacion,
+        // GANANCIA TOTAL REAL CON PRECIOS FIFO
+        gananciaTotalVenta: currentCotizacionData.gananciaTotalCotizacion || 0,
+        fechaVenta: serverTimestamp(),
+        empleadoId: user.email || user.uid,
+        observaciones: (currentCotizacionData.observaciones || '') + ' - Convertido de cotización',
+        estado: 'completada',
+        metodoPago: currentCotizacionData.metodoPago || 'efectivo',
+        tipoVenta: 'cotizacionAprobada',
+        // TRANSFERIR DATOS DE PAGO MIXTO
+        paymentData: currentCotizacionData.paymentData || {
+          totalAmount: currentCotizacionData.totalCotizacion,
+          paymentMethods: [{
+            method: currentCotizacionData.metodoPago || 'efectivo',
+            amount: currentCotizacionData.totalCotizacion,
+            label: (currentCotizacionData.metodoPago || 'efectivo').toUpperCase(),
+            icon: '💵'
+          }],
+          isMixedPayment: false
+        },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      // 3. CONSUMIR STOCK DE LOTES SEGÚN FIFO Y ACTUALIZAR STOCK TOTAL
+      const todosLosMovimientos = [];
+      for (const { itemData, productoRef, currentProductoData } of productoRefsAndData) {
+        const cantidadVendida = parseFloat(itemData.cantidad);
+        
+        // CONSUMIR STOCK DE LOTES SEGÚN FIFO
+        const movimientos = await consumirStockFIFO(itemData.productoId, cantidadVendida, transaction);
+        todosLosMovimientos.push({
+          productoId: itemData.productoId,
+          nombreProducto: itemData.nombreProducto,
+          movimientos: movimientos
+        });
+        
+        // ACTUALIZAR STOCK TOTAL DEL PRODUCTO
+        const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
+        const newStock = currentStock - cantidadVendida;
+        
+        transaction.update(productoRef, {
+          stockActual: newStock,
           updatedAt: serverTimestamp(),
         });
 
-        // ACTUALIZAR STOCK Y CREAR ITEMS DE VENTA CON CAMPOS OCULTOS DE GANANCIA
-        for (const { itemData, productoRef, currentProductoData } of productoRefsAndData) {
-          const currentStock =
-            typeof currentProductoData.stockActual === 'number'
-              ? currentProductoData.stockActual
-              : 0;
-          const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
-          const newStock = currentStock - cantidadVendida;
+        // RECALCULAR PRECIO DE COMPRA DEL PRODUCTO
+        await recalcularPrecioCompraProducto(itemData.productoId, transaction);
 
-          // Actualizar stock del producto
-          transaction.update(productoRef, {
-            stockActual: newStock,
-            updatedAt: serverTimestamp(),
-          });
+        // 4. CREAR ITEM DE VENTA CON CAMPOS OCULTOS DE GANANCIA
+        transaction.set(doc(collection(newVentaRef, 'itemsVenta')), {
+          productoId: itemData.productoId,
+          nombreProducto: itemData.nombreProducto,
+          marca: itemData.marca || '',
+          codigoTienda: itemData.codigoTienda || '',
+          descripcion: itemData.descripcion || '',
+          color: itemData.color || '',
+          cantidad: itemData.cantidad,
+          precioVentaUnitario: itemData.precioVentaUnitario,
+          subtotal: itemData.subtotal,
+          // CAMPOS OCULTOS TRANSFERIDOS DE LA COTIZACIÓN
+          precioCompraUnitario: itemData.precioCompraUnitario || 0, // OCULTO
+          gananciaUnitaria: itemData.gananciaUnitaria || 0, // OCULTO  
+          gananciaTotal: itemData.gananciaTotal || 0, // OCULTO
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
 
-          // *** CREAR ITEM DE VENTA CON CAMPOS OCULTOS DE GANANCIA ***
-          transaction.set(doc(collection(newVentaRef, 'itemsVenta')), {
-            productoId: itemData.productoId,
-            nombreProducto: itemData.nombreProducto,
-            marca: itemData.marca || '',
-            codigoTienda: itemData.codigoTienda || '',
-            descripcion: itemData.descripcion || '',
-            color: itemData.color || '',
-            cantidad: itemData.cantidad,
-            precioVentaUnitario: itemData.precioVentaUnitario,
-            subtotal: itemData.subtotal,
-            // *** CAMPOS OCULTOS TRANSFERIDOS DE LA COTIZACIÓN ***
-            precioCompraUnitario: itemData.precioCompraUnitario || 0, // OCULTO
-            gananciaUnitaria: itemData.gananciaUnitaria || 0, // OCULTO  
-            gananciaTotal: itemData.gananciaTotal || 0, // OCULTO
-            createdAt: serverTimestamp(),
+      // 5. CREAR REGISTROS DE MOVIMIENTOS DE LOTES PARA AUDITORÍA
+      for (const productoMovimiento of todosLosMovimientos) {
+        for (const movimiento of productoMovimiento.movimientos) {
+          const movimientoRef = doc(collection(db, 'movimientosLotes'));
+          transaction.set(movimientoRef, {
+            ventaId: newVentaRef.id,
+            numeroVenta: numeroVenta,
+            cotizacionId: cotizacionId,
+            productoId: productoMovimiento.productoId,
+            nombreProducto: productoMovimiento.nombreProducto,
+            loteId: movimiento.loteId,
+            numeroLote: movimiento.numeroLote,
+            cantidadConsumida: movimiento.cantidadConsumida,
+            precioCompraUnitario: movimiento.precioCompraUnitario,
+            stockRestanteLote: movimiento.stockRestante,
+            tipoMovimiento: 'cotizacion-confirmada',
+            fechaMovimiento: serverTimestamp(),
+            empleadoId: user.email || user.uid,
+            createdAt: serverTimestamp()
           });
         }
+      }
 
-        // Marcar cotización como confirmada
-        transaction.update(cotizacionRef, { 
-          estado: 'confirmada', 
-          fechaConfirmacion: serverTimestamp(),
-          updatedAt: serverTimestamp() 
+      // 6. CREAR REGISTROS DE PAGOS
+      const paymentData = currentCotizacionData.paymentData;
+      if (paymentData && paymentData.isMixedPayment) {
+        for (const paymentMethod of paymentData.paymentMethods) {
+          if (paymentMethod.amount > 0) {
+            const paymentRef = doc(collection(db, 'pagos'));
+            transaction.set(paymentRef, {
+              ventaId: newVentaRef.id,
+              numeroVenta: numeroVenta,
+              cotizacionId: cotizacionId,
+              metodoPago: paymentMethod.method,
+              monto: paymentMethod.amount,
+              clienteId: currentCotizacionData.clienteId,
+              clienteNombre: clienteNombre,
+              empleadoId: user.email || user.uid,
+              fechaPago: serverTimestamp(),
+              estado: 'completado',
+              tipo: 'venta',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      } else {
+        const paymentRef = doc(collection(db, 'pagos'));
+        transaction.set(paymentRef, {
+          ventaId: newVentaRef.id,
+          numeroVenta: numeroVenta,
+          cotizacionId: cotizacionId,
+          metodoPago: currentCotizacionData.metodoPago || 'efectivo',
+          monto: currentCotizacionData.totalCotizacion,
+          clienteId: currentCotizacionData.clienteId,
+          clienteNombre: clienteNombre,
+          empleadoId: user.email || user.uid,
+          fechaPago: serverTimestamp(),
+          estado: 'completado',
+          tipo: 'venta',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
-      });
+      }
 
-      alert('Cotización confirmada y convertida en Venta con éxito. Stock actualizado.');
-      setCotizaciones((prevCotizaciones) =>
-        prevCotizaciones.map((cot) =>
-          cot.id === cotizacionId ? { ...cot, estado: 'confirmada' } : cot
-        )
-      );
-    } catch (err) {
-      console.error('Error al confirmar cotización:', err);
-      setError('Error al confirmar la cotización. ' + err.message);
-      alert('Hubo un error al confirmar la cotización: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      // 7. MARCAR COTIZACIÓN COMO CONFIRMADA
+      transaction.update(cotizacionRef, { 
+        estado: 'confirmada', 
+        fechaConfirmacion: serverTimestamp(),
+        ventaGeneradaId: newVentaRef.id, // Referencia a la venta creada
+        numeroVentaGenerada: numeroVenta, // Número de venta generada
+        updatedAt: serverTimestamp() 
+      });
+    });
+
+    alert('Cotización confirmada exitosamente. Stock consumido según FIFO y precios recalculados automáticamente.');
+    setCotizaciones((prevCotizaciones) =>
+      prevCotizaciones.map((cot) =>
+        cot.id === cotizacionId ? { ...cot, estado: 'confirmada' } : cot
+      )
+    );
+  } catch (err) {
+    console.error('Error al confirmar cotización:', err);
+    setError('Error al confirmar la cotización. ' + err.message);
+    alert('Hubo un error al confirmar la cotización: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleCancelarCotizacion = async (cotizacionId) => {
     if (

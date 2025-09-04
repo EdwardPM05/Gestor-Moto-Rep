@@ -35,17 +35,18 @@ const AddEditProductoPage = () => {
     codigoProveedor: '',
     precioCompraDefault: 0,
     precioVentaDefault: 0,
+    precioVentaMinimo: 0, // NUEVO CAMPO: Precio de venta mínimo
     stockActual: 0,
     stockReferencialUmbral: DEFAULT_STOCK_UMBRAL,
     ubicacion: '',
-    imageUrl: '',
+    imageUrls: [], // CAMBIO: Ahora es un array para múltiples imágenes
     modelosCompatiblesTexto: '',
     descripcionPuntos: '',
-    color: '', // CAMBIO CLAVE: Agregado el nuevo campo de color
+    color: '',
   });
 
-  const [selectedImageFile, setSelectedImageFile] = useState(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
+  const [selectedImageFiles, setSelectedImageFiles] = useState([]); // CAMBIO: Array para múltiples archivos
+  const [imagePreviewUrls, setImagePreviewUrls] = useState([]); // CAMBIO: Array para múltiples previsualizaciones
 
   const isEditing = id !== 'nuevo';
 
@@ -75,15 +76,18 @@ const AddEditProductoPage = () => {
               codigoProveedor: productData.codigoProveedor || '',
               precioCompraDefault: productData.precioCompraDefault || 0,
               precioVentaDefault: productData.precioVentaDefault || 0,
+              precioVentaMinimo: productData.precioVentaMinimo || 0, // NUEVO: Carga precio mínimo
               stockActual: productData.stockActual || 0,
               stockReferencialUmbral: productData.stockReferencialUmbral ?? DEFAULT_STOCK_UMBRAL,
               ubicacion: productData.ubicacion || '',
-              imageUrl: productData.imageUrl || '',
+              // CAMBIO: Manejo de múltiples imágenes - compatibilidad con el campo anterior
+              imageUrls: productData.imageUrls || (productData.imageUrl ? [productData.imageUrl] : []),
               modelosCompatiblesTexto: productData.modelosCompatiblesTexto || '',
               descripcionPuntos: productData.descripcionPuntos || productData.descripcion || '',
-              color: productData.color || '', // CAMBIO CLAVE: Carga el valor de color
+              color: productData.color || '',
             });
-            setImagePreviewUrl(productData.imageUrl || '');
+            // CAMBIO: Configurar previsualizaciones de imágenes existentes
+            setImagePreviewUrls(productData.imageUrls || (productData.imageUrl ? [productData.imageUrl] : []));
           } else {
             setError('Producto no encontrado.');
             router.push('/productos');
@@ -94,8 +98,11 @@ const AddEditProductoPage = () => {
             stockReferencialUmbral: DEFAULT_STOCK_UMBRAL,
             modelosCompatiblesTexto: '',
             descripcionPuntos: '',
-            color: '', // Inicializa el color para un nuevo producto
+            color: '',
+            precioVentaMinimo: 0, // Inicializa precio mínimo para nuevo producto
+            imageUrls: [], // Inicializa array vacío para nuevas imágenes
           }));
+          setImagePreviewUrls([]); // Inicializa previsualizaciones vacías
         }
       } catch (err) {
         console.error("Error al cargar datos:", err);
@@ -116,39 +123,67 @@ const AddEditProductoPage = () => {
     }));
   };
 
+  // NUEVO: Manejo de múltiples imágenes
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setSelectedImageFile(file);
-      setImagePreviewUrl(URL.createObjectURL(file));
-    } else {
-      setSelectedImageFile(null);
-      setImagePreviewUrl(formData.imageUrl || '');
+    const files = Array.from(e.target.files);
+    const currentImageCount = selectedImageFiles.length + imagePreviewUrls.length - selectedImageFiles.length;
+    
+    // Verificar que no se excedan las 3 imágenes
+    if (currentImageCount + files.length > 3) {
+      setError('Máximo 3 imágenes permitidas');
+      return;
     }
+
+    setError(null);
+    
+    const newFiles = [...selectedImageFiles, ...files];
+    const newPreviews = [...imagePreviewUrls];
+    
+    files.forEach(file => {
+      newPreviews.push(URL.createObjectURL(file));
+    });
+
+    setSelectedImageFiles(newFiles);
+    setImagePreviewUrls(newPreviews);
   };
 
-  const handleRemoveImage = () => {
-    setSelectedImageFile(null);
-    setImagePreviewUrl('');
-    setFormData((prev) => ({ ...prev, imageUrl: '' }));
+  // NUEVO: Remover imagen específica por índice
+  const handleRemoveImage = (indexToRemove) => {
+    const newPreviews = imagePreviewUrls.filter((_, index) => index !== indexToRemove);
+    const newFiles = selectedImageFiles.filter((_, index) => index !== indexToRemove);
+    
+    // Si es una imagen existente (no un archivo nuevo), agregarla a la lista de imágenes a eliminar
+    const imageToRemove = imagePreviewUrls[indexToRemove];
+    if (formData.imageUrls.includes(imageToRemove)) {
+      // Actualizar formData para remover la URL de la imagen
+      const updatedImageUrls = formData.imageUrls.filter(url => url !== imageToRemove);
+      setFormData(prev => ({ ...prev, imageUrls: updatedImageUrls }));
+    }
+    
+    setImagePreviewUrls(newPreviews);
+    setSelectedImageFiles(newFiles);
   };
 
-  const uploadImage = async (file) => {
+  const uploadImage = async (file, productId) => {
     if (!file) return null;
-    const filePath = `productos/${id !== 'nuevo' ? id : Date.now()}-${file.name}`;
+    const timestamp = Date.now();
+    const filePath = `productos/${productId}-${timestamp}-${file.name}`;
     const imageRef = storageRef(storage, filePath);
     await uploadBytes(imageRef, file);
     return await getDownloadURL(imageRef);
   };
 
-  const handleDeleteOldImage = async (oldImageUrl) => {
-    if (!oldImageUrl) return;
-    try {
-      const oldImageRef = storageRef(storage, oldImageUrl);
-      await deleteObject(oldImageRef);
-      console.log('Antigua imagen eliminada de Storage.');
-    } catch (err) {
-      console.warn('No se pudo eliminar la antigua imagen de Storage (puede que no exista o no haya permisos):', err);
+  const handleDeleteOldImages = async (oldImageUrls) => {
+    if (!oldImageUrls || oldImageUrls.length === 0) return;
+    
+    for (const imageUrl of oldImageUrls) {
+      try {
+        const oldImageRef = storageRef(storage, imageUrl);
+        await deleteObject(oldImageRef);
+        console.log('Antigua imagen eliminada de Storage:', imageUrl);
+      } catch (err) {
+        console.warn('No se pudo eliminar la antigua imagen de Storage:', err);
+      }
     }
   };
 
@@ -158,25 +193,48 @@ const AddEditProductoPage = () => {
     setError(null);
 
     try {
-      let finalImageUrl = formData.imageUrl;
+      // Validación del precio mínimo
+      if (formData.precioVentaMinimo > formData.precioVentaDefault) {
+        setError('El precio de venta mínimo no puede ser mayor al precio de venta default');
+        setSaving(false);
+        return;
+      }
 
-      if (selectedImageFile) {
-        if (isEditing && formData.imageUrl && formData.imageUrl !== imagePreviewUrl) {
-          await handleDeleteOldImage(formData.imageUrl);
+      let finalImageUrls = [...formData.imageUrls];
+
+      // Subir nuevas imágenes si existen
+      if (selectedImageFiles.length > 0) {
+        const productId = isEditing ? id : Date.now().toString();
+        
+        for (const file of selectedImageFiles) {
+          const uploadedUrl = await uploadImage(file, productId);
+          if (uploadedUrl) {
+            finalImageUrls.push(uploadedUrl);
+          }
         }
-        finalImageUrl = await uploadImage(selectedImageFile);
-      } else if (isEditing && !imagePreviewUrl && formData.imageUrl) {
-        await handleDeleteOldImage(formData.imageUrl);
-        finalImageUrl = '';
+      }
+
+      // Si estamos editando y había imágenes que se eliminaron, borrarlas del storage
+      if (isEditing) {
+        const originalImages = formData.imageUrls;
+        const currentImages = imagePreviewUrls.filter(url => originalImages.includes(url));
+        const imagesToDelete = originalImages.filter(url => !currentImages.includes(url));
+        
+        if (imagesToDelete.length > 0) {
+          await handleDeleteOldImages(imagesToDelete);
+        }
       }
 
       const productDataToSave = {
         ...formData,
-        imageUrl: finalImageUrl,
+        imageUrls: finalImageUrls,
+        precioVentaMinimo: formData.precioVentaMinimo, // NUEVO: Guardar precio mínimo
+        // Mantener compatibilidad con el campo anterior
+        imageUrl: finalImageUrls.length > 0 ? finalImageUrls[0] : '',
         modelosCompatiblesIds: [],
         modelosCompatiblesTexto: formData.modelosCompatiblesTexto,
         descripcionPuntos: formData.descripcionPuntos,
-        color: formData.color, // CAMBIO CLAVE: Guarda el valor de color
+        color: formData.color,
         updatedAt: serverTimestamp(),
       };
 
@@ -263,7 +321,6 @@ const AddEditProductoPage = () => {
               <input type="text" name="ubicacion" id="ubicacion" value={formData.ubicacion} onChange={handleChange}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
-            {/* CAMBIO CLAVE: Nuevo campo de input para el color */}
             <div>
               <label htmlFor="color" className="block text-sm font-medium text-gray-700">Color (opcional)</label>
               <input type="text" name="color" id="color" value={formData.color} onChange={handleChange}
@@ -293,6 +350,14 @@ const AddEditProductoPage = () => {
               <input type="number" name="precioVentaDefault" id="precioVentaDefault" value={formData.precioVentaDefault} onChange={handleChange} required step="0.01" min="0"
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
             </div>
+            {/* NUEVO CAMPO: Precio de Venta Mínimo */}
+            <div>
+              <label htmlFor="precioVentaMinimo" className="block text-sm font-medium text-gray-700">
+                Precio de Venta Mínimo
+              </label>
+              <input type="number" name="precioVentaMinimo" id="precioVentaMinimo" value={formData.precioVentaMinimo} onChange={handleChange} required step="0.01" min="0"
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
+            </div>
             <div>
               <label htmlFor="stockActual" className="block text-sm font-medium text-gray-700">Stock Actual</label>
               <input type="number" name="stockActual" id="stockActual" value={formData.stockActual} onChange={handleChange} required min="0"
@@ -305,7 +370,7 @@ const AddEditProductoPage = () => {
             </div>
           </div>
 
-          {/* NUEVA SECCIÓN: Modelos Compatibles como texto libre */}
+          {/* Sección: Modelos Compatibles como texto libre */}
           <div>
             <h2 className="text-lg font-semibold text-gray-800 mb-3">Modelos Compatibles (Texto Libre)</h2>
             <p className="text-sm text-gray-500 mb-2">Ingrese los modelos compatibles, separados por comas o saltos de línea.</p>
@@ -320,24 +385,35 @@ const AddEditProductoPage = () => {
             ></textarea>
           </div>
 
-          {/* Sección de Imagen del Producto */}
+          {/* SECCIÓN MEJORADA: Múltiples Imágenes del Producto */}
           <div>
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">Imagen del Producto (opcional)</h2>
-            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md relative">
-              {imagePreviewUrl ? (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={imagePreviewUrl} alt="Previsualización del producto" className="max-h-48 max-w-full object-contain" />
-                  <button
-                    type="button"
-                    onClick={handleRemoveImage}
-                    className="absolute top-2 right-2 p-1 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 hover:bg-gray-100 transition-colors"
-                    title="Eliminar imagen"
-                  >
-                    <XMarkIcon className="h-5 w-5" />
-                  </button>
-                </>
-              ) : (
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+              Imágenes del Producto (opcional - máximo 3)
+            </h2>
+            
+            {/* Mostrar imágenes existentes */}
+            {imagePreviewUrls.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                {imagePreviewUrls.map((url, index) => (
+                  <div key={index} className="relative border-2 border-gray-300 border-dashed rounded-md p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={`Imagen ${index + 1}`} className="w-full h-32 object-contain" />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(index)}
+                      className="absolute top-1 right-1 p-1 bg-white rounded-full shadow-md text-gray-600 hover:text-red-500 hover:bg-gray-100 transition-colors"
+                      title="Eliminar imagen"
+                    >
+                      <XMarkIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Botón para agregar más imágenes */}
+            {imagePreviewUrls.length < 3 && (
+              <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
                 <div className="space-y-1 text-center">
                   <PhotoIcon className="mx-auto h-12 w-12 text-gray-400" />
                   <div className="flex text-sm text-gray-600">
@@ -345,15 +421,25 @@ const AddEditProductoPage = () => {
                       htmlFor="file-upload"
                       className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
                     >
-                      <span>Subir una imagen</span>
-                      <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleImageChange} accept="image/*" />
+                      <span>
+                        {imagePreviewUrls.length === 0 ? 'Subir imágenes' : `Agregar imagen (${imagePreviewUrls.length}/3)`}
+                      </span>
+                      <input 
+                        id="file-upload" 
+                        name="file-upload" 
+                        type="file" 
+                        className="sr-only" 
+                        onChange={handleImageChange} 
+                        accept="image/*" 
+                        multiple={imagePreviewUrls.length === 0}
+                      />
                     </label>
                     <p className="pl-1">o arrastrar y soltar</p>
                   </div>
-                  <p className="text-xs text-gray-500">PNG, JPG, GIF hasta 10MB</p>
+                  <p className="text-xs text-gray-500">PNG, JPG, GIF hasta 10MB c/u</p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Botones de acción */}

@@ -16,6 +16,7 @@ import {
   getDocs,
   runTransaction,
   updateDoc,
+  limit,
   where
 } from 'firebase/firestore';
 import { 
@@ -216,6 +217,96 @@ const NuevaVentaPage = () => {
     }
   };
 
+  // Función corregida para obtener el precio de compra FIFO real
+const obtenerPrecioCompraFIFO = async (productoId) => {
+  try {
+    // Buscar el primer lote disponible en la colección principal 'lotes'
+    const lotesQuery = query(
+      collection(db, 'lotes'), // Colección principal, no subcolección
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc'),
+      limit(1)
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    
+    if (!lotesSnapshot.empty) {
+      const primerLote = lotesSnapshot.docs[0].data();
+      return parseFloat(primerLote.precioCompraUnitario || 0);
+    } else {
+      // Si no hay lotes disponibles, usar precio por defecto del producto
+      const productRef = doc(db, 'productos', productoId);
+      const productSnap = await getDoc(productRef);
+      
+      if (productSnap.exists()) {
+        return parseFloat(productSnap.data().precioCompraDefault || 0);
+      }
+      
+      return 0;
+    }
+  } catch (error) {
+    console.error(`Error al obtener precio FIFO para producto ${productoId}:`, error);
+    return 0;
+  }
+};
+
+  // Función corregida para consumir stock de lotes según FIFO
+const consumirStockFIFO = async (productoId, cantidadVendida, transaction) => {
+  try {
+    // Obtener todos los lotes disponibles de la colección principal
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc')
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let cantidadPendiente = cantidadVendida;
+    const movimientos = [];
+    
+    // Consumir de los lotes más antiguos primero
+    for (const loteDoc of lotesSnapshot.docs) {
+      if (cantidadPendiente <= 0) break;
+      
+      const lote = loteDoc.data();
+      const consumir = Math.min(cantidadPendiente, lote.stockRestante);
+      const nuevoStock = lote.stockRestante - consumir;
+      
+      // Actualizar el lote en la colección principal
+      const loteRef = doc(db, 'lotes', loteDoc.id);
+      transaction.update(loteRef, {
+        stockRestante: nuevoStock,
+        estado: nuevoStock <= 0 ? 'agotado' : 'activo',
+        updatedAt: serverTimestamp()
+      });
+      
+      // Registrar el movimiento para auditoría
+      movimientos.push({
+        loteId: loteDoc.id,
+        numeroLote: lote.numeroLote,
+        cantidadConsumida: consumir,
+        precioCompraUnitario: lote.precioCompraUnitario,
+        stockRestante: nuevoStock
+      });
+      
+      cantidadPendiente -= consumir;
+    }
+    
+    if (cantidadPendiente > 0) {
+      throw new Error(`Stock insuficiente. Faltan ${cantidadPendiente} unidades del producto.`);
+    }
+    
+    return movimientos;
+  } catch (error) {
+    console.error(`Error al consumir stock FIFO para producto ${productoId}:`, error);
+    throw error;
+  }
+};
+
   // Efecto para buscar productos con debounce
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -256,63 +347,115 @@ const NuevaVentaPage = () => {
   };
 
   // Agregar producto a la venta
-  // Agregar producto a venta - VERSIÓN ACTUALIZADA CON GANANCIA OCULTA
-    const handleAddProductToVenta = async () => {
-    if (!selectedProduct) return;
+  // Función mejorada para agregar producto con separación automática por lotes
+const handleAddProductToVenta = async () => {
+  if (!selectedProduct) return;
 
-    const exists = itemsVenta.some(item => item.productoId === selectedProduct.id);
-    if (exists) {
-        alert('Este producto ya ha sido añadido a la venta. Edite la cantidad en la tabla.');
-        setShowQuantityModal(false);
-        return;
-    }
+  const exists = itemsVenta.some(item => item.productoId === selectedProduct.id);
+  if (exists) {
+    alert('Este producto ya ha sido añadido a la venta. Edite la cantidad en la tabla.');
+    setShowQuantityModal(false);
+    return;
+  }
 
-    if ((selectedProduct.stockActual || 0) < quantity) {
-        alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
-        return;
-    }
+  if ((selectedProduct.stockActual || 0) < quantity) {
+    alert(`Stock insuficiente para ${selectedProduct.nombre}. Stock disponible: ${selectedProduct.stockActual || 0}`);
+    return;
+  }
 
-    try {
-        // OBTENER PRECIO DE COMPRA DEL PRODUCTO DESDE FIRESTORE
-        const productRef = doc(db, 'productos', selectedProduct.id);
-        const productSnap = await getDoc(productRef);
-        
-        if (!productSnap.exists()) {
-        alert('Error: El producto no se encontró en la base de datos.');
-        return;
-        }
+  try {
+    // OBTENER LOTES DISPONIBLES PARA SIMULAR LA DISTRIBUCIÓN
+    const lotesDisponibles = await obtenerLotesDisponiblesFIFO(selectedProduct.id);
+    
+    // CREAR ITEMS SEPARADOS POR LOTE
+    const itemsSeparados = await crearItemsSeparadosPorLote(
+      selectedProduct, 
+      quantity, 
+      precioVenta, 
+      lotesDisponibles
+    );
 
-        const productData = productSnap.data();
-        const precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
-        
-        // CALCULAR GANANCIA UNITARIA (PRECIO VENTA - PRECIO COMPRA)
-        const gananciaUnitaria = precioVenta - precioCompraUnitario;
-        const gananciaTotal = quantity * gananciaUnitaria;
+    // AGREGAR TODOS LOS ITEMS SEPARADOS
+    setItemsVenta(prev => [...prev, ...itemsSeparados]);
+    setShowQuantityModal(false);
+    setError(null);
+  } catch (err) {
+    console.error("Error al crear items por lote:", err);
+    setError("Error al calcular la distribución por lotes. Intente de nuevo.");
+  }
+};
 
-        const newItem = {
-        id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        productoId: selectedProduct.id,
-        nombreProducto: selectedProduct.nombre,
-        marca: selectedProduct.marca || '',
-        codigoTienda: selectedProduct.codigoTienda || '',
-        color: selectedProduct.color || '',
-        cantidad: quantity,
-        precioVentaUnitario: precioVenta.toFixed(2),
-        subtotal: (quantity * precioVenta).toFixed(2),
-        // CAMPOS OCULTOS PARA CÁLCULO DE GANANCIA (NO SE MUESTRAN EN LA INTERFAZ)
-        precioCompraUnitario: precioCompraUnitario, // OCULTO
-        gananciaUnitaria: gananciaUnitaria, // OCULTO
-        gananciaTotal: gananciaTotal, // OCULTO
-        };
+// Nueva función para obtener lotes disponibles ordenados por FIFO
+const obtenerLotesDisponiblesFIFO = async (productoId) => {
+  try {
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc')
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    return lotesSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error("Error al obtener lotes disponibles:", error);
+    throw error;
+  }
+};
 
-        setItemsVenta(prev => [...prev, newItem]);
-        setShowQuantityModal(false);
-        setError(null);
-    } catch (err) {
-        console.error("Error al obtener datos del producto:", err);
-        setError("Error al obtener información del producto");
-    }
+// Nueva función para crear items separados automáticamente por lote
+const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, lotesDisponibles) => {
+  const itemsSeparados = [];
+  let cantidadPendiente = cantidadTotal;
+  let contadorItem = 1;
+
+  for (const lote of lotesDisponibles) {
+    if (cantidadPendiente <= 0) break;
+
+    const cantidadDelLote = Math.min(cantidadPendiente, lote.stockRestante);
+    const gananciaUnitaria = precioVenta - lote.precioCompraUnitario;
+    const gananciaTotal = cantidadDelLote * gananciaUnitaria;
+
+    const item = {
+      id: `temp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${contadorItem}`,
+      productoId: producto.id,
+      nombreProducto: producto.nombre,
+      marca: producto.marca || '',
+      codigoTienda: producto.codigoTienda || '',
+      color: producto.color || '',
+      cantidad: cantidadDelLote,
+      precioVentaUnitario: precioVenta.toFixed(2),
+      subtotal: (cantidadDelLote * precioVenta).toFixed(2),
+      // DATOS DEL LOTE ESPECÍFICO
+      loteId: lote.id,
+      numeroLote: lote.numeroLote,
+      precioCompraUnitario: lote.precioCompraUnitario,
+      gananciaUnitaria: gananciaUnitaria,
+      gananciaTotal: gananciaTotal,
+      // IDENTIFICADOR PARA DEVOLUCIONES
+      loteOriginal: {
+        id: lote.id,
+        numeroLote: lote.numeroLote,
+        precioCompraUnitario: lote.precioCompraUnitario,
+        fechaIngreso: lote.fechaIngreso
+      }
     };
+
+    itemsSeparados.push(item);
+    cantidadPendiente -= cantidadDelLote;
+    contadorItem++;
+  }
+
+  if (cantidadPendiente > 0) {
+    throw new Error(`Stock insuficiente. Faltan ${cantidadPendiente} unidades del producto.`);
+  }
+
+  return itemsSeparados;
+};
 
   // Abrir modal de edición
   const handleEditItem = (item) => {
@@ -323,50 +466,41 @@ const NuevaVentaPage = () => {
   };
 
   // Actualizar item
-  // Actualizar item de venta - VERSIÓN ACTUALIZADA CON GANANCIA OCULTA
-    const handleUpdateItem = async () => {
+  // Actualizar item de venta - VERSIÓN CON PRECIO FIFO REAL
+  const handleUpdateItem = async () => {
     if (!editingItem) return;
 
     try {
-        // OBTENER PRECIO DE COMPRA ACTUALIZADO DEL PRODUCTO
-        const productRef = doc(db, 'productos', editingItem.productoId);
-        const productSnap = await getDoc(productRef);
-        
-        if (!productSnap.exists()) {
-        alert('Error: El producto no se encontró en la base de datos.');
-        return;
-        }
+      // OBTENER PRECIO DE COMPRA FIFO ACTUALIZADO
+      const precioCompraFIFO = await obtenerPrecioCompraFIFO(editingItem.productoId);
+      
+      // CALCULAR NUEVA GANANCIA CON PRECIO FIFO REAL
+      const nuevaGananciaUnitaria = editPrecio - precioCompraFIFO;
+      const nuevaGananciaTotal = editQuantity * nuevaGananciaUnitaria;
 
-        const productData = productSnap.data();
-        const precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
-        
-        // CALCULAR NUEVA GANANCIA UNITARIA
-        const nuevaGananciaUnitaria = editPrecio - precioCompraUnitario;
-        const nuevaGananciaTotal = editQuantity * nuevaGananciaUnitaria;
-
-        const newItems = [...itemsVenta];
-        const index = newItems.findIndex(item => item.id === editingItem.id);
-        
-        if (index !== -1) {
+      const newItems = [...itemsVenta];
+      const index = newItems.findIndex(item => item.id === editingItem.id);
+      
+      if (index !== -1) {
         newItems[index] = {
-            ...newItems[index],
-            cantidad: editQuantity,
-            precioVentaUnitario: editPrecio.toFixed(2),
-            subtotal: (editQuantity * editPrecio).toFixed(2),
-            // ACTUALIZAR CAMPOS OCULTOS DE GANANCIA
-            precioCompraUnitario: precioCompraUnitario, // OCULTO
-            gananciaUnitaria: nuevaGananciaUnitaria, // OCULTO
-            gananciaTotal: nuevaGananciaTotal, // OCULTO
+          ...newItems[index],
+          cantidad: editQuantity,
+          precioVentaUnitario: editPrecio.toFixed(2),
+          subtotal: (editQuantity * editPrecio).toFixed(2),
+          // ACTUALIZAR CON PRECIO FIFO REAL
+          precioCompraUnitario: precioCompraFIFO, // PRECIO FIFO REAL ACTUALIZADO
+          gananciaUnitaria: nuevaGananciaUnitaria, // GANANCIA REAL
+          gananciaTotal: nuevaGananciaTotal, // GANANCIA TOTAL REAL
         };
         setItemsVenta(newItems);
-        }
-        
-        setShowEditItemModal(false);
+      }
+      
+      setShowEditItemModal(false);
     } catch (err) {
-        console.error("Error al actualizar información del producto:", err);
-        setError("Error al actualizar información del producto");
+      console.error("Error al actualizar precio FIFO:", err);
+      setError("Error al actualizar el precio de compra. Intente de nuevo.");
     }
-    };
+  };
 
   const removeItem = (index) => {
     if (window.confirm('¿Está seguro de que desea eliminar este producto de la venta?')) {
@@ -388,208 +522,379 @@ const NuevaVentaPage = () => {
     setShowPaymentModal(true);
   };
 
-  // Función modificada para el submit de la venta - INCLUYE GANANCIA OCULTA
-    const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-
-    const clienteSeleccionado = clientes.find(c => c.id === ventaPrincipalData.clienteId);
-    if (!clienteSeleccionado) {
-        setError('Por favor, seleccione un cliente válido.');
-        setSaving(false);
-        return;
-    }
-
-    if (itemsVenta.length === 0) {
-        setError('Debe añadir al menos un producto a la venta.');
-        setSaving(false);
-        return;
-    }
-
-    const validItems = itemsVenta.every(item => {
-        const cantidad = parseFloat(item.cantidad);
-        const precio = parseFloat(item.precioVentaUnitario);
-        return (
-        item.productoId &&
-        !isNaN(cantidad) && cantidad > 0 &&
-        !isNaN(precio) && precio >= 0
-        );
-    });
-
-    if (!validItems) {
-        setError('Por favor, asegúrese de que todos los ítems tengan un producto, cantidad (>0) y precio de venta (>=0) válidos.');
-        setSaving(false);
-        return;
-    }
-
-    const totalVenta = itemsVenta.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0);
-    const totalPagado = paymentData.paymentMethods.reduce((sum, pm) => sum + pm.amount, 0);
+// Función para recalcular precio de compra del producto
+const recalcularPrecioCompraProducto = async (productoId, transaction) => {
+  try {
+    // Buscar el nuevo primer lote disponible después del consumo
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc'),
+      limit(1)
+    );
     
-    if (Math.abs(totalVenta - totalPagado) > 0.01) {
-        setError('El total del pago no coincide con el total de la venta. Por favor, configure el pago correctamente.');
-        setSaving(false);
-        return;
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let nuevoPrecioCompra = 0;
+    
+    if (!lotesSnapshot.empty) {
+      const primerLoteDisponible = lotesSnapshot.docs[0].data();
+      nuevoPrecioCompra = parseFloat(primerLoteDisponible.precioCompraUnitario || 0);
     }
+    
+    // Actualizar el precio de compra del producto
+    const productRef = doc(db, 'productos', productoId);
+    transaction.update(productRef, {
+      precioCompraDefault: nuevoPrecioCompra,
+      updatedAt: serverTimestamp()
+    });
+    
+  } catch (error) {
+    console.error(`Error al recalcular precio de compra para producto ${productoId}:`, error);
+  }
+};
 
-    try {
-        await runTransaction(db, async (transaction) => {
-        const productRefs = itemsVenta.map(item => doc(db, 'productos', item.productoId));
-        const productSnaps = await Promise.all(productRefs.map(ref => transaction.get(ref)));
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setSaving(true);
+  setError(null);
 
-        let existingSaleSnap = null;
-        if (ventaPrincipalData.id) {
-            const saleDocRef = doc(db, 'ventas', ventaPrincipalData.id);
-            existingSaleSnap = await transaction.get(saleDocRef);
+  // Validaciones previas
+  const clienteSeleccionado = clientes.find(c => c.id === ventaPrincipalData.clienteId);
+  if (!clienteSeleccionado) {
+    setError('Por favor, seleccione un cliente válido.');
+    setSaving(false);
+    return;
+  }
+
+  if (itemsVenta.length === 0) {
+    setError('Debe añadir al menos un producto a la venta.');
+    setSaving(false);
+    return;
+  }
+
+  const validItems = itemsVenta.every(item => {
+    const cantidad = parseFloat(item.cantidad);
+    const precio = parseFloat(item.precioVentaUnitario);
+    return (
+      item.productoId &&
+      !isNaN(cantidad) && cantidad > 0 &&
+      !isNaN(precio) && precio >= 0 &&
+      item.loteId // VALIDAR QUE TENGA LOTE ASIGNADO
+    );
+  });
+
+  if (!validItems) {
+    setError('Por favor, asegúrese de que todos los ítems tengan un producto, cantidad (>0), precio de venta (>=0) y lote asignado válidos.');
+    setSaving(false);
+    return;
+  }
+
+  const totalVenta = itemsVenta.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0);
+  const totalPagado = paymentData.paymentMethods.reduce((sum, pm) => sum + pm.amount, 0);
+  
+  if (Math.abs(totalVenta - totalPagado) > 0.01) {
+    setError('El total del pago no coincide con el total de la venta. Por favor, configure el pago correctamente.');
+    setSaving(false);
+    return;
+  }
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      // ========== PHASE 1: TODOS LOS READS PRIMERO ==========
+      
+      // 1.1 Leer todos los lotes que se van a consumir
+      const lotesRefs = itemsVenta.map(item => doc(db, 'lotes', item.loteId));
+      const lotesSnaps = await Promise.all(lotesRefs.map(ref => transaction.get(ref)));
+      
+      // 1.2 Leer todos los productos que se van a actualizar
+      const productosUnicos = [...new Set(itemsVenta.map(item => item.productoId))];
+      const productRefs = productosUnicos.map(id => doc(db, 'productos', id));
+      const productSnaps = await Promise.all(productRefs.map(ref => transaction.get(ref)));
+      
+      // 1.3 Pre-leer los próximos lotes FIFO para cada producto (para recalcular precios)
+      const proximosLotesPorProducto = new Map();
+      for (const productoId of productosUnicos) {
+        // Simular el consumo para saber qué lotes quedarán disponibles
+        const lotesActuales = await obtenerLotesDisponiblesFIFOParaSimulacion(productoId);
+        const cantidadTotalConsumida = itemsVenta
+          .filter(item => item.productoId === productoId)
+          .reduce((sum, item) => sum + item.cantidad, 0);
+        
+        const proximoLoteDisponible = simularConsumoYObtenerProximoLote(lotesActuales, cantidadTotalConsumida);
+        proximosLotesPorProducto.set(productoId, proximoLoteDisponible);
+      }
+
+      // 1.4 Leer venta existente si es actualización
+      let existingSaleSnap = null;
+      if (ventaPrincipalData.id) {
+        const saleDocRef = doc(db, 'ventas', ventaPrincipalData.id);
+        existingSaleSnap = await transaction.get(saleDocRef);
+      }
+
+      // ========== PHASE 2: VALIDACIONES CON DATOS LEÍDOS ==========
+      
+      // Validar lotes
+      const productosAfectados = new Map();
+      for (let i = 0; i < itemsVenta.length; i++) {
+        const item = itemsVenta[i];
+        const loteSnap = lotesSnaps[i];
+        
+        if (!loteSnap.exists()) {
+          throw new Error(`Lote ${item.numeroLote || item.loteId} no encontrado`);
         }
 
-        const productStockMap = new Map();
-        for (let i = 0; i < productSnaps.length; i++) {
-            const productSnap = productSnaps[i];
-            const item = itemsVenta[i];
-
-            if (!productSnap.exists()) {
-            throw new Error(`El producto "${item.nombreProducto}" no se encontró en el inventario.`);
-            }
-
-            const currentStock = typeof productSnap.data().stockActual === 'number' ? productSnap.data().stockActual : 0;
-            const cantidadVendida = parseFloat(item.cantidad);
-
-            if (currentStock < cantidadVendida) {
-            throw new Error(`Stock insuficiente para el producto "${item.nombreProducto}". Stock actual: ${currentStock}, Cantidad solicitada: ${cantidadVendida}.`);
-            }
-            
-            productStockMap.set(item.productoId, {
-            ref: productRefs[i],
-            currentStock: currentStock
-            });
+        const loteData = loteSnap.data();
+        const nuevoStockLote = loteData.stockRestante - item.cantidad;
+        
+        if (nuevoStockLote < 0) {
+          throw new Error(`Stock insuficiente en lote ${item.numeroLote || item.loteId}. Disponible: ${loteData.stockRestante}, Solicitado: ${item.cantidad}`);
         }
 
-        // CALCULAR GANANCIA TOTAL DE LA VENTA
-        const gananciaTotalVenta = itemsVenta.reduce((sum, item) => sum + (parseFloat(item.gananciaTotal) || 0), 0);
+        // Acumular cantidades por producto
+        if (!productosAfectados.has(item.productoId)) {
+          productosAfectados.set(item.productoId, 0);
+        }
+        productosAfectados.set(item.productoId, 
+          productosAfectados.get(item.productoId) + item.cantidad
+        );
+      }
 
-        let ventaRef;
-        const saleData = {
-            numeroVenta: ventaPrincipalData.numeroVenta.trim() || `V-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-            clienteId: ventaPrincipalData.clienteId,
-            clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
-            clienteDNI: clienteSeleccionado.dni || clienteSeleccionado.numeroDocumento || null,
-            observaciones: ventaPrincipalData.observaciones.trim() || null,
-            totalVenta: parseFloat(totalVenta.toFixed(2)),
-            // CAMPO OCULTO - GANANCIA TOTAL DE LA VENTA
-            gananciaTotalVenta: parseFloat(gananciaTotalVenta.toFixed(2)), // OCULTO
-            fechaVenta: serverTimestamp(),
-            empleadoId: user.email || user.uid,
-            estado: 'completada',
-            tipoVenta: 'ventaDirecta',
-            paymentData: paymentData,
-            metodoPago: paymentData.isMixedPayment ? 'mixto' : paymentData.paymentMethods[0].method,
-            updatedAt: serverTimestamp(),
-        };
-
-        if (ventaPrincipalData.id) {
-            ventaRef = doc(db, 'ventas', ventaPrincipalData.id);
-            transaction.update(ventaRef, saleData);
-        } else {
-            ventaRef = doc(collection(db, 'ventas'));
-            transaction.set(ventaRef, {
-            ...saleData,
-            createdAt: serverTimestamp(),
-            });
+      // Validar productos
+      for (let i = 0; i < productosUnicos.length; i++) {
+        const productSnap = productSnaps[i];
+        const productoId = productosUnicos[i];
+        
+        if (!productSnap.exists()) {
+          throw new Error(`Producto ${productoId} no encontrado`);
         }
 
-        // ACTUALIZAR STOCK DE PRODUCTOS
-        for (const item of itemsVenta) {
-            const { ref: productRef, currentStock } = productStockMap.get(item.productoId);
-            const cantidadVendida = parseFloat(item.cantidad);
-            const newStock = currentStock - cantidadVendida;
-
-            transaction.update(productRef, {
-            stockActual: newStock,
-            updatedAt: serverTimestamp(),
-            });
+        const currentStock = productSnap.data().stockActual || 0;
+        const cantidadVendida = productosAfectados.get(productoId);
+        
+        if (currentStock < cantidadVendida) {
+          throw new Error(`Stock insuficiente para producto ${productoId}. Stock actual: ${currentStock}, Cantidad solicitada: ${cantidadVendida}`);
         }
+      }
 
-        // GUARDAR ITEMS DE LA VENTA CON CAMPOS OCULTOS
-        for (const item of itemsVenta) {
-            const itemData = {
-            productoId: item.productoId,
-            nombreProducto: item.nombreProducto,
-            marca: item.marca || '',
-            codigoTienda: item.codigoTienda || '',
-            color: item.color || '',
-            cantidad: parseFloat(item.cantidad),
-            precioVentaUnitario: parseFloat(item.precioVentaUnitario),
-            subtotal: parseFloat(item.subtotal),
-            // CAMPOS OCULTOS PARA CÁLCULO DE GANANCIA (NO SE MUESTRAN EN LA INTERFAZ)
-            precioCompraUnitario: parseFloat(item.precioCompraUnitario), // OCULTO
-            gananciaUnitaria: parseFloat(item.gananciaUnitaria), // OCULTO
-            gananciaTotal: parseFloat(item.gananciaTotal), // OCULTO
-            updatedAt: serverTimestamp(),
-            };
+      // ========== PHASE 3: TODOS LOS WRITES ==========
+      
+      // 3.1 Calcular ganancia total
+      const gananciaTotalVenta = itemsVenta.reduce((sum, item) => sum + (parseFloat(item.gananciaTotal) || 0), 0);
 
-            if (item.id.startsWith('temp-')) {
-            const newItemRef = doc(collection(ventaRef, 'itemsVenta'));
-            transaction.set(newItemRef, {
-                ...itemData,
-                createdAt: serverTimestamp(),
-            });
-            } else {
-            const itemDocRef = doc(ventaRef, 'itemsVenta', item.id);
-            transaction.update(itemDocRef, itemData);
-            }
-        }
+      // 3.2 Crear o actualizar venta principal
+      let ventaRef;
+      const saleData = {
+        numeroVenta: ventaPrincipalData.numeroVenta.trim() || `V-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        clienteId: ventaPrincipalData.clienteId,
+        clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
+        clienteDNI: clienteSeleccionado.dni || clienteSeleccionado.numeroDocumento || null,
+        observaciones: ventaPrincipalData.observaciones.trim() || null,
+        totalVenta: parseFloat(totalVenta.toFixed(2)),
+        gananciaTotalVenta: parseFloat(gananciaTotalVenta.toFixed(2)),
+        fechaVenta: serverTimestamp(),
+        empleadoId: user.email || user.uid,
+        estado: 'completada',
+        tipoVenta: 'ventaDirecta',
+        paymentData: paymentData,
+        metodoPago: paymentData.isMixedPayment ? 'mixto' : paymentData.paymentMethods[0].method,
+        updatedAt: serverTimestamp(),
+      };
 
-        // CREAR REGISTROS DE PAGOS
-        if (paymentData.isMixedPayment) {
-            for (const paymentMethod of paymentData.paymentMethods) {
-            if (paymentMethod.amount > 0) {
-                const paymentRef = doc(collection(db, 'pagos'));
-                transaction.set(paymentRef, {
-                ventaId: ventaRef.id,
-                numeroVenta: saleData.numeroVenta,
-                metodoPago: paymentMethod.method,
-                monto: paymentMethod.amount,
-                clienteId: ventaPrincipalData.clienteId,
-                clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
-                empleadoId: user.email || user.uid,
-                fechaPago: serverTimestamp(),
-                estado: 'completado',
-                tipo: 'venta',
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-                });
-            }
-            }
-        } else {
-            const paymentRef = doc(collection(db, 'pagos'));
-            transaction.set(paymentRef, {
-            ventaId: ventaRef.id,
-            numeroVenta: saleData.numeroVenta,
-            metodoPago: paymentData.paymentMethods[0].method,
-            monto: paymentData.paymentMethods[0].amount,
-            clienteId: ventaPrincipalData.clienteId,
-            clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
-            empleadoId: user.email || user.uid,
-            fechaPago: serverTimestamp(),
-            estado: 'completado',
-            tipo: 'venta',
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            });
-        }
+      if (ventaPrincipalData.id && existingSaleSnap && existingSaleSnap.exists()) {
+        ventaRef = doc(db, 'ventas', ventaPrincipalData.id);
+        transaction.update(ventaRef, saleData);
+      } else {
+        ventaRef = doc(collection(db, 'ventas'));
+        transaction.set(ventaRef, {
+          ...saleData,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      // 3.3 Actualizar lotes
+      for (let i = 0; i < itemsVenta.length; i++) {
+        const item = itemsVenta[i];
+        const loteRef = lotesRefs[i];
+        const loteSnap = lotesSnaps[i];
+        const loteData = loteSnap.data();
+        
+        const nuevoStockLote = loteData.stockRestante - item.cantidad;
+        
+        transaction.update(loteRef, {
+          stockRestante: nuevoStockLote,
+          estado: nuevoStockLote <= 0 ? 'agotado' : 'activo',
+          updatedAt: serverTimestamp()
         });
 
-        alert('Venta registrada con éxito y stock actualizado.');
-        clearActiveSale();
-        router.push('/ventas');
-    } catch (err) {
-        console.error("Error al registrar venta:", err);
-        setError("Error al registrar la venta. " + (err.code === 'permission-denied' ? 'No tiene permisos para realizar esta acción. Contacte al administrador.' : err.message));
-    } finally {
-        setSaving(false);
+        // Crear movimiento de lote para auditoría
+        const movimientoRef = doc(collection(db, 'movimientosLotes'));
+        transaction.set(movimientoRef, {
+          ventaId: ventaRef.id,
+          productoId: item.productoId,
+          nombreProducto: item.nombreProducto,
+          loteId: item.loteId,
+          numeroLote: item.numeroLote,
+          cantidadConsumida: item.cantidad,
+          precioCompraUnitario: item.precioCompraUnitario,
+          stockRestanteLote: nuevoStockLote,
+          tipoMovimiento: 'venta',
+          fechaMovimiento: serverTimestamp(),
+          empleadoId: user.email || user.uid,
+          createdAt: serverTimestamp()
+        });
+      }
+
+      // 3.4 Actualizar productos con nuevos precios FIFO
+      for (let i = 0; i < productosUnicos.length; i++) {
+        const productoId = productosUnicos[i];
+        const productRef = productRefs[i];
+        const productSnap = productSnaps[i];
+        const cantidadVendida = productosAfectados.get(productoId);
+        
+        const currentStock = productSnap.data().stockActual || 0;
+        const newStock = currentStock - cantidadVendida;
+        
+        // Usar el precio pre-calculado
+        const nuevoPrecioCompra = proximosLotesPorProducto.get(productoId) || 0;
+        
+        transaction.update(productRef, {
+          stockActual: newStock,
+          precioCompraDefault: nuevoPrecioCompra,
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      // 3.5 Guardar items de la venta
+      for (const item of itemsVenta) {
+        const itemData = {
+          productoId: item.productoId,
+          nombreProducto: item.nombreProducto,
+          marca: item.marca || '',
+          codigoTienda: item.codigoTienda || '',
+          color: item.color || '',
+          cantidad: parseFloat(item.cantidad),
+          precioVentaUnitario: parseFloat(item.precioVentaUnitario),
+          subtotal: parseFloat(item.subtotal),
+          // DATOS DEL LOTE ESPECÍFICO PARA DEVOLUCIONES
+          loteId: item.loteId,
+          numeroLote: item.numeroLote,
+          precioCompraUnitario: parseFloat(item.precioCompraUnitario),
+          gananciaUnitaria: parseFloat(item.gananciaUnitaria),
+          gananciaTotal: parseFloat(item.gananciaTotal),
+          loteOriginal: item.loteOriginal,
+          updatedAt: serverTimestamp(),
+        };
+
+        if (item.id && item.id.startsWith('temp-')) {
+          const newItemRef = doc(collection(ventaRef, 'itemsVenta'));
+          transaction.set(newItemRef, {
+            ...itemData,
+            createdAt: serverTimestamp(),
+          });
+        } else if (item.id && existingSaleSnap && existingSaleSnap.exists()) {
+          const itemDocRef = doc(ventaRef, 'itemsVenta', item.id);
+          transaction.update(itemDocRef, itemData);
+        } else {
+          const newItemRef = doc(collection(ventaRef, 'itemsVenta'));
+          transaction.set(newItemRef, {
+            ...itemData,
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
+
+      // 3.6 Crear registros de pagos
+      if (paymentData.isMixedPayment) {
+        for (const paymentMethod of paymentData.paymentMethods) {
+          if (paymentMethod.amount > 0) {
+            const paymentRef = doc(collection(db, 'pagos'));
+            transaction.set(paymentRef, {
+              ventaId: ventaRef.id,
+              numeroVenta: saleData.numeroVenta,
+              metodoPago: paymentMethod.method,
+              monto: paymentMethod.amount,
+              clienteId: ventaPrincipalData.clienteId,
+              clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
+              empleadoId: user.email || user.uid,
+              fechaPago: serverTimestamp(),
+              estado: 'completado',
+              tipo: 'venta',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      } else {
+        const paymentRef = doc(collection(db, 'pagos'));
+        transaction.set(paymentRef, {
+          ventaId: ventaRef.id,
+          numeroVenta: saleData.numeroVenta,
+          metodoPago: paymentData.paymentMethods[0].method,
+          monto: paymentData.paymentMethods[0].amount,
+          clienteId: ventaPrincipalData.clienteId,
+          clienteNombre: clienteSeleccionado.nombre + (clienteSeleccionado.apellido ? ' ' + clienteSeleccionado.apellido : ''),
+          empleadoId: user.email || user.uid,
+          fechaPago: serverTimestamp(),
+          estado: 'completado',
+          tipo: 'venta',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    });
+
+    alert('Venta registrada con éxito. Productos separados automáticamente por lotes FIFO.');
+    clearActiveSale();
+    router.push('/ventas');
+
+  } catch (err) {
+    console.error("Error al registrar venta:", err);
+    setError("Error al registrar la venta. " + (err.code === 'permission-denied' ? 'No tiene permisos para realizar esta acción. Contacte al administrador.' : err.message));
+  } finally {
+    setSaving(false);
+  }
+};
+
+// Funciones auxiliares necesarias
+const obtenerLotesDisponiblesFIFOParaSimulacion = async (productoId) => {
+  const lotesQuery = query(
+    collection(db, 'lotes'),
+    where('productoId', '==', productoId),
+    where('stockRestante', '>', 0),
+    where('estado', '==', 'activo'),
+    orderBy('fechaIngreso', 'asc')
+  );
+  
+  const lotesSnapshot = await getDocs(lotesQuery);
+  return lotesSnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+};
+
+const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
+  let cantidadPendiente = cantidadAConsumir;
+  
+  for (const lote of lotes) {
+    if (cantidadPendiente <= 0) {
+      return parseFloat(lote.precioCompraUnitario || 0);
     }
-    };
+    
+    const consumir = Math.min(cantidadPendiente, lote.stockRestante);
+    cantidadPendiente -= consumir;
+    
+    // Si este lote no se agota completamente, será el próximo disponible
+    if (consumir < lote.stockRestante) {
+      return parseFloat(lote.precioCompraUnitario || 0);
+    }
+  }
+  
+  return 0; // No hay más lotes disponibles
+};
+
+
 
   const totalGeneralVenta = itemsVenta.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
 

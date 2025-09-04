@@ -19,6 +19,7 @@ import {
   where,
   updateDoc,
   onSnapshot,
+  limit
 } from 'firebase/firestore';
 import {
   PlusIcon,
@@ -463,117 +464,154 @@ const NuevaCotizacionPage = () => {
     setShowQuantityModal(true);
   };
 
+
+  // Función para obtener el precio de compra FIFO real
+const obtenerPrecioCompraFIFO = async (productoId) => {
+  try {
+    // Buscar el primer lote disponible en la colección principal 'lotes'
+    const lotesQuery = query(
+      collection(db, 'lotes'), // Colección principal, no subcolección
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc'),
+      limit(1)
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    
+    if (!lotesSnapshot.empty) {
+      const primerLote = lotesSnapshot.docs[0].data();
+      return parseFloat(primerLote.precioCompraUnitario || 0);
+    } else {
+      // Si no hay lotes disponibles, usar precio por defecto del producto
+      const productRef = doc(db, 'productos', productoId);
+      const productSnap = await getDoc(productRef);
+      
+      if (productSnap.exists()) {
+        return parseFloat(productSnap.data().precioCompraDefault || 0);
+      }
+      
+      return 0;
+    }
+  } catch (error) {
+    console.error(`Error al obtener precio FIFO para producto ${productoId}:`, error);
+    return 0;
+  }
+};
+
+
   // Agregar producto a cotización
-  // Agregar producto a cotización - VERSIÓN ACTUALIZADA CON PRECIO DE COMPRA OCULTO
-  const handleAddProductToCotizacion = async () => {
-    if (!cotizacionActiva?.id || !selectedProduct) return;
+  // Agregar producto a cotización - VERSIÓN CON PRECIO FIFO REAL
+const handleAddProductToCotizacion = async () => {
+  if (!cotizacionActiva?.id || !selectedProduct) return;
 
-    try {
-      const cotizacionItemsRef = collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion');
-      const existingItemQuery = query(cotizacionItemsRef, where('productoId', '==', selectedProduct.id));
-      const existingItemSnapshot = await getDocs(existingItemQuery);
+  try {
+    const cotizacionItemsRef = collection(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion');
+    const existingItemQuery = query(cotizacionItemsRef, where('productoId', '==', selectedProduct.id));
+    const existingItemSnapshot = await getDocs(existingItemQuery);
 
-      await runTransaction(db, async (transaction) => {
-        const productRef = doc(db, 'productos', selectedProduct.id);
-        const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
+    await runTransaction(db, async (transaction) => {
+      const productRef = doc(db, 'productos', selectedProduct.id);
+      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
 
-        const productSnap = await transaction.get(productRef);
-        const cotizacionSnap = await transaction.get(cotizacionRef);
+      const productSnap = await transaction.get(productRef);
+      const cotizacionSnap = await transaction.get(cotizacionRef);
 
-        if (!productSnap.exists() || !cotizacionSnap.exists()) {
-          throw new Error("Producto o cotización no encontrada");
-        }
+      if (!productSnap.exists() || !cotizacionSnap.exists()) {
+        throw new Error("Producto o cotización no encontrada");
+      }
 
-        // OBTENER LOS DATOS MÁS RECIENTES DEL PRODUCTO
-        const productData = productSnap.data();
+      // OBTENER LOS DATOS MÁS RECIENTES DEL PRODUCTO
+      const productData = productSnap.data();
+      
+      // OBTENER PRECIO DE COMPRA FIFO REAL (NO EL POR DEFECTO)
+      const precioCompraFIFO = await obtenerPrecioCompraFIFO(selectedProduct.id);
+      
+      // CALCULAR GANANCIA UNITARIA CON PRECIO FIFO REAL
+      const gananciaUnitaria = precioVenta - precioCompraFIFO;
+      
+      let itemRef;
+      let newQuantity;
+      let oldSubtotal = 0;
+      let oldGananciaTotal = 0;
+
+      if (!existingItemSnapshot.empty) {
+        const existingItemDoc = existingItemSnapshot.docs[0];
+        itemRef = existingItemDoc.ref;
+        const existingItemData = existingItemDoc.data();
+        oldSubtotal = parseFloat(existingItemData.subtotal || 0);
+        oldGananciaTotal = parseFloat(existingItemData.gananciaTotal || 0);
+        newQuantity = existingItemData.cantidad + quantity;
         
-        // OBTENER PRECIO DE COMPRA (OCULTO PARA EMPLEADOS)
-        const precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
-        
-        // CALCULAR GANANCIA UNITARIA (PRECIO VENTA - PRECIO COMPRA)
-        const gananciaUnitaria = precioVenta - precioCompraUnitario;
-        
-        let itemRef;
-        let newQuantity;
-        let oldSubtotal = 0;
-        let oldGananciaTotal = 0;
+        // RECALCULAR GANANCIA CON PRECIO FIFO ACTUALIZADO
+        const newGananciaTotal = newQuantity * gananciaUnitaria;
+        const newSubtotal = newQuantity * precioVenta;
 
-        if (!existingItemSnapshot.empty) {
-          const existingItemDoc = existingItemSnapshot.docs[0];
-          itemRef = existingItemDoc.ref;
-          const existingItemData = existingItemDoc.data();
-          oldSubtotal = parseFloat(existingItemData.subtotal || 0);
-          oldGananciaTotal = parseFloat(existingItemData.gananciaTotal || 0);
-          newQuantity = existingItemData.cantidad + quantity;
-          
-          const newSubtotal = newQuantity * precioVenta;
-          const newGananciaTotal = newQuantity * gananciaUnitaria;
-
-          transaction.update(itemRef, {
-            cantidad: newQuantity,
-            subtotal: newSubtotal,
-            precioVentaUnitario: precioVenta,
-            // CAMPOS OCULTOS PARA CÁLCULO DE GANANCIA
-            precioCompraUnitario: precioCompraUnitario, // OCULTO - NO SE MUESTRA EN UI
-            gananciaUnitaria: gananciaUnitaria, // OCULTO - NO SE MUESTRA EN UI  
-            gananciaTotal: newGananciaTotal, // OCULTO - NO SE MUESTRA EN UI
-            // ACTUALIZAR TAMBIÉN EL COLOR DEL PRODUCTO
-            color: productData.color || '',
-            updatedAt: serverTimestamp(),
-          });
-        } else {
-          itemRef = doc(cotizacionItemsRef);
-          newQuantity = quantity;
-          const newSubtotal = newQuantity * precioVenta;
-          const newGananciaTotal = newQuantity * gananciaUnitaria;
-
-          // GUARDAR TODOS LOS DATOS DEL PRODUCTO, INCLUYENDO CAMPOS OCULTOS
-          transaction.set(itemRef, {
-            productoId: selectedProduct.id,
-            nombreProducto: productData.nombre || selectedProduct.nombre,
-            marca: productData.marca || selectedProduct.marca || '',
-            codigoTienda: productData.codigoTienda || selectedProduct.codigoTienda || '',
-            descripcion: productData.descripcion || selectedProduct.descripcion || '',
-            color: productData.color || selectedProduct.color || '',
-            cantidad: newQuantity,
-            precioVentaUnitario: precioVenta,
-            subtotal: newSubtotal,
-            // CAMPOS OCULTOS PARA CÁLCULO DE GANANCIA (NO SE MUESTRAN EN LA INTERFAZ)
-            precioCompraUnitario: precioCompraUnitario, // OCULTO
-            gananciaUnitaria: gananciaUnitaria, // OCULTO
-            gananciaTotal: newGananciaTotal, // OCULTO
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          
-          oldGananciaTotal = 0; // Para el cálculo del total de ganancia
-        }
-
-        // ACTUALIZAR TOTALES EN LA COTIZACIÓN
-        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
-        const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
-        
-        const finalItemSubtotal = newQuantity * precioVenta;
-        const finalItemGanancia = newQuantity * gananciaUnitaria;
-        
-        const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
-        const updatedGananciaTotal = currentGananciaTotal - oldGananciaTotal + finalItemGanancia;
-
-        transaction.update(cotizacionRef, {
-          totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
-          // CAMPO OCULTO - GANANCIA TOTAL DE LA COTIZACIÓN
-          gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // OCULTO
+        transaction.update(itemRef, {
+          cantidad: newQuantity,
+          subtotal: newSubtotal,
+          precioVentaUnitario: precioVenta,
+          // CAMPOS OCULTOS CON PRECIO FIFO REAL
+          precioCompraUnitario: precioCompraFIFO, // PRECIO FIFO REAL
+          gananciaUnitaria: gananciaUnitaria, // GANANCIA REAL
+          gananciaTotal: newGananciaTotal, // GANANCIA TOTAL REAL
+          color: productData.color || '',
           updatedAt: serverTimestamp(),
         });
-      });
+      } else {
+        itemRef = doc(cotizacionItemsRef);
+        newQuantity = quantity;
+        const newSubtotal = newQuantity * precioVenta;
+        const newGananciaTotal = newQuantity * gananciaUnitaria;
 
-      setShowQuantityModal(false);
-      alert('Producto agregado exitosamente');
-    } catch (err) {
-      console.error("Error al agregar producto:", err);
-      setError("Error al agregar producto a la cotización");
-    }
-  };
+        // GUARDAR TODOS LOS DATOS DEL PRODUCTO, INCLUYENDO PRECIO FIFO REAL
+        transaction.set(itemRef, {
+          productoId: selectedProduct.id,
+          nombreProducto: productData.nombre || selectedProduct.nombre,
+          marca: productData.marca || selectedProduct.marca || '',
+          codigoTienda: productData.codigoTienda || selectedProduct.codigoTienda || '',
+          descripcion: productData.descripcion || selectedProduct.descripcion || '',
+          color: productData.color || selectedProduct.color || '',
+          cantidad: newQuantity,
+          precioVentaUnitario: precioVenta,
+          subtotal: newSubtotal,
+          // CAMPOS OCULTOS CON PRECIO FIFO REAL
+          precioCompraUnitario: precioCompraFIFO, // PRECIO FIFO REAL
+          gananciaUnitaria: gananciaUnitaria, // GANANCIA REAL
+          gananciaTotal: newGananciaTotal, // GANANCIA TOTAL REAL
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        
+        oldGananciaTotal = 0;
+      }
+
+      // ACTUALIZAR TOTALES EN LA COTIZACIÓN CON GANANCIA REAL
+      const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+      const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
+      
+      const finalItemSubtotal = newQuantity * precioVenta;
+      const finalItemGanancia = newQuantity * gananciaUnitaria;
+      
+      const updatedTotal = currentTotal - oldSubtotal + finalItemSubtotal;
+      const updatedGananciaTotal = currentGananciaTotal - oldGananciaTotal + finalItemGanancia;
+
+      transaction.update(cotizacionRef, {
+        totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+        // GANANCIA TOTAL REAL CON PRECIO FIFO
+        gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // OCULTO
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    setShowQuantityModal(false);
+    alert('Producto agregado exitosamente con precio FIFO real');
+  } catch (err) {
+    console.error("Error al agregar producto:", err);
+    setError("Error al agregar producto a la cotización");
+  }
+};
 
   // Abrir modal de edición de item
   const handleEditItem = (item) => {
@@ -585,71 +623,69 @@ const NuevaCotizacionPage = () => {
 
   // Actualizar item de cotización
   // Actualizar item de cotización - VERSIÓN ACTUALIZADA CON GANANCIA OCULTA
-  const handleUpdateItem = async () => {
-    if (!cotizacionActiva?.id || !editingItem) return;
+  // Actualizar item de cotización - VERSIÓN CON PRECIO FIFO REAL
+const handleUpdateItem = async () => {
+  if (!cotizacionActiva?.id || !editingItem) return;
 
-    try {
-      await runTransaction(db, async (transaction) => {
-        const itemRef = doc(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion', editingItem.id);
-        const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
-        const productRef = doc(db, 'productos', editingItem.productoId);
+  try {
+    await runTransaction(db, async (transaction) => {
+      const itemRef = doc(db, 'cotizaciones', cotizacionActiva.id, 'itemsCotizacion', editingItem.id);
+      const cotizacionRef = doc(db, 'cotizaciones', cotizacionActiva.id);
 
-        const cotizacionSnap = await transaction.get(cotizacionRef);
-        const productSnap = await transaction.get(productRef);
-        
-        if (!cotizacionSnap.exists() || !productSnap.exists()) {
-          throw new Error("Cotización o producto no encontrado");
-        }
+      const cotizacionSnap = await transaction.get(cotizacionRef);
+      
+      if (!cotizacionSnap.exists()) {
+        throw new Error("Cotización no encontrada");
+      }
 
-        // OBTENER PRECIO DE COMPRA ACTUAL DEL PRODUCTO
-        const productData = productSnap.data();
-        const precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
-        
-        // CALCULAR NUEVA GANANCIA UNITARIA
-        const nuevaGananciaUnitaria = editPrecio - precioCompraUnitario;
-        
-        // CÁLCULOS ANTIGUOS PARA RESTAR DEL TOTAL
-        const oldSubtotal = parseFloat(editingItem.subtotal || 0);
-        const oldGananciaTotal = parseFloat(editingItem.gananciaTotal || 0);
-        
-        // CÁLCULOS NUEVOS
-        const newSubtotal = editQuantity * editPrecio;
-        const newGananciaTotal = editQuantity * nuevaGananciaUnitaria;
+      // OBTENER PRECIO DE COMPRA FIFO ACTUALIZADO
+      const precioCompraFIFO = await obtenerPrecioCompraFIFO(editingItem.productoId);
+      
+      // CALCULAR NUEVA GANANCIA CON PRECIO FIFO REAL
+      const nuevaGananciaUnitaria = editPrecio - precioCompraFIFO;
+      
+      // CÁLCULOS ANTIGUOS PARA RESTAR DEL TOTAL
+      const oldSubtotal = parseFloat(editingItem.subtotal || 0);
+      const oldGananciaTotal = parseFloat(editingItem.gananciaTotal || 0);
+      
+      // CÁLCULOS NUEVOS CON PRECIO FIFO REAL
+      const newSubtotal = editQuantity * editPrecio;
+      const newGananciaTotal = editQuantity * nuevaGananciaUnitaria;
 
-        // ACTUALIZAR EL ITEM
-        transaction.update(itemRef, {
-          cantidad: editQuantity,
-          precioVentaUnitario: editPrecio,
-          subtotal: newSubtotal,
-          // ACTUALIZAR CAMPOS OCULTOS DE GANANCIA
-          precioCompraUnitario: precioCompraUnitario, // OCULTO
-          gananciaUnitaria: nuevaGananciaUnitaria, // OCULTO
-          gananciaTotal: newGananciaTotal, // OCULTO
-          updatedAt: serverTimestamp(),
-        });
-
-        // ACTUALIZAR TOTALES EN LA COTIZACIÓN
-        const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
-        const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
-        
-        const updatedTotal = currentTotal - oldSubtotal + newSubtotal;
-        const updatedGananciaTotal = currentGananciaTotal - oldGananciaTotal + newGananciaTotal;
-
-        transaction.update(cotizacionRef, {
-          totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
-          // ACTUALIZAR GANANCIA TOTAL OCULTA
-          gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // OCULTO
-          updatedAt: serverTimestamp(),
-        });
+      // ACTUALIZAR EL ITEM CON PRECIO FIFO REAL
+      transaction.update(itemRef, {
+        cantidad: editQuantity,
+        precioVentaUnitario: editPrecio,
+        subtotal: newSubtotal,
+        // ACTUALIZAR CAMPOS OCULTOS CON PRECIO FIFO REAL
+        precioCompraUnitario: precioCompraFIFO, // PRECIO FIFO REAL ACTUALIZADO
+        gananciaUnitaria: nuevaGananciaUnitaria, // GANANCIA REAL
+        gananciaTotal: newGananciaTotal, // GANANCIA TOTAL REAL
+        updatedAt: serverTimestamp(),
       });
 
-      setShowEditItemModal(false);
-      alert('Producto actualizado exitosamente');
-    } catch (err) {
-      console.error("Error al actualizar item:", err);
-      setError("Error al actualizar producto");
-    }
-  };
+      // ACTUALIZAR TOTALES EN LA COTIZACIÓN CON GANANCIA REAL
+      const currentTotal = parseFloat(cotizacionSnap.data().totalCotizacion || 0);
+      const currentGananciaTotal = parseFloat(cotizacionSnap.data().gananciaTotalCotizacion || 0);
+      
+      const updatedTotal = currentTotal - oldSubtotal + newSubtotal;
+      const updatedGananciaTotal = currentGananciaTotal - oldGananciaTotal + newGananciaTotal;
+
+      transaction.update(cotizacionRef, {
+        totalCotizacion: parseFloat(updatedTotal.toFixed(2)),
+        // ACTUALIZAR GANANCIA TOTAL REAL CON PRECIO FIFO
+        gananciaTotalCotizacion: parseFloat(updatedGananciaTotal.toFixed(2)), // OCULTO
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    setShowEditItemModal(false);
+    alert('Producto actualizado exitosamente con precio FIFO real');
+  } catch (err) {
+    console.error("Error al actualizar item:", err);
+    setError("Error al actualizar producto");
+  }
+};
 
   // Eliminar item de cotización
   // Eliminar item de cotización - VERSIÓN ACTUALIZADA CON GANANCIA OCULTA

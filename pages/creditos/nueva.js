@@ -18,6 +18,7 @@ import {
   where,
   updateDoc,
   onSnapshot,
+  limit
 } from 'firebase/firestore';
 import {
   PlusIcon,
@@ -576,7 +577,96 @@ const NuevoCreditoPage = () => {
     }
   };
 
-  // REGISTRAR CRÉDITO - FUNCIÓN CORREGIDA
+
+  // Función para consumir stock de lotes según FIFO
+const consumirStockFIFO = async (productoId, cantidadConsumida, transaction) => {
+  try {
+    // Obtener todos los lotes disponibles de la colección principal
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc')
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let cantidadPendiente = cantidadConsumida;
+    const movimientos = [];
+    
+    // Consumir de los lotes más antiguos primero
+    for (const loteDoc of lotesSnapshot.docs) {
+      if (cantidadPendiente <= 0) break;
+      
+      const lote = loteDoc.data();
+      const consumir = Math.min(cantidadPendiente, lote.stockRestante);
+      const nuevoStock = lote.stockRestante - consumir;
+      
+      // Actualizar el lote en la colección principal
+      const loteRef = doc(db, 'lotes', loteDoc.id);
+      transaction.update(loteRef, {
+        stockRestante: nuevoStock,
+        estado: nuevoStock <= 0 ? 'agotado' : 'activo',
+        updatedAt: serverTimestamp()
+      });
+      
+      // Registrar el movimiento para auditoría
+      movimientos.push({
+        loteId: loteDoc.id,
+        numeroLote: lote.numeroLote,
+        cantidadConsumida: consumir,
+        precioCompraUnitario: lote.precioCompraUnitario,
+        stockRestante: nuevoStock
+      });
+      
+      cantidadPendiente -= consumir;
+    }
+    
+    if (cantidadPendiente > 0) {
+      throw new Error(`Stock insuficiente. Faltan ${cantidadPendiente} unidades del producto.`);
+    }
+    
+    return movimientos;
+  } catch (error) {
+    console.error(`Error al consumir stock FIFO para producto ${productoId}:`, error);
+    throw error;
+  }
+};
+
+// Función para recalcular precio de compra del producto
+const recalcularPrecioCompraProducto = async (productoId, transaction) => {
+  try {
+    // Buscar el nuevo primer lote disponible después del consumo
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc'),
+      limit(1)
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let nuevoPrecioCompra = 0;
+    
+    if (!lotesSnapshot.empty) {
+      const primerLoteDisponible = lotesSnapshot.docs[0].data();
+      nuevoPrecioCompra = parseFloat(primerLoteDisponible.precioCompraUnitario || 0);
+    }
+    
+    // Actualizar el precio de compra del producto
+    const productRef = doc(db, 'productos', productoId);
+    transaction.update(productRef, {
+      precioCompraDefault: nuevoPrecioCompra,
+      updatedAt: serverTimestamp()
+    });
+    
+  } catch (error) {
+    console.error(`Error al recalcular precio de compra para producto ${productoId}:`, error);
+  }
+};
+
+  // REEMPLAZAR LA FUNCIÓN handleRegistrarCredito EXISTENTE CON ESTA VERSIÓN FIFO:
 const handleRegistrarCredito = async () => {
   if (!creditoActivo?.id) return;
 
@@ -590,7 +680,7 @@ const handleRegistrarCredito = async () => {
     return;
   }
 
-  if (!window.confirm('¿REGISTRAR este crédito? Esto reducirá el stock de los productos pero NO generará una venta (es un préstamo).')) {
+  if (!window.confirm('¿REGISTRAR este crédito? Esto consumirá stock de lotes según FIFO y aumentará la deuda del cliente.')) {
     return;
   }
 
@@ -636,25 +726,40 @@ const handleRegistrarCredito = async () => {
       }
 
       // ========================================
-      // FASE 2: TODAS LAS ESCRITURAS DESPUÉS
+      // FASE 2: CONSUMIR LOTES FIFO Y ACTUALIZAR
       // ========================================
 
-      // 1. Reducir stock de todos los productos
+      // CONSUMIR STOCK DE LOTES SEGÚN FIFO
+      const todosLosMovimientos = [];
       for (const item of itemsCreditoActivo) {
+        const cantidadConsumida = parseFloat(item.cantidad);
+        
+        // Consumir stock de lotes según FIFO
+        const movimientos = await consumirStockFIFO(item.productoId, cantidadConsumida, transaction);
+        todosLosMovimientos.push({
+          productoId: item.productoId,
+          nombreProducto: item.nombreProducto,
+          movimientos: movimientos
+        });
+        
+        // Actualizar stock total del producto
         const productRef = doc(db, 'productos', item.productoId);
         const productSnap = productSnapshots[item.productoId];
         const stockActual = productSnap.data().stockActual || 0;
-        const nuevoStock = stockActual - item.cantidad;
-
+        const nuevoStock = stockActual - cantidadConsumida;
+        
         transaction.update(productRef, {
           stockActual: nuevoStock,
           updatedAt: serverTimestamp(),
         });
 
-        console.log(`Stock reducido para ${item.nombreProducto}: ${stockActual} -> ${nuevoStock}`);
+        // Recalcular precio de compra del producto
+        await recalcularPrecioCompraProducto(item.productoId, transaction);
+
+        console.log(`Stock consumido FIFO para ${item.nombreProducto}: ${stockActual} -> ${nuevoStock}`);
       }
 
-      // 2. Actualizar el saldo del cliente
+      // Actualizar el saldo del cliente
       const clienteData = clienteSnap.data();
       const montoActual = parseFloat(clienteData.montoCreditoActual || 0);
       const nuevoMonto = montoActual + parseFloat(creditoActivo.totalCredito || 0);
@@ -664,7 +769,7 @@ const handleRegistrarCredito = async () => {
         updatedAt: serverTimestamp(),
       });
 
-      // 3. Cambiar estado del crédito a 'activo'
+      // Cambiar estado del crédito a 'activo'
       transaction.update(creditoRef, {
         estado: 'activo',
         fechaActivacion: serverTimestamp(),
@@ -673,10 +778,32 @@ const handleRegistrarCredito = async () => {
         updatedAt: serverTimestamp(),
       });
 
-      console.log(`Crédito registrado: Cliente ${selectedCliente.label} - Monto anterior: S/. ${montoActual.toFixed(2)} - Nuevo monto: S/. ${nuevoMonto.toFixed(2)}`);
+      // CREAR REGISTROS DE MOVIMIENTOS DE LOTES PARA AUDITORÍA
+      for (const productoMovimiento of todosLosMovimientos) {
+        for (const movimiento of productoMovimiento.movimientos) {
+          const movimientoRef = doc(collection(db, 'movimientosLotes'));
+          transaction.set(movimientoRef, {
+            creditoId: creditoActivo.id,
+            numeroCredito: creditoActivo.numeroCredito,
+            productoId: productoMovimiento.productoId,
+            nombreProducto: productoMovimiento.nombreProducto,
+            loteId: movimiento.loteId,
+            numeroLote: movimiento.numeroLote,
+            cantidadConsumida: movimiento.cantidadConsumida,
+            precioCompraUnitario: movimiento.precioCompraUnitario,
+            stockRestanteLote: movimiento.stockRestante,
+            tipoMovimiento: 'credito-activado',
+            fechaMovimiento: serverTimestamp(),
+            empleadoId: user.email || user.uid,
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+
+      console.log(`Crédito registrado con FIFO: Cliente ${selectedCliente.label} - Monto anterior: S/. ${montoActual.toFixed(2)} - Nuevo monto: S/. ${nuevoMonto.toFixed(2)}`);
     });
 
-    alert(`¡Crédito registrado exitosamente!\n\nTotal: S/. ${parseFloat(creditoActivo.totalCredito || 0).toFixed(2)}\nCliente: ${selectedCliente.label}\n\nStock reducido, crédito activado.`);
+    alert(`¡Crédito registrado exitosamente con sistema FIFO!\n\nTotal: S/. ${parseFloat(creditoActivo.totalCredito || 0).toFixed(2)}\nCliente: ${selectedCliente.label}\n\nStock consumido según FIFO, precios recalculados automáticamente.`);
     
     // Limpiar formulario
     setCreditoActivo(null);

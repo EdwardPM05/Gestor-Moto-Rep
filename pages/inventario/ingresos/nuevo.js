@@ -20,7 +20,8 @@ import {
   TrashIcon,
   ArrowLeftIcon,
   PencilIcon,
-  XMarkIcon
+  XMarkIcon,
+  HashtagIcon
 } from '@heroicons/react/24/outline';
 
 const NuevoIngresoPage = () => {
@@ -39,24 +40,36 @@ const NuevoIngresoPage = () => {
     observaciones: '',
   });
 
-  // Estados para búsqueda mejorada (estilo nueva venta)
+  // Estados para búsqueda mejorada
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredProductos, setFilteredProductos] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
   const [itemsIngreso, setItemsIngreso] = useState([]);
 
-  // Estados para modal de cantidad
+  // Estados para modal de cantidad con lote
   const [showQuantityModal, setShowQuantityModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [precioCompra, setPrecioCompra] = useState(0);
+  const [numeroLote, setNumeroLote] = useState('');
 
-  // Estados para modal de edición
+  // Estados para modal de edición con lote
   const [showEditItemModal, setShowEditItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [editQuantity, setEditQuantity] = useState(1);
   const [editPrecio, setEditPrecio] = useState(0);
+  const [editNumeroLote, setEditNumeroLote] = useState('');
+
+  // Función para generar número de lote automático
+  const generateLoteNumber = () => {
+    const fecha = new Date();
+    const year = fecha.getFullYear().toString().slice(-2);
+    const month = (fecha.getMonth() + 1).toString().padStart(2, '0');
+    const day = fecha.getDate().toString().padStart(2, '0');
+    const random = Math.random().toString(36).substr(2, 4).toUpperCase();
+    return `L${year}${month}${day}-${random}`;
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -98,7 +111,7 @@ const NuevoIngresoPage = () => {
     }
   }, [user, router.isReady]);
 
-  // Búsqueda de productos mejorada
+  // Búsqueda de productos
   const searchProducts = async (searchTerm) => {
     if (!searchTerm.trim()) {
       setFilteredProductos([]);
@@ -115,16 +128,12 @@ const NuevoIngresoPage = () => {
         const codigoTienda = (producto.codigoTienda || '').toLowerCase();
         const codigoProveedor = (producto.codigoProveedor || '').toLowerCase();
         const descripcion = (producto.descripcion || '').toLowerCase();
-        const modelosCompatiblesIds = (producto.modelosCompatiblesIds || []).join(' ').toLowerCase();
-        const modelosCompatiblesTexto = (producto.modelosCompatiblesTexto || '').toLowerCase();
 
         return nombre.includes(searchTermLower) ||
                marca.includes(searchTermLower) ||
                codigoTienda.includes(searchTermLower) ||
                codigoProveedor.includes(searchTermLower) ||
-               descripcion.includes(searchTermLower) ||
-               modelosCompatiblesIds.includes(searchTermLower) ||
-               modelosCompatiblesTexto.includes(searchTermLower);
+               descripcion.includes(searchTermLower);
       });
 
       setFilteredProductos(filtered);
@@ -159,18 +168,24 @@ const NuevoIngresoPage = () => {
     setSelectedProduct(product);
     setPrecioCompra(parseFloat(product.precioCompraDefault || 0));
     setQuantity(1);
+    setNumeroLote(generateLoteNumber()); // Generar número de lote automático
     setShowQuantityModal(true);
     setSearchTerm(''); // Limpiar búsqueda
   };
 
-  // Agregar producto al ingreso
+  // Agregar producto al ingreso con lote
   const handleAddProductToIngreso = async () => {
     if (!selectedProduct) return;
 
-    const exists = itemsIngreso.some(item => item.productoId === selectedProduct.id);
-    if (exists) {
-      alert('Este producto ya ha sido añadido al ingreso. Edite la cantidad en la tabla.');
-      setShowQuantityModal(false);
+    // Validar que el número de lote no esté duplicado
+    const loteExists = itemsIngreso.some(item => item.numeroLote === numeroLote.trim());
+    if (loteExists) {
+      alert('Ya existe un producto con este número de lote. Por favor, use un número diferente.');
+      return;
+    }
+
+    if (!numeroLote.trim()) {
+      alert('Debe ingresar un número de lote.');
       return;
     }
 
@@ -181,10 +196,12 @@ const NuevoIngresoPage = () => {
       marca: selectedProduct.marca || '',
       codigoTienda: selectedProduct.codigoTienda || '',
       color: selectedProduct.color || '',
+      numeroLote: numeroLote.trim(),
       cantidad: quantity,
       precioCompraUnitario: precioCompra.toFixed(2),
-      stockRestanteLote: quantity, // Inicializar stockRestanteLote con la cantidad ingresada
+      stockRestanteLote: quantity, // Stock inicial del lote
       subtotal: (quantity * precioCompra).toFixed(2),
+      fechaVencimiento: null, // Opcional: agregar después si es necesario
     };
 
     setItemsIngreso(prev => [...prev, newItem]);
@@ -197,12 +214,27 @@ const NuevoIngresoPage = () => {
     setEditingItem(item);
     setEditQuantity(item.cantidad);
     setEditPrecio(parseFloat(item.precioCompraUnitario || 0));
+    setEditNumeroLote(item.numeroLote);
     setShowEditItemModal(true);
   };
 
-  // Actualizar item
+  // Actualizar item con validación de lote
   const handleUpdateItem = async () => {
     if (!editingItem) return;
+
+    // Validar que el número de lote no esté duplicado (excepto el actual)
+    const loteExists = itemsIngreso.some(item => 
+      item.id !== editingItem.id && item.numeroLote === editNumeroLote.trim()
+    );
+    if (loteExists) {
+      alert('Ya existe un producto con este número de lote. Por favor, use un número diferente.');
+      return;
+    }
+
+    if (!editNumeroLote.trim()) {
+      alert('Debe ingresar un número de lote.');
+      return;
+    }
 
     const newItems = [...itemsIngreso];
     const index = newItems.findIndex(item => item.id === editingItem.id);
@@ -210,9 +242,10 @@ const NuevoIngresoPage = () => {
     if (index !== -1) {
       newItems[index] = {
         ...newItems[index],
+        numeroLote: editNumeroLote.trim(),
         cantidad: editQuantity,
         precioCompraUnitario: editPrecio.toFixed(2),
-        stockRestanteLote: editQuantity, // Actualizar stockRestanteLote
+        stockRestanteLote: editQuantity, // Actualizar stock del lote
         subtotal: (editQuantity * editPrecio).toFixed(2),
       };
       setItemsIngreso(newItems);
@@ -222,93 +255,151 @@ const NuevoIngresoPage = () => {
   };
 
   const removeItem = (index) => {
-    if (window.confirm('¿Está seguro de que desea eliminar este producto del ingreso?')) {
+    if (window.confirm('¿Está seguro de que desea eliminar este lote del ingreso?')) {
       setItemsIngreso(prevItems => prevItems.filter((_, i) => i !== index));
     }
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
+  e.preventDefault();
+  setSaving(true);
+  setError(null);
 
-    const proveedorSeleccionado = proveedores.find(p => p.id === ingresoPrincipalData.proveedorId);
-    if (!proveedorSeleccionado) {
-      setError('Por favor, seleccione un proveedor válido.');
-      setSaving(false);
-      return;
-    }
+  const proveedorSeleccionado = proveedores.find(p => p.id === ingresoPrincipalData.proveedorId);
+  if (!proveedorSeleccionado) {
+    setError('Por favor, seleccione un proveedor válido.');
+    setSaving(false);
+    return;
+  }
 
-    if (itemsIngreso.length === 0) {
-      setError('Debe añadir al menos un producto al ingreso.');
-      setSaving(false);
-      return;
-    }
+  if (itemsIngreso.length === 0) {
+    setError('Debe añadir al menos un producto al ingreso.');
+    setSaving(false);
+    return;
+  }
 
-    // Validar ítems antes de enviar
-    const validItems = itemsIngreso.every(item => {
-      const cantidad = parseFloat(item.cantidad);
-      const precio = parseFloat(item.precioCompraUnitario);
-      return (
-        item.productoId &&
-        !isNaN(cantidad) && cantidad > 0 &&
-        !isNaN(precio) && precio >= 0
-      );
+  // Validar que todos los lotes tengan números únicos
+  const lotes = itemsIngreso.map(item => item.numeroLote);
+  const lotesUnicos = [...new Set(lotes)];
+  if (lotes.length !== lotesUnicos.length) {
+    setError('Hay números de lote duplicados. Cada producto debe tener un número de lote único.');
+    setSaving(false);
+    return;
+  }
+
+  // Validar ítems
+  const validItems = itemsIngreso.every(item => {
+    const cantidad = parseFloat(item.cantidad);
+    const precio = parseFloat(item.precioCompraUnitario);
+    return (
+      item.productoId &&
+      item.numeroLote.trim() &&
+      !isNaN(cantidad) && cantidad > 0 &&
+      !isNaN(precio) && precio >= 0
+    );
+  });
+
+  if (!validItems) {
+    setError('Por favor, asegúrese de que todos los ítems tengan un producto, número de lote, cantidad (>0) y precio de compra (>=0) válidos.');
+    setSaving(false);
+    return;
+  }
+
+  let costoTotalIngreso = 0;
+  itemsIngreso.forEach(item => {
+    costoTotalIngreso += parseFloat(item.subtotal || 0);
+  });
+
+  try {
+    // 1. Crear el documento de ingreso principal
+    const ingresoDocRef = await addDoc(collection(db, 'ingresos'), {
+      numeroBoleta: ingresoPrincipalData.numeroBoleta.trim() || null,
+      proveedorId: ingresoPrincipalData.proveedorId,
+      proveedorNombre: proveedorSeleccionado.nombreEmpresa,
+      observaciones: ingresoPrincipalData.observaciones.trim() || null,
+      costoTotalIngreso: parseFloat(costoTotalIngreso.toFixed(2)),
+      cantidadLotes: itemsIngreso.length,
+      fechaIngreso: serverTimestamp(),
+      empleadoId: user.email || user.uid,
+      estado: 'pendiente',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
 
-    if (!validItems) {
-      setError('Por favor, asegúrese de que todos los ítems tengan un producto, cantidad (>0) y precio de compra (>=0) válidos.');
-      setSaving(false);
-      return;
-    }
-
-    let costoTotalLote = 0;
-    itemsIngreso.forEach(item => {
-      costoTotalLote += parseFloat(item.subtotal || 0);
-    });
-
-    try {
-      const ingresoDocRef = await addDoc(collection(db, 'ingresos'), {
-        numeroBoleta: ingresoPrincipalData.numeroBoleta.trim() || null,
-        proveedorId: ingresoPrincipalData.proveedorId,
-        proveedorNombre: proveedorSeleccionado.nombreEmpresa,
-        observaciones: ingresoPrincipalData.observaciones.trim() || null,
-        costoTotalLote: parseFloat(costoTotalLote.toFixed(2)),
-        fechaIngreso: serverTimestamp(),
-        empleadoId: user.email || user.uid,
-        estado: 'pendiente', // ESTADO INICIAL: PENDIENTE
+    // 2. *** CAMBIO PRINCIPAL: Guardar lotes en colección principal ***
+    // Crear todos los lotes en la colección principal 'lotes'
+    const lotesPrincipalesPromises = itemsIngreso.map(item => 
+      addDoc(collection(db, 'lotes'), {
+        // Referencia al ingreso
+        ingresoId: ingresoDocRef.id,
+        
+        // Datos del producto
+        productoId: item.productoId,
+        nombreProducto: item.nombreProducto,
+        marca: item.marca || '',
+        codigoTienda: item.codigoTienda || '',
+        color: item.color || '',
+        
+        // Datos del lote
+        numeroLote: item.numeroLote,
+        cantidad: parseFloat(item.cantidad),
+        cantidadInicial: parseFloat(item.cantidad), // Para histórico
+        stockRestante: parseFloat(item.cantidad), // Stock disponible del lote
+        precioCompraUnitario: parseFloat(item.precioCompraUnitario),
+        subtotal: parseFloat(item.subtotal),
+        
+        // Fechas y estado
+        fechaIngreso: serverTimestamp(), // *** IMPORTANTE: Para ordenamiento FIFO ***
+        fechaVencimiento: item.fechaVencimiento || null,
+        estado: 'activo', // activo, agotado
+        
+        // Metadatos
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      })
+    );
 
-      for (const item of itemsIngreso) {
-        await addDoc(collection(ingresoDocRef, 'itemsIngreso'), {
-          productoId: item.productoId,
-          nombreProducto: item.nombreProducto,
-          marca: item.marca || '',
-          codigoTienda: item.codigoTienda || '',
-          color: item.color || '',
-          cantidad: parseFloat(item.cantidad),
-          precioCompraUnitario: parseFloat(item.precioCompraUnitario),
-          stockRestanteLote: parseFloat(item.cantidad), // Inicialmente, el stock restante del lote es la cantidad total ingresada
-          subtotal: parseFloat(item.subtotal),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
+    // 3. También mantener la subcolección para compatibilidad con vistas existentes
+    const lotesSubcoleccionPromises = itemsIngreso.map(item => 
+      addDoc(collection(ingresoDocRef, 'lotes'), {
+        productoId: item.productoId,
+        nombreProducto: item.nombreProducto,
+        marca: item.marca || '',
+        codigoTienda: item.codigoTienda || '',
+        color: item.color || '',
+        numeroLote: item.numeroLote,
+        cantidad: parseFloat(item.cantidad),
+        cantidadInicial: parseFloat(item.cantidad),
+        stockRestante: parseFloat(item.cantidad),
+        precioCompraUnitario: parseFloat(item.precioCompraUnitario),
+        subtotal: parseFloat(item.subtotal),
+        fechaIngreso: serverTimestamp(), // También aquí por consistencia
+        fechaVencimiento: item.fechaVencimiento || null,
+        estado: 'activo',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
 
-      alert('Boleta de ingreso registrada con éxito. El stock se actualizará al confirmar la recepción.');
-      router.push('/inventario/ingresos');
-    } catch (err) {
-      console.error("Error al registrar boleta de ingreso:", err);
-      setError("Error al registrar el ingreso. " + err.message);
-      if (err.code === 'permission-denied') {
-        setError('No tiene permisos para realizar esta acción. Contacte al administrador.');
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
+    // 4. Ejecutar todas las promesas de creación de lotes en paralelo
+    console.log('Guardando lotes en colección principal...');
+    await Promise.all(lotesPrincipalesPromises);
+    
+    console.log('Guardando lotes en subcolección (compatibilidad)...');
+    await Promise.all(lotesSubcoleccionPromises);
+
+    console.log('Todos los lotes guardados exitosamente');
+
+    alert(`Ingreso registrado con éxito con ${itemsIngreso.length} lotes. Los lotes están disponibles para el sistema FIFO. El stock se actualizará al confirmar la recepción.`);
+    router.push('/inventario/ingresos');
+
+  } catch (err) {
+    console.error("Error al registrar ingreso:", err);
+    setError("Error al registrar el ingreso: " + err.message);
+  } finally {
+    setSaving(false);
+  }
+};
 
   const totalGeneralIngreso = itemsIngreso.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
 
@@ -323,11 +414,11 @@ const NuevoIngresoPage = () => {
   }
 
   return (
-    <Layout title="Registrar Nueva Boleta de Ingreso">
+    <Layout title="Registrar Nuevo Ingreso con Lotes">
       <div className="min-h-screen bg-gray-50 py-6">
         <div className="max-w-full mx-auto px-6 sm:px-8 lg:px-12">
           {error && (
-            <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
+            <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50 max-w-md">
               {error}
             </div>
           )}
@@ -339,7 +430,7 @@ const NuevoIngresoPage = () => {
               <div className="col-span-12 lg:col-span-4">
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Nueva Boleta de Ingreso</h2>
+                    <h2 className="text-lg font-semibold text-gray-800">Nuevo Ingreso con Lotes</h2>
                     <button
                       onClick={() => router.push('/inventario/ingresos')}
                       className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
@@ -400,13 +491,17 @@ const NuevoIngresoPage = () => {
                         value={ingresoPrincipalData.observaciones}
                         onChange={handleIngresoPrincipalChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Notas adicionales sobre esta boleta de ingreso..."
+                        placeholder="Notas adicionales sobre este ingreso..."
                       />
                     </div>
 
-                    {/* Total del Ingreso */}
+                    {/* Resumen del Ingreso */}
                     <div className="border-t border-gray-200 pt-4">
                       <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">Cantidad de Lotes:</span>
+                          <span className="text-base font-semibold text-gray-900">{itemsIngreso.length}</span>
+                        </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-medium text-gray-700">Total del Ingreso:</span>
                           <span className="text-lg font-bold text-gray-900">S/. {totalGeneralIngreso}</span>
@@ -441,19 +536,19 @@ const NuevoIngresoPage = () => {
                 </div>
               </div>
 
-              {/* Panel Derecho - Buscador y Items */}
+              {/* Panel Derecho - Buscador y Lotes */}
               <div className="col-span-12 lg:col-span-8">
                 {/* Buscador de Productos */}
                 <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
                   <div className="p-4">
-                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos</h2>
+                    <h2 className="text-lg font-semibold mb-4 text-gray-800">Buscar Productos para Lotes</h2>
                     <div className="relative">
                       <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                       <input
                         type="text"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
+                        placeholder="Buscar productos por nombre, marca, código..."
                         className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                       {isSearching && (
@@ -500,16 +595,8 @@ const NuevoIngresoPage = () => {
                                     <span className="font-medium">Marca:</span> {producto.marca}
                                   </p>
                                   <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Color:</span> {producto.color || 'N/A'}
+                                    <span className="font-medium">Stock Actual:</span> {producto.stockActual || 0}
                                   </p>
-                                  <p className="text-sm text-gray-500">
-                                    <span className="font-medium">Stock:</span> {producto.stockActual || 0}
-                                  </p>
-                                  {producto.modelosCompatiblesTexto && (
-                                    <p className="text-sm text-blue-600 truncate">
-                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesTexto}
-                                    </p>
-                                  )}
                                 </div>
                                 <div className="text-right flex-shrink-0 ml-4">
                                   <p className="font-semibold text-blue-600 text-lg">
@@ -522,31 +609,27 @@ const NuevoIngresoPage = () => {
                               </div>
                             </div>
                           ))}
-                          {filteredProductos.length > 20 && (
-                            <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-                              Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* Items del Ingreso */}
+                {/* Lotes del Ingreso */}
                 <div className="bg-white border border-gray-200 rounded-lg">
                   <div className="p-4 border-b border-gray-200">
-                    <h3 className="text-xl font-semibold text-gray-800">
-                      Items del Ingreso
+                    <h3 className="text-xl font-semibold text-gray-800 flex items-center">
+                      <HashtagIcon className="h-6 w-6 mr-2 text-blue-600" />
+                      Lotes del Ingreso
                     </h3>
                   </div>
 
                   <div className="p-4">
                     {itemsIngreso.length === 0 ? (
                       <div className="text-center py-12">
-                        <ArrowDownTrayIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                        <h4 className="text-lg font-medium text-gray-600 mb-2">No hay productos en este ingreso</h4>
-                        <p className="text-gray-500">Usa el buscador arriba para encontrar y agregar productos</p>
+                        <HashtagIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                        <h4 className="text-lg font-medium text-gray-600 mb-2">No hay lotes en este ingreso</h4>
+                        <p className="text-gray-500">Cada producto que agregues tendrá su número de lote único</p>
                       </div>
                     ) : (
                       <div className="bg-white rounded-lg overflow-hidden">
@@ -554,14 +637,13 @@ const NuevoIngresoPage = () => {
                           <table className="w-full border-collapse">
                             <thead className="bg-blue-50">
                               <tr className="border-b border-gray-300">
-                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">CÓDIGO</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">MARCA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-16">CANT.</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">COLOR</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P. COMPRA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-28">SUBTOTAL</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">ACCIONES</th>
+                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CÓDIGO</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. COMPRA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">ACCIONES</th>
                               </tr>
                             </thead>
                             
@@ -572,6 +654,14 @@ const NuevoIngresoPage = () => {
                                     <div className="font-medium text-gray-900 text-sm">
                                       {item.nombreProducto}
                                     </div>
+                                    <div className="text-xs text-gray-500">
+                                      {item.marca} • {item.color || 'Sin color'}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                      {item.numeroLote}
+                                    </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
                                     <span className="text-sm text-gray-900 font-medium">
@@ -579,18 +669,8 @@ const NuevoIngresoPage = () => {
                                     </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
-                                    <span className="text-sm text-gray-700">
-                                      {item.marca || 'Sin marca'}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
                                     <span className="text-sm font-medium text-gray-900">
                                       {item.cantidad}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-3 text-center">
-                                    <span className="text-sm text-gray-600">
-                                      {item.color || "N/A"}
                                     </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
@@ -609,7 +689,7 @@ const NuevoIngresoPage = () => {
                                         type="button"
                                         onClick={() => handleEditItem(item)}
                                         className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
-                                        title="Editar"
+                                        title="Editar Lote"
                                       >
                                         <PencilIcon className="h-4 w-4" />
                                       </button>
@@ -617,7 +697,7 @@ const NuevoIngresoPage = () => {
                                         type="button"
                                         onClick={() => removeItem(index)}
                                         className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50 transition-colors"
-                                        title="Eliminar"
+                                        title="Eliminar Lote"
                                       >
                                         <TrashIcon className="h-4 w-4" />
                                       </button>
@@ -634,7 +714,7 @@ const NuevoIngresoPage = () => {
                           <div className="flex justify-between items-center">
                             <div>
                               <h3 className="text-lg font-semibold">Total del Ingreso</h3>
-                              <p className="text-blue-100 text-sm">{itemsIngreso.length} producto{itemsIngreso.length !== 1 ? 's' : ''}</p>
+                              <p className="text-blue-100 text-sm">{itemsIngreso.length} lote{itemsIngreso.length !== 1 ? 's' : ''}</p>
                             </div>
                             <div className="text-right">
                               <div className="text-3xl font-bold">
@@ -653,12 +733,12 @@ const NuevoIngresoPage = () => {
         </div>
       </div>
 
-      {/* Modal de Cantidad */}
+      {/* Modal de Cantidad con Lote */}
       {showQuantityModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowQuantityModal(false)}></div>
-            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl sm:p-6">
               <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
                 <button
                   type="button"
@@ -671,11 +751,11 @@ const NuevoIngresoPage = () => {
 
               <div className="sm:flex sm:items-start">
                 <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
-                  <ArrowDownTrayIcon className="h-6 w-6 text-blue-600" />
+                  <HashtagIcon className="h-6 w-6 text-blue-600" />
                 </div>
                 <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
                   <h3 className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-                    Agregar Producto a Ingreso
+                    Crear Nuevo Lote
                   </h3>
                   
                   {selectedProduct && (
@@ -702,6 +782,34 @@ const NuevoIngresoPage = () => {
                             <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Número de Lote */}
+                      <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          <HashtagIcon className="h-4 w-4 inline mr-1" />
+                          Número de Lote
+                        </label>
+                        <div className="flex">
+                          <input
+                            type="text"
+                            value={numeroLote}
+                            onChange={(e) => setNumeroLote(e.target.value)}
+                            className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
+                            placeholder="Ej: L240915-ABC1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setNumeroLote(generateLoteNumber())}
+                            className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200 transition-colors text-sm"
+                            title="Generar nuevo número"
+                          >
+                            🎲
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Cada lote debe tener un número único. Se genera automáticamente pero puedes cambiarlo.
+                        </p>
                       </div>
 
                       <div className="grid grid-cols-2 gap-6">
@@ -735,7 +843,7 @@ const NuevoIngresoPage = () => {
 
                       <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200 mt-6">
                         <div className="flex justify-between items-center">
-                          <span className="text-lg font-medium text-gray-700">Subtotal:</span>
+                          <span className="text-lg font-medium text-gray-700">Subtotal del Lote:</span>
                           <span className="font-bold text-blue-800 text-2xl">S/. {(quantity * precioCompra).toFixed(2)}</span>
                         </div>
                       </div>
@@ -749,9 +857,9 @@ const NuevoIngresoPage = () => {
                   type="button"
                   className="inline-flex w-full justify-center rounded-md bg-blue-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-blue-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                   onClick={handleAddProductToIngreso}
-                  disabled={quantity <= 0 || precioCompra < 0}
+                  disabled={quantity <= 0 || precioCompra < 0 || !numeroLote.trim()}
                 >
-                  Agregar a Ingreso
+                  Crear Lote
                 </button>
                 <button
                   type="button"
@@ -766,12 +874,12 @@ const NuevoIngresoPage = () => {
         </div>
       )}
 
-      {/* Modal de Edición */}
+      {/* Modal de Edición de Lote */}
       {showEditItemModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowEditItemModal(false)}></div>
-            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+            <div className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-3xl sm:p-6">
               <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
                 <button
                   type="button"
@@ -788,7 +896,7 @@ const NuevoIngresoPage = () => {
                 </div>
                 <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
                   <h3 className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-                    Editar Producto
+                    Editar Lote
                   </h3>
                   
                   {editingItem && (
@@ -807,6 +915,34 @@ const NuevoIngresoPage = () => {
                             <span className="text-gray-600">{editingItem.marca}</span>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Número de Lote en edición */}
+                      <div className="mb-6">
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          <HashtagIcon className="h-4 w-4 inline mr-1" />
+                          Número de Lote
+                        </label>
+                        <div className="flex">
+                          <input
+                            type="text"
+                            value={editNumeroLote}
+                            onChange={(e) => setEditNumeroLote(e.target.value)}
+                            className="flex-1 px-4 py-3 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-mono"
+                            placeholder="Ej: L240915-ABC1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setEditNumeroLote(generateLoteNumber())}
+                            className="px-4 py-3 bg-blue-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-blue-200 transition-colors text-sm"
+                            title="Generar nuevo número"
+                          >
+                            🎲
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Debe ser único entre todos los lotes del ingreso.
+                        </p>
                       </div>
 
                       <div className="grid grid-cols-2 gap-6">
@@ -854,9 +990,9 @@ const NuevoIngresoPage = () => {
                   type="button"
                   className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-yellow-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                   onClick={handleUpdateItem}
-                  disabled={editQuantity <= 0 || editPrecio < 0}
+                  disabled={editQuantity <= 0 || editPrecio < 0 || !editNumeroLote.trim()}
                 >
-                  Actualizar
+                  Actualizar Lote
                 </button>
                 <button
                   type="button"

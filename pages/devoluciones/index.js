@@ -15,7 +15,9 @@ import {
   serverTimestamp,
   getDoc,
   where,
-  getDocs
+  getDocs,
+  runTransaction, // ← AGREGAR ESTA LÍNEA
+  limit
 } from 'firebase/firestore';
 import {
   ArrowLeftIcon,
@@ -202,25 +204,447 @@ const DevolucionesIndexPage = () => {
     router.push(`/devoluciones/${id}`);
   };
 
-  const handleAprobarDevolucion = async (id) => {
-    if (!window.confirm('¿Está seguro de que desea APROBAR esta devolución?')) {
-      return;
-    }
 
-    try {
-      const devolucionRef = doc(db, 'devoluciones', id);
-      await updateDoc(devolucionRef, {
+  const devolverStockLIFO = async (productoId, cantidadADevolver, transaction) => {
+  try {
+    // Obtener lotes del producto ordenados del más reciente al más antiguo
+    // Priorizamos lotes que tengan espacio (stockRestante < stockOriginal)
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('estado', 'in', ['activo', 'agotado']), // Incluir agotados que puedan recibir devolución
+      orderBy('fechaIngreso', 'desc') // Del más reciente al más antiguo (LIFO)
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let cantidadPendiente = cantidadADevolver;
+    const movimientos = [];
+    
+    // Devolver a los lotes más recientes primero
+    for (const loteDoc of lotesSnapshot.docs) {
+      if (cantidadPendiente <= 0) break;
+      
+      const lote = loteDoc.data();
+      const stockOriginal = lote.stockOriginal || lote.stockRestante || 0;
+      const stockActual = lote.stockRestante || 0;
+      const espacioDisponible = stockOriginal - stockActual;
+      
+      // Solo usar lotes que tengan espacio disponible
+      if (espacioDisponible <= 0) continue;
+      
+      const cantidadARestaurar = Math.min(cantidadPendiente, espacioDisponible);
+      const nuevoStock = stockActual + cantidadARestaurar;
+      
+      // Actualizar el lote
+      const loteRef = doc(db, 'lotes', loteDoc.id);
+      transaction.update(loteRef, {
+        stockRestante: nuevoStock,
+        estado: nuevoStock > 0 ? 'activo' : 'agotado',
+        updatedAt: serverTimestamp()
+      });
+      
+      // Registrar el movimiento para auditoría
+      movimientos.push({
+        loteId: loteDoc.id,
+        numeroLote: lote.numeroLote,
+        cantidadRestaurada: cantidadARestaurar,
+        stockAnterior: stockActual,
+        stockNuevo: nuevoStock,
+        precioCompraUnitario: lote.precioCompraUnitario
+      });
+      
+      cantidadPendiente -= cantidadARestaurar;
+    }
+    
+    // Si aún queda cantidad pendiente, crear un nuevo lote temporal para la devolución
+    if (cantidadPendiente > 0) {
+      console.warn(`⚠️ Quedan ${cantidadPendiente} unidades sin asignar a lotes existentes. Creando lote temporal.`);
+      
+      // Crear nuevo lote temporal para la cantidad restante
+      const nuevoLoteRef = doc(collection(db, 'lotes'));
+      const numeroLoteTemp = `DEV-${Date.now().toString().slice(-6)}`;
+      
+      transaction.set(nuevoLoteRef, {
+        numeroLote: numeroLoteTemp,
+        productoId: productoId,
+        stockOriginal: cantidadPendiente,
+        stockRestante: cantidadPendiente,
+        fechaIngreso: serverTimestamp(),
+        precioCompraUnitario: 0, // Precio 0 para devoluciones sin lote original
+        estado: 'activo',
+        tipoLote: 'devolucion', // Marcador especial
+        creadoPorDevolucion: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      
+      movimientos.push({
+        loteId: nuevoLoteRef.id,
+        numeroLote: numeroLoteTemp,
+        cantidadRestaurada: cantidadPendiente,
+        stockAnterior: 0,
+        stockNuevo: cantidadPendiente,
+        esLoteNuevo: true,
+        precioCompraUnitario: 0
+      });
+      
+      cantidadPendiente = 0;
+    }
+    
+    return movimientos;
+  } catch (error) {
+    console.error(`Error al devolver stock LIFO para producto ${productoId}:`, error);
+    throw error;
+  }
+};
+
+// Función para recalcular precio de compra después de devolución
+const recalcularPrecioCompraDespuesDevolucion = async (productoId, transaction) => {
+  try {
+    // Buscar el primer lote disponible (más antiguo) después de la devolución
+    const lotesQuery = query(
+      collection(db, 'lotes'),
+      where('productoId', '==', productoId),
+      where('stockRestante', '>', 0),
+      where('estado', '==', 'activo'),
+      orderBy('fechaIngreso', 'asc'),
+      limit(1)
+    );
+    
+    const lotesSnapshot = await getDocs(lotesQuery);
+    let nuevoPrecioCompra = 0;
+    
+    if (!lotesSnapshot.empty) {
+      const primerLoteDisponible = lotesSnapshot.docs[0].data();
+      nuevoPrecioCompra = parseFloat(primerLoteDisponible.precioCompraUnitario || 0);
+    }
+    
+    // Actualizar el precio de compra del producto
+    const productRef = doc(db, 'productos', productoId);
+    transaction.update(productRef, {
+      precioCompraDefault: nuevoPrecioCompra,
+      updatedAt: serverTimestamp()
+    });
+    
+  } catch (error) {
+    console.error(`Error al recalcular precio de compra para producto ${productoId}:`, error);
+  }
+};
+
+
+
+
+
+
+// FUNCIÓN CORREGIDA: Devolver stock SIEMPRE a lotes existentes (LIFO)
+const calcularDistribucionStockLIFO = (lotesDatos, cantidadADevolver) => {
+  let cantidadPendiente = cantidadADevolver;
+  const distribucion = [];
+  
+  console.log(`🔍 Calculando distribución LIFO para ${cantidadADevolver} unidades`);
+  console.log(`📦 Lotes disponibles:`, lotesDatos.map(l => ({
+    numeroLote: l.numeroLote,
+    stockOriginal: l.stockOriginal,
+    stockRestante: l.stockRestante,
+    estado: l.estado,
+    espacioDisponible: (l.stockOriginal || 0) - (l.stockRestante || 0)
+  })));
+  
+  // Ordenar lotes del más RECIENTE al más ANTIGUO (LIFO)
+  const lotesOrdenados = [...lotesDatos].sort((a, b) => {
+    const fechaA = a.fechaIngreso?.toDate ? a.fechaIngreso.toDate() : new Date(a.fechaIngreso);
+    const fechaB = b.fechaIngreso?.toDate ? b.fechaIngreso.toDate() : new Date(b.fechaIngreso);
+    return fechaB - fechaA; // Más reciente primero
+  });
+  
+  // Procesar lotes del más reciente al más antiguo
+  for (const lote of lotesOrdenados) {
+    if (cantidadPendiente <= 0) break;
+    
+    const stockOriginal = parseInt(lote.stockOriginal || 0);
+    const stockActual = parseInt(lote.stockRestante || 0);
+    
+    // CLAVE: Solo considerar lotes que tienen espacio para recibir devolución
+    // El espacio disponible es: stockOriginal - stockActual
+    const espacioDisponible = stockOriginal - stockActual;
+    
+    console.log(`📦 Evaluando lote ${lote.numeroLote}:`, {
+      stockOriginal,
+      stockActual,
+      espacioDisponible,
+      estado: lote.estado
+    });
+    
+    // Si no hay espacio en este lote, continuar al siguiente
+    if (espacioDisponible <= 0) {
+      console.log(`⚠️ Lote ${lote.numeroLote} sin espacio disponible (lleno)`);
+      continue;
+    }
+    
+    // Calcular cuánto podemos restaurar en este lote
+    const cantidadARestaurar = Math.min(cantidadPendiente, espacioDisponible);
+    const nuevoStock = stockActual + cantidadARestaurar;
+    
+    distribucion.push({
+      loteId: lote.loteId,
+      numeroLote: lote.numeroLote,
+      cantidadRestaurada: cantidadARestaurar,
+      stockAnterior: stockActual,
+      stockNuevo: nuevoStock,
+      precioCompraUnitario: parseFloat(lote.precioCompraUnitario || 0),
+      fechaIngreso: lote.fechaIngreso
+    });
+    
+    cantidadPendiente -= cantidadARestaurar;
+    
+    console.log(`✅ Asignado a lote ${lote.numeroLote}: ${cantidadARestaurar} unidades`);
+    console.log(`📊 Stock: ${stockActual} -> ${nuevoStock}, Pendiente: ${cantidadPendiente}`);
+  }
+  
+  // 🚨 CAMBIO IMPORTANTE: Si queda cantidad pendiente, NO crear lote nuevo
+  // En su lugar, mostrar advertencia y rechazar la devolución
+  if (cantidadPendiente > 0) {
+    const error = `❌ ERROR: No hay espacio suficiente en los lotes existentes para devolver ${cantidadPendiente} unidades restantes. 
+    
+La devolución no se puede procesar porque excede la capacidad de los lotes originales.
+
+Opciones:
+1. Revisar si la cantidad a devolver es correcta
+2. Verificar que los lotes tengan el stock original correcto
+3. Contactar al administrador del sistema
+
+Distribución calculada hasta ahora:
+${distribucion.map(d => `- Lote ${d.numeroLote}: ${d.cantidadRestaurada} unidades`).join('\n')}
+`;
+    
+    console.error(error);
+    throw new Error(`No hay espacio suficiente en lotes existentes. Faltan ${cantidadPendiente} unidades por asignar.`);
+  }
+  
+  console.log(`✅ DISTRIBUCIÓN COMPLETA: Todo asignado a lotes existentes`);
+  
+  return {
+    distribucion,
+    necesitaLoteNuevo: false, // NUNCA crear lote nuevo
+    cantidadParaLoteNuevo: 0
+  };
+};
+
+// FUNCIÓN PRINCIPAL MODIFICADA - Sin creación de lotes nuevos
+const handleAprobarDevolucion = async (devolucionId) => {
+  if (!window.confirm('¿Está seguro de que desea APROBAR esta devolución? Esto restaurará el stock SOLO a lotes existentes según LIFO.')) {
+    return;
+  }
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      console.log('🚀 INICIANDO APROBACIÓN DE DEVOLUCIÓN:', devolucionId);
+      
+      // FASE 1: LECTURAS
+      const devolucionRef = doc(db, 'devoluciones', devolucionId);
+      const devolucionSnap = await transaction.get(devolucionRef);
+      
+      if (!devolucionSnap.exists()) {
+        throw new Error('Devolución no encontrada');
+      }
+      
+      const devolucionData = devolucionSnap.data();
+      
+      if (devolucionData.estado !== 'solicitada') {
+        throw new Error('Solo se pueden aprobar devoluciones en estado "solicitada"');
+      }
+
+      // Leer items de devolución
+      const itemsQuery = query(
+        collection(db, 'devoluciones', devolucionId, 'itemsDevolucion'),
+        orderBy('createdAt', 'asc')
+      );
+      const itemsSnapshot = await getDocs(itemsQuery);
+      
+      if (itemsSnapshot.empty) {
+        throw new Error('No se encontraron items en esta devolución');
+      }
+
+      const itemsData = itemsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Leer productos
+      const productSnapshots = {};
+      for (const item of itemsData) {
+        const productRef = doc(db, 'productos', item.productoId);
+        const productSnap = await transaction.get(productRef);
+        productSnapshots[item.productoId] = productSnap;
+      }
+
+      // Leer lotes de todos los productos
+      const lotesData = {};
+      for (const item of itemsData) {
+        console.log(`📖 Cargando lotes para producto: ${item.nombreProducto}`);
+        
+        const lotesQuery = query(
+          collection(db, 'lotes'),
+          where('productoId', '==', item.productoId),
+          orderBy('fechaIngreso', 'desc') // Más reciente primero para LIFO
+        );
+        
+        const lotesSnapshot = await getDocs(lotesQuery);
+        lotesData[item.productoId] = lotesSnapshot.docs.map(doc => ({
+          loteId: doc.id,
+          ...doc.data()
+        }));
+        
+        console.log(`📦 Encontrados ${lotesData[item.productoId].length} lotes`);
+        
+        // Mostrar espacio disponible en cada lote
+        lotesData[item.productoId].forEach(lote => {
+          const espacioDisponible = (lote.stockOriginal || 0) - (lote.stockRestante || 0);
+          console.log(`  📦 ${lote.numeroLote}: Stock=${lote.stockRestante}/${lote.stockOriginal}, Espacio=${espacioDisponible}, Precio=S/.${lote.precioCompraUnitario}`);
+        });
+      }
+
+      // FASE 2: VALIDACIÓN Y CÁLCULOS
+      const planDeRestauracion = [];
+      
+      for (const item of itemsData) {
+        const cantidadADevolver = parseFloat(item.cantidadADevolver || 0);
+        if (cantidadADevolver <= 0) continue;
+
+        console.log(`\n🔄 PROCESANDO: ${item.nombreProducto}`);
+        console.log(`📊 Cantidad a devolver: ${cantidadADevolver}`);
+
+        const lotes = lotesData[item.productoId] || [];
+        
+        try {
+          const { distribucion } = calcularDistribucionStockLIFO(lotes, cantidadADevolver);
+          
+          planDeRestauracion.push({
+            item: item,
+            distribucion: distribucion
+          });
+          
+          console.log(`✅ Plan generado para ${item.nombreProducto}`);
+          
+        } catch (error) {
+          // Si no hay espacio suficiente, rechazar toda la devolución
+          throw new Error(`❌ ${item.nombreProducto}: ${error.message}\n\nLa devolución completa ha sido rechazada.`);
+        }
+      }
+
+      // FASE 3: ESCRITURAS (solo si todo se pudo validar)
+      console.log('\n✍️ FASE 3: Ejecutando escrituras...');
+
+      const todosLosMovimientos = [];
+
+      for (const plan of planDeRestauracion) {
+        const { item, distribucion } = plan;
+        
+        console.log(`\n✍️ Escribiendo cambios para: ${item.nombreProducto}`);
+        
+        // Actualizar lotes existentes ÚNICAMENTE
+        for (const dist of distribucion) {
+          const loteRef = doc(db, 'lotes', dist.loteId);
+          transaction.update(loteRef, {
+            stockRestante: dist.stockNuevo,
+            estado: dist.stockNuevo > 0 ? 'activo' : 'agotado',
+            updatedAt: serverTimestamp()
+          });
+          
+          console.log(`✍️ LOTE RESTAURADO: ${dist.numeroLote} stock ${dist.stockAnterior} -> ${dist.stockNuevo}`);
+        }
+
+        // Actualizar stock total del producto
+        const productSnap = productSnapshots[item.productoId];
+        if (productSnap.exists()) {
+          const currentStock = productSnap.data().stockActual || 0;
+          const newStock = currentStock + parseFloat(item.cantidadADevolver);
+          
+          const productRef = doc(db, 'productos', item.productoId);
+          transaction.update(productRef, {
+            stockActual: newStock,
+            updatedAt: serverTimestamp()
+          });
+          
+          console.log(`✍️ PRODUCTO ACTUALIZADO: stock ${currentStock} -> ${newStock}`);
+        }
+
+        // Preparar auditoría
+        todosLosMovimientos.push({
+          productoId: item.productoId,
+          nombreProducto: item.nombreProducto,
+          movimientos: distribucion,
+          gananciaDevolucion: item.gananciaDevolucion || 0,
+          gananciaUnitaria: item.gananciaUnitaria || 0,
+          precioCompraUnitario: item.precioCompraUnitario || 0
+        });
+      }
+
+      // Actualizar estado de la devolución
+      transaction.update(devolucionRef, {
         estado: 'aprobada',
         fechaProcesamiento: serverTimestamp(),
         procesadoPor: user.email || user.uid,
-        updatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
-      alert('Devolución aprobada con éxito.');
-    } catch (err) {
-      console.error("Error al aprobar devolución:", err);
-      setError("Error al aprobar la devolución: " + err.message);
-    }
-  };
+
+      // Crear registros de auditoría
+      for (const productoMovimiento of todosLosMovimientos) {
+        for (const movimiento of productoMovimiento.movimientos) {
+          const movimientoRef = doc(collection(db, 'movimientosLotes'));
+          transaction.set(movimientoRef, {
+            devolucionId: devolucionId,
+            numeroDevolucion: devolucionData.numeroDevolucion,
+            productoId: productoMovimiento.productoId,
+            nombreProducto: productoMovimiento.nombreProducto,
+            loteId: movimiento.loteId,
+            numeroLote: movimiento.numeroLote,
+            cantidadRestaurada: movimiento.cantidadRestaurada,
+            stockAnteriorLote: movimiento.stockAnterior,
+            stockNuevoLote: movimiento.stockNuevo,
+            precioCompraUnitario: movimiento.precioCompraUnitario,
+            esLoteNuevo: false, // SIEMPRE false
+            gananciaUnitaria: productoMovimiento.gananciaUnitaria,
+            gananciaDevolucion: productoMovimiento.gananciaDevolucion,
+            tipoMovimiento: 'devolucion-aprobada-lifo',
+            fechaMovimiento: serverTimestamp(),
+            empleadoId: user.email || user.uid,
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+
+      console.log('✅ TRANSACCIÓN COMPLETADA - SOLO LOTES EXISTENTES RESTAURADOS');
+    });
+
+    alert(`✅ Devolución aprobada exitosamente.\n📦 Stock restaurado ÚNICAMENTE a lotes existentes con LIFO.\n🚫 No se crearon lotes nuevos.`);
+    
+  } catch (err) {
+    console.error('❌ Error al aprobar devolución:', err);
+    setError('Error al aprobar devolución: ' + err.message);
+    alert('❌ Error al aprobar devolución: ' + err.message);
+  }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const handleRechazarDevolucion = async (id) => {
     const motivo = window.prompt('Ingrese el motivo del rechazo (opcional):');

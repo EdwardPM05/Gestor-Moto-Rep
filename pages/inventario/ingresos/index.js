@@ -31,17 +31,37 @@ const IngresosPage = () => {
 
         const loadedIngresos = [];
         for (const docIngreso of querySnapshotIngresos.docs) {
-          const ingresoData = {
+          const ingresoData = docIngreso.data();
+          
+          // Cargar los lotes asociados a este ingreso
+          const lotesCollectionRef = collection(db, 'ingresos', docIngreso.id, 'lotes');
+          const lotesSnapshot = await getDocs(lotesCollectionRef);
+          const lotesCount = lotesSnapshot.size;
+          
+          // Calcular el total de lotes para mostrar información más detallada
+          let totalStockIngresado = 0;
+          lotesSnapshot.docs.forEach(loteDoc => {
+            const loteData = loteDoc.data();
+            totalStockIngresado += parseFloat(loteData.cantidad || 0);
+          });
+
+          const processedIngreso = {
             id: docIngreso.id,
-            ...docIngreso.data(),
+            ...ingresoData,
             // Formatear la fecha para visualización
-            fechaIngreso: docIngreso.data().fechaIngreso?.toDate().toLocaleDateString('es-ES', {
+            fechaIngreso: ingresoData.fechaIngreso?.toDate().toLocaleDateString('es-ES', {
               year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
             }) || 'N/A',
+            // Usar el campo correcto para el costo total
+            costoTotalIngreso: ingresoData.costoTotalIngreso || 0,
+            // Agregar información de lotes
+            cantidadLotes: lotesCount,
+            totalStockIngresado: totalStockIngresado,
             // Asegurarse de que el estado esté presente
-            estado: docIngreso.data().estado || 'pendiente', // Valor por defecto 'pendiente'
+            estado: ingresoData.estado || 'pendiente',
           };
-          loadedIngresos.push(ingresoData);
+          
+          loadedIngresos.push(processedIngreso);
         }
 
         setIngresos(loadedIngresos);
@@ -75,8 +95,9 @@ const IngresosPage = () => {
         ? ingreso.fechaIngreso.toLowerCase().includes(lowerCaseSearchTerm)
         : false;
 
-      const costoTotalMatch = ingreso.costoTotalLote && typeof ingreso.costoTotalLote === 'number'
-        ? ingreso.costoTotalLote.toFixed(2).includes(lowerCaseSearchTerm)
+      // Usar el campo correcto
+      const costoTotalMatch = ingreso.costoTotalIngreso && typeof ingreso.costoTotalIngreso === 'number'
+        ? ingreso.costoTotalIngreso.toFixed(2).includes(lowerCaseSearchTerm)
         : false;
 
       const estadoMatch = ingreso.estado && typeof ingreso.estado === 'string'
@@ -109,64 +130,58 @@ const IngresosPage = () => {
           throw new Error("Esta boleta de ingreso ya ha sido confirmada.");
         }
 
-        // --- INICIO DE LECTURAS (TODAS ANTES DE CUALQUIER ESCRITURA) ---
-        // Obtener los ítems de ingreso asociados (fuera del transaction.get para items)
-        const itemsIngresoCollectionRef = collection(db, 'ingresos', ingresoId, 'itemsIngreso');
-        const itemsIngresoSnapshot = await getDocs(itemsIngresoCollectionRef); // getDocs NO es una operación de transacción
-                                                                                // pero necesitamos los datos antes de las escrituras.
+        // Obtener los lotes del ingreso (CAMBIO: usar 'lotes' en lugar de 'itemsIngreso')
+        const lotesIngresoCollectionRef = collection(db, 'ingresos', ingresoId, 'lotes');
+        const lotesIngresoSnapshot = await getDocs(lotesIngresoCollectionRef);
 
-        if (itemsIngresoSnapshot.empty) {
-          throw new Error("No se encontraron productos asociados a esta boleta de ingreso.");
+        if (lotesIngresoSnapshot.empty) {
+          throw new Error("No se encontraron lotes asociados a esta boleta de ingreso.");
         }
 
         // Recopilar todas las referencias de productos y sus datos actuales para lecturas
         const productoRefsAndData = [];
-        const productoPromises = itemsIngresoSnapshot.docs.map(async (itemDoc) => {
-          const itemData = itemDoc.data();
-          const productoRef = doc(db, 'productos', itemData.productoId);
-          const productoSnap = await transaction.get(productoRef); // ESTA ES LA LECTURA DENTRO DE LA TRANSACCIÓN
+        const productoPromises = lotesIngresoSnapshot.docs.map(async (loteDoc) => {
+          const loteData = loteDoc.data();
+          const productoRef = doc(db, 'productos', loteData.productoId);
+          const productoSnap = await transaction.get(productoRef);
 
           if (productoSnap.exists()) {
             productoRefsAndData.push({
-              itemDocRef: itemDoc.ref, // Referencia al documento del item de ingreso
-              itemData: itemData,
+              loteDocRef: loteDoc.ref,
+              loteData: loteData,
               productoRef: productoRef,
               currentProductoData: productoSnap.data(),
             });
           } else {
-            console.warn(`Producto con ID ${itemData.productoId} no encontrado para actualizar stock. Se omitirá.`);
+            console.warn(`Producto con ID ${loteData.productoId} no encontrado para actualizar stock. Se omitirá.`);
           }
         });
-        await Promise.all(productoPromises); // Esperar que todas las lecturas de productos se completen
+        await Promise.all(productoPromises);
 
-        // --- FIN DE LECTURAS ---
-
-        // --- INICIO DE ESCRITURAS ---
-        // Ahora que todas las lecturas están hechas, podemos proceder con las escrituras
-        for (const { itemDocRef, itemData, productoRef, currentProductoData } of productoRefsAndData) {
+        // Proceder con las escrituras
+        for (const { loteDocRef, loteData, productoRef, currentProductoData } of productoRefsAndData) {
           const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
-          const cantidadIngresada = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
+          const cantidadIngresada = typeof loteData.cantidad === 'number' ? loteData.cantidad : 0;
           const newStock = currentStock + cantidadIngresada;
 
           // Actualizar stock actual del producto
           transaction.update(productoRef, {
             stockActual: newStock,
-            // Aquí podrías agregar lógica para actualizar el costo promedio del producto si lo manejas
           });
 
-          // Actualizar stockRestanteLote en el itemIngreso (el lote específico)
-          transaction.update(itemDocRef, { // Usar itemDocRef aquí
-            stockRestanteLote: cantidadIngresada, // Al confirmar, el stock restante del lote es la cantidad ingresada
+          // Actualizar el lote para marcar que está en inventario
+          transaction.update(loteDocRef, {
+            stockRestante: cantidadIngresada,
+            estado: 'activo'
           });
         }
 
-        // Finalmente, actualizar el estado de la boleta de ingreso a 'recibido'
+        // Actualizar el estado del ingreso
         transaction.update(ingresoRef, { estado: 'recibido' });
-        // --- FIN DE ESCRITURAS ---
       });
 
       alert('Recepción de mercadería confirmada y stock actualizado con éxito.');
-      // Refrescar la lista de ingresos para reflejar el cambio de estado
+      // Refrescar la lista
       setIngresos(prevIngresos =>
         prevIngresos.map(ing =>
           ing.id === ingresoId ? { ...ing, estado: 'recibido' } : ing
@@ -184,9 +199,9 @@ const IngresosPage = () => {
   const handleDeleteIngreso = async (ingresoId, estadoIngreso) => {
     let confirmMessage = '¿Estás seguro de que quieres eliminar esta boleta de ingreso?';
     if (estadoIngreso === 'recibido') {
-      confirmMessage += '\nADVERTENCIA: Esta boleta ya fue confirmada y sus productos se agregaron al stock. Eliminarla NO revertirá automáticamente el stock. Deberás ajustar el inventario manualmente si deseas corregir el stock.';
+      confirmMessage += '\nADVERTENCIA: Esta boleta ya fue confirmada y sus productos se agregaron al stock. Eliminarla NO revertirá automáticamente el stock.';
     } else {
-      confirmMessage += '\nEsto eliminará todos los productos asociados y NO revertirá el stock de los productos (ya que aún no se habían agregado al stock).';
+      confirmMessage += '\nEsto eliminará todos los lotes asociados.';
     }
 
     if (!window.confirm(confirmMessage)) {
@@ -198,16 +213,17 @@ const IngresosPage = () => {
     try {
       await runTransaction(db, async (transaction) => {
         const ingresoRef = doc(db, 'ingresos', ingresoId);
-        // Primero, obtener y eliminar los itemsIngreso
-        const itemsRef = collection(db, 'ingresos', ingresoId, 'itemsIngreso');
-        const itemsSnapshot = await getDocs(itemsRef); // getDocs está fuera de la transacción, no es un transaction.get
+        
+        // Eliminar los lotes (CAMBIO: usar 'lotes' en lugar de 'itemsIngreso')
+        const lotesRef = collection(db, 'ingresos', ingresoId, 'lotes');
+        const lotesSnapshot = await getDocs(lotesRef);
 
-        const deleteItemsPromises = itemsSnapshot.docs.map(itemDoc =>
-          transaction.delete(doc(db, 'ingresos', ingresoId, 'itemsIngreso', itemDoc.id))
+        const deleteLotesPromises = lotesSnapshot.docs.map(loteDoc =>
+          transaction.delete(doc(db, 'ingresos', ingresoId, 'lotes', loteDoc.id))
         );
-        await Promise.all(deleteItemsPromises);
+        await Promise.all(deleteLotesPromises);
 
-        // Luego, eliminar el documento de ingreso principal
+        // Eliminar el documento de ingreso principal
         transaction.delete(ingresoRef);
       });
 
@@ -221,7 +237,6 @@ const IngresosPage = () => {
       setLoading(false);
     }
   };
-
 
   const handleViewDetails = (ingresoId) => {
     router.push(`/inventario/ingresos/${ingresoId}`);
@@ -284,6 +299,8 @@ const IngresosPage = () => {
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° BOLETA</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROVEEDOR</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE INGRESO</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">LOTES</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">STOCK TOTAL</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO TOTAL</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">OBSERVACIONES</th>
@@ -299,8 +316,16 @@ const IngresosPage = () => {
                       </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.proveedorNombre}</td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.fechaIngreso}</td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-center">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {ingreso.cantidadLotes || 0} lotes
+                        </span>
+                      </td>
+                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium text-center">
+                        {ingreso.totalStockIngresado || 0} unidades
+                      </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium text-left">
-                        S/. {parseFloat(ingreso.costoTotalLote || 0).toFixed(2)}
+                        S/. {parseFloat(ingreso.costoTotalIngreso || 0).toFixed(2)}
                       </td>
                       <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
                         {ingreso.estado === 'recibido' ? (

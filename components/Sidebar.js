@@ -63,7 +63,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       name: 'Ingresos',
       icon: ClipboardDocumentListIcon,
       adminOnly: true,
-      path: '/inventario/ingresos'
+      submenu: [
+        { name: 'Ingresos', path: '/inventario/ingresos' },
+        { name: 'Lotes', path: '/inventario/stock' }
+      ]
     },
     {
       name: 'Cotizaciones',

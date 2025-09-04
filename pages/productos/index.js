@@ -9,7 +9,10 @@ import {
   query,
   orderBy,
   deleteDoc,
-  doc
+  doc,
+  updateDoc,
+  where,
+  serverTimestamp
 } from 'firebase/firestore';
 import {
   PencilIcon,
@@ -21,7 +24,9 @@ import {
   MagnifyingGlassIcon,
   ArrowPathIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  CurrencyDollarIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
 
@@ -37,6 +42,7 @@ const ProductosPage = () => {
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [updatingPrices, setUpdatingPrices] = useState(false);
 
   // Estados para los filtros
   const [filterNombre, setFilterNombre] = useState('');
@@ -44,7 +50,7 @@ const ProductosPage = () => {
   const [filterCodigoTienda, setFilterCodigoTienda] = useState('');
   const [filterUbicacion, setFilterUbicacion] = useState('');
   const [filterModelosCompatibles, setFilterModelosCompatibles] = useState('');
-  const [filterColor, setFilterColor] = useState(''); // Nuevo estado para el filtro de color
+  const [filterColor, setFilterColor] = useState('');
   const [filterMedida, setFilterMedida] = useState('');
 
   const [filteredProductos, setFilteredProductos] = useState([]);
@@ -66,6 +72,123 @@ const ProductosPage = () => {
   const [confirmMessage, setConfirmMessage] = useState('');
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
+
+  // Función para recalcular el precio de compra de un producto basado en FIFO
+  const recalcularPrecioCompraFIFO = async (productoId) => {
+    try {
+      // Buscar todos los lotes activos del producto, ordenados por fecha de ingreso (FIFO)
+      const lotesQuery = query(
+        collection(db, 'lotes'),
+        where('productoId', '==', productoId),
+        where('stockRestante', '>', 0),
+        where('estado', '==', 'activo'),
+        orderBy('fechaIngreso', 'asc')
+      );
+      
+      const lotesSnapshot = await getDocs(lotesQuery);
+      
+      let nuevoPrecioCompra = 0;
+      let stockTotal = 0;
+      
+      // Si hay lotes disponibles, tomar el precio del primer lote (más antiguo)
+      if (!lotesSnapshot.empty) {
+        const primerLote = lotesSnapshot.docs[0].data();
+        nuevoPrecioCompra = parseFloat(primerLote.precioCompraUnitario || 0);
+        
+        // Calcular stock total de todos los lotes activos
+        lotesSnapshot.docs.forEach(doc => {
+          stockTotal += parseInt(doc.data().stockRestante || 0);
+        });
+      }
+      
+      // Actualizar el producto con el nuevo precio y stock
+      await updateDoc(doc(db, 'productos', productoId), {
+        precioCompraDefault: nuevoPrecioCompra,
+        stockActual: stockTotal,
+        updatedAt: serverTimestamp()
+      });
+      
+      return { nuevoPrecioCompra, stockTotal };
+      
+    } catch (error) {
+      console.error(`Error al recalcular precio FIFO para producto ${productoId}:`, error);
+      throw error;
+    }
+  };
+
+  // Función para actualizar precios de todos los productos
+  const actualizarTodosLosPrecios = async () => {
+    if (!window.confirm('¿Está seguro de que desea recalcular los precios de compra de todos los productos basado en sus lotes disponibles? Esta operación puede tomar unos momentos.')) {
+      return;
+    }
+    
+    setUpdatingPrices(true);
+    let actualizados = 0;
+    let errores = 0;
+    
+    try {
+      for (const producto of productos) {
+        try {
+          await recalcularPrecioCompraFIFO(producto.id);
+          actualizados++;
+        } catch (error) {
+          console.error(`Error al actualizar producto ${producto.id}:`, error);
+          errores++;
+        }
+      }
+      
+      // Recargar la lista de productos
+      await fetchProductos();
+      
+      setAlertMessage(`Actualización completa: ${actualizados} productos actualizados${errores > 0 ? `, ${errores} errores` : ''}.`);
+      setIsAlertModalOpen(true);
+      
+    } catch (error) {
+      console.error('Error general al actualizar precios:', error);
+      setError('Error al actualizar los precios. Intente de nuevo.');
+    } finally {
+      setUpdatingPrices(false);
+    }
+  };
+
+  // Función para recalcular precio de un producto específico
+  const recalcularProductoEspecifico = async (productoId) => {
+    try {
+      const resultado = await recalcularPrecioCompraFIFO(productoId);
+      
+      // Actualizar el producto en la lista local
+      setProductos(prevProductos => 
+        prevProductos.map(p => 
+          p.id === productoId 
+            ? { 
+                ...p, 
+                precioCompraDefault: resultado.nuevoPrecioCompra,
+                stockActual: resultado.stockTotal 
+              }
+            : p
+        )
+      );
+      
+      setFilteredProductos(prevFiltered => 
+        prevFiltered.map(p => 
+          p.id === productoId 
+            ? { 
+                ...p, 
+                precioCompraDefault: resultado.nuevoPrecioCompra,
+                stockActual: resultado.stockTotal 
+              }
+            : p
+        )
+      );
+      
+      setAlertMessage(`Precio actualizado: S/. ${resultado.nuevoPrecioCompra.toFixed(2)} (Stock: ${resultado.stockTotal})`);
+      setIsAlertModalOpen(true);
+      
+    } catch (error) {
+      console.error('Error al recalcular producto específico:', error);
+      setError('Error al recalcular el precio. Intente de nuevo.');
+    }
+  };
 
   // Función para cargar todos los productos
   const fetchProductos = async () => {
@@ -103,7 +226,7 @@ const ProductosPage = () => {
     const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
     const lowerFilterUbicacion = filterUbicacion.toLowerCase();
     const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
-    const lowerFilterColor = filterColor.toLowerCase(); // Lógica para el filtro de color
+    const lowerFilterColor = filterColor.toLowerCase();
     const lowerFilterMedida = filterMedida.toLowerCase();
 
     const filtered = productos.filter(producto => {
@@ -112,7 +235,7 @@ const ProductosPage = () => {
       const matchesCodigoTienda = producto.codigoTienda.toLowerCase().includes(lowerFilterCodigoTienda);
       const matchesUbicacion = (producto.ubicacion && producto.ubicacion.toLowerCase().includes(lowerFilterUbicacion)) || lowerFilterUbicacion === '';
       const matchesModelosCompatibles = (producto.modelosCompatiblesTexto && producto.modelosCompatiblesTexto.toLowerCase().includes(lowerFilterModelosCompatibles)) || lowerFilterModelosCompatibles === '';
-      const matchesColor = (producto.color && producto.color.toLowerCase().includes(lowerFilterColor)) || lowerFilterColor === ''; // Lógica de filtro de color
+      const matchesColor = (producto.color && producto.color.toLowerCase().includes(lowerFilterColor)) || lowerFilterColor === '';
       const matchesMedida = (producto.medida && producto.medida.toLowerCase().includes(lowerFilterMedida)) || lowerFilterMedida === '';
 
       return matchesNombre && matchesCodigoTienda && matchesMarca && matchesUbicacion && matchesModelosCompatibles && matchesColor && matchesMedida;
@@ -131,7 +254,7 @@ const ProductosPage = () => {
     setFilterCodigoTienda('');
     setFilterUbicacion('');
     setFilterModelosCompatibles('');
-    setFilterColor(''); // Limpiar filtro de color
+    setFilterColor('');
     setFilterMedida('');
     setFilteredProductos(productos);
     setCurrentPage(1);
@@ -186,6 +309,20 @@ const ProductosPage = () => {
   const closeProductModelsModal = () => {
     setSelectedProductForModels(null);
     setIsProductModelsModalOpen(false);
+  };
+
+  // Función para determinar si el stock está bajo
+  const isLowStock = (stockActual, stockUmbral) => {
+    return stockActual <= stockUmbral;
+  };
+
+  // Función para determinar si un producto tiene precio desactualizado
+  const needsPriceUpdate = (producto) => {
+    // Lógica para determinar si el precio podría estar desactualizado
+    // Por ejemplo, si no se ha actualizado en los últimos 30 días
+    const lastUpdate = producto.updatedAt?.toDate() || new Date(0);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    return lastUpdate < thirtyDaysAgo;
   };
 
   // Lógica de paginación
@@ -346,6 +483,22 @@ const ProductosPage = () => {
                   Limpiar Filtros
                 </button>
                 <button
+                  onClick={actualizarTodosLosPrecios}
+                  disabled={updatingPrices}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 h-[42px] disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  title="Recalcular todos los precios basado en lotes FIFO"
+                >
+                  {updatingPrices ? (
+                    <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                    </svg>
+                  ) : (
+                    <CurrencyDollarIcon className="h-5 w-5 mr-2" aria-hidden="true" />
+                  )}
+                  {updatingPrices ? 'Actualizando...' : 'Actualizar Precios'}
+                </button>
+                <button
                   onClick={() => router.push('/productos/nuevo')}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 h-[42px]"
                   title="Agregar Producto"
@@ -367,84 +520,124 @@ const ProductosPage = () => {
           ) : (
             <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto">
               <table className="min-w-full border-collapse">
-                <thead className="sticky top-0 z-10 bg-blue-100">
+                <thead className="sticky top-0 z-10 bg-gray-100">
                   <tr>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">NOMBRE</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MARCA</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">C. TIENDA</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COLOR</th> {/* Columna de color */}
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">C. Proveedor</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COLOR</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MEDIDA</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">UBICACION</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">STOCK</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO (S/.)</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO FIFO (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA (S/.)</th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA MIN (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
-                  {currentProducts.map((producto, index) => (
-                    <tr
-                      key={producto.id}
-                      className={`${producto.stockActual <= producto.stockReferencialUmbral ? 'bg-red-100 text-red-800' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50')}`}
-                    >
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">{producto.nombre}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.marca || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.codigoTienda}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.color || 'N/A'}</td> {/* Muestra el color */}
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.medida || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{producto.ubicacion || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-semibold text-center">
-                        {producto.stockActual}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">
-                        S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-center">
-                        S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
-                      </td>
-                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-left text-sm font-medium">
-                        <div className="flex items-center space-x-1 justify-center">
-                          <button
-                            onClick={() => openImageModal(producto.imageUrl)}
-                            className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Ver Imagen"
-                            disabled={!producto.imageUrl}
-                          >
-                            <PhotoIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => openProductModelsModal(producto)}
-                            className="text-purple-600 hover:text-purple-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Ver Modelos Compatibles"
-                            disabled={!producto.modelosCompatiblesTexto || producto.modelosCompatiblesTexto.trim() === ''}
-                          >
-                            <ListBulletIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => openProductDetailsModal(producto)}
-                            className="text-emerald-600 hover:text-emerald-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Ver Detalles Completos"
-                          >
-                            <EyeIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => router.push(`/productos/${producto.id}`)}
-                            className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Editar Producto"
-                          >
-                            <PencilIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => confirmDelete(producto.id)} // Llama al modal de confirmación
-                            className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Eliminar Producto"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {currentProducts.map((producto, index) => {
+                    const lowStock = isLowStock(producto.stockActual, producto.stockReferencialUmbral);
+                    const rowBgClass = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                    const textColorClass = lowStock ? 'text-red-600 font-semibold' : 'text-black';
+                    const priceNeedsUpdate = needsPriceUpdate(producto);
+                    
+                    return (
+                      <tr key={producto.id} className={rowBgClass}>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-left ${textColorClass}`}>
+                          {producto.nombre}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
+                          {producto.marca || 'N/A'}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
+                          {producto.codigoTienda}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
+                          {producto.codigoProveedor}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
+                          {producto.color || 'N/A'}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
+                          {producto.medida || 'N/A'}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
+                          {producto.ubicacion || 'N/A'}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-semibold text-center ${textColorClass}`}>
+                          {producto.stockActual}
+                          {lowStock && <span className="ml-1 text-red-500">⚠</span>}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass} relative`}>
+                          <div className="flex items-center justify-center">
+                            <span>S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}</span>
+                            {priceNeedsUpdate && (
+                              <ExclamationTriangleIcon 
+                                className="h-4 w-4 ml-1 text-orange-500" 
+                                title="Precio podría estar desactualizado - Recalcular basado en lotes FIFO"
+                              />
+                            )}
+                          </div>
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
+                          S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
+                        </td>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
+                          S/. {parseFloat(producto.precioVentaMinimo || 0).toFixed(2)}
+                        </td>
+                        <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-left text-sm font-medium">
+                          <div className="flex items-center space-x-1 justify-center">
+                            <button
+                              onClick={() => recalcularProductoEspecifico(producto.id)}
+                              className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Recalcular precio FIFO de este producto"
+                            >
+                              <CurrencyDollarIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => openImageModal(producto.imageUrl)}
+                              className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Ver Imagen"
+                              disabled={!producto.imageUrl}
+                            >
+                              <PhotoIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => openProductModelsModal(producto)}
+                              className="text-purple-600 hover:text-purple-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Ver Modelos Compatibles"
+                              disabled={!producto.modelosCompatiblesTexto || producto.modelosCompatiblesTexto.trim() === ''}
+                            >
+                              <ListBulletIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => openProductDetailsModal(producto)}
+                              className="text-emerald-600 hover:text-emerald-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Ver Detalles Completos"
+                            >
+                              <EyeIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => router.push(`/productos/${producto.id}`)}
+                              className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Editar Producto"
+                            >
+                              <PencilIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => confirmDelete(producto.id)}
+                              className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Eliminar Producto"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
