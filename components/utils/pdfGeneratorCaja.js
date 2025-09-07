@@ -1,22 +1,21 @@
-// utils/pdfGeneratorCaja.js
+// utils/pdfGeneratorCaja.js - VERSIÓN CON ESTILO PROFESIONAL
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-// Función para cargar la fuente SimplifiedArabic
-const loadCustomFont = async (pdf) => {
+// Función para cargar únicamente Courier PS (consistente con otros generadores)
+const loadCourierPSFont = async (pdf) => {
     try {
-        const fontPaths = [
-            '/fonts/SimplifiedArabic.ttf',
-            '/fonts/Simplified Arabic.ttf', 
-            '/fonts/simplified-arabic.ttf',
-            '/fonts/SimplifiedArabic-Regular.ttf'
+        const courierPaths = [
+            '/fonts/Courier-PS-Regular.ttf',
+            '/fonts/CourierPS.ttf',
+            '/fonts/courier-ps.ttf',
+            '/fonts/CourierPS-Regular.ttf',
+            '/fonts/Courier PS.ttf'
         ];
         
-        let fontLoaded = false;
-        
-        for (const fontPath of fontPaths) {
+        for (const fontPath of courierPaths) {
             try {
-                console.log(`Intentando cargar fuente desde: ${fontPath}`);
+                console.log(`Intentando cargar Courier PS desde: ${fontPath}`);
                 const response = await fetch(fontPath);
                 
                 if (response.ok) {
@@ -32,12 +31,11 @@ const loadCustomFont = async (pdf) => {
                     try {
                         const fileName = fontPath.split('/').pop();
                         pdf.addFileToVFS(fileName, fontBase64);
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'normal');
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'bold');
+                        pdf.addFont(fileName, 'CourierPS', 'normal');
+                        pdf.addFont(fileName, 'CourierPS', 'bold');
                         
-                        console.log(`✅ Fuente SimplifiedArabic cargada exitosamente desde: ${fontPath}`);
-                        fontLoaded = true;
-                        break;
+                        console.log(`✅ Fuente CourierPS cargada exitosamente desde: ${fontPath}`);
+                        return 'CourierPS';
                         
                     } catch (fontRegisterError) {
                         console.warn(`Error registrando fuente ${fontPath}:`, fontRegisterError.message);
@@ -50,16 +48,14 @@ const loadCustomFont = async (pdf) => {
             }
         }
         
-        if (fontLoaded) {
-            return 'SimplifiedArabic';
-        } else {
-            throw new Error('No se pudo cargar ninguna variante de SimplifiedArabic');
-        }
+        // Si no se pudo cargar Courier PS, usar Courier por defecto
+        console.log('⚠️ No se pudo cargar Courier PS, usando Courier por defecto');
+        return 'courier';
         
     } catch (error) {
-        console.error('Error cargando SimplifiedArabic:', error.message);
-        console.log('🔄 Usando fuente Times como alternativa elegante');
-        return 'times';
+        console.error('Error cargando Courier PS:', error.message);
+        console.log('🔄 Usando Courier como alternativa');
+        return 'courier';
     }
 };
 
@@ -91,18 +87,129 @@ const arrayBufferToBase64 = (buffer) => {
 const getMetodoPagoLabel = (metodo) => {
     const metodos = {
         efectivo: 'EFECTIVO',
-        tarjeta_credito: 'TARJETA DE CRÉDITO',
-        tarjeta_debito: 'TARJETA DE DÉBITO',
+        tarjeta_credito: 'TARJETA DE CREDITO',
+        tarjeta_debito: 'TARJETA DE DEBITO',
         tarjeta: 'TARJETA',
         yape: 'YAPE',
         plin: 'PLIN',
         transferencia: 'TRANSFERENCIA BANCARIA',
-        deposito: 'DEPÓSITO BANCARIO',
+        deposito: 'DEPOSITO BANCARIO',
         cheque: 'CHEQUE',
         mixto: 'PAGO MIXTO',
         otro: 'OTRO'
     };
     return metodos[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A';
+};
+
+// Función para dibujar tabla con bordes completos estilo profesional
+const drawProfessionalTable = (pdf, data, headers, colWidths, startX, startY, fontName) => {
+    let currentY = startY;
+    const lineHeight = 6;
+    const padding = 1;
+    
+    // Calcular posiciones X para cada columna
+    const colPositions = [startX];
+    for (let i = 0; i < colWidths.length - 1; i++) {
+        colPositions.push(colPositions[i] + colWidths[i]);
+    }
+    
+    const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
+    
+    // Dibujar encabezados con fondo gris medio
+    pdf.setFillColor(200, 200, 200);
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.2);
+    
+    // Rectángulo de fondo para encabezados
+    pdf.rect(startX, currentY, tableWidth, lineHeight, 'FD');
+    
+    // Texto de encabezados en negro y negrita
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont(fontName, 'bold');
+    pdf.setFontSize(7);
+    
+    // Dibujar líneas verticales y texto de encabezados
+    headers.forEach((header, index) => {
+        const x = colPositions[index];
+        const width = colWidths[index];
+        
+        // Línea vertical izquierda de cada columna
+        if (index === 0) {
+            pdf.line(x, currentY, x, currentY + lineHeight);
+        }
+        pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+        
+        // Texto del encabezado centrado
+        let displayText = header;
+        const maxWidth = width - (padding * 2);
+        
+        // Truncar texto si es muy largo
+        while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+            displayText = displayText.slice(0, -1);
+        }
+        
+        pdf.text(displayText, x + width/2, currentY + lineHeight/2 + 1, { align: 'center' });
+    });
+    
+    currentY += lineHeight;
+    
+    // Resetear color de texto para el contenido
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont(fontName, 'normal');
+    pdf.setFontSize(7);
+    
+    // Dibujar filas de datos
+    data.forEach((row, rowIndex) => {
+        // Alternar colores de fila para mejor legibilidad
+        if (rowIndex % 2 === 0) {
+            pdf.setFillColor(248, 248, 248);
+            pdf.rect(startX, currentY, tableWidth, lineHeight, 'F');
+        }
+        
+        // Dibujar bordes de la fila
+        pdf.rect(startX, currentY, tableWidth, lineHeight, 'S');
+        
+        row.forEach((cellData, colIndex) => {
+            const x = colPositions[colIndex];
+            const width = colWidths[colIndex];
+            
+            // Líneas verticales
+            pdf.line(x, currentY, x, currentY + lineHeight);
+            if (colIndex === row.length - 1) {
+                pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+            }
+            
+            // Contenido de la celda
+            let displayText = String(cellData || '');
+            const maxWidth = width - (padding * 2);
+            
+            // Truncar texto si es muy largo
+            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+                displayText = displayText.slice(0, -1);
+            }
+            
+            // Alineación según el tipo de contenido
+            let textAlign = 'left';
+            let textX = x + padding;
+            
+            // Alinear a la derecha montos (columnas que contienen 'S/.')
+            if (displayText.includes('S/.') || displayText.match(/^\d+$/)) {
+                textAlign = 'right';
+                textX = x + width - padding;
+            }
+            // Centrar algunos tipos de datos
+            else if (colIndex === 0 && displayText.length <= 8) { // IDs cortos, horas
+                textAlign = 'center';
+                textX = x + width/2;
+            }
+            
+            pdf.text(displayText, textX, currentY + lineHeight/2 + 1, { align: textAlign });
+        });
+        
+        currentY += lineHeight;
+    });
+    
+    return currentY;
 };
 
 const generarPDFCaja = async (cierreData) => {
@@ -115,8 +222,8 @@ const generarPDFCaja = async (cierreData) => {
             format: 'a4',
         });
         
-        // Cargar fuente personalizada
-        const fontName = await loadCustomFont(pdf);
+        // Cargar fuente Courier PS
+        const fontName = await loadCourierPSFont(pdf);
         
         const pageWidth = pdf.internal.pageSize.width;
         const pageHeight = pdf.internal.pageSize.height;
@@ -126,50 +233,50 @@ const generarPDFCaja = async (cierreData) => {
         let currentY = 15;
 
         // =========================================================================
-        // ENCABEZADO - MANTENER IGUAL
+        // ENCABEZADO LIMPIO - DISTRIBUIDO EN DOS COLUMNAS SIN FONDO GRIS
         // =========================================================================
 
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(12);
+        pdf.setTextColor(0, 0, 0);
         
-        // Título de la empresa (izquierda)
+        // Título de la empresa (izquierda) - TODO EN MAYÚSCULAS
         pdf.text('MOTORES & REPUESTOS SAC', margin, currentY);
         
-        // Tipo de reporte (derecha)
+        // Tipo de reporte (derecha) - TODO EN MAYÚSCULAS
         pdf.text('REPORTE DE CAJA', pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
+        currentY += 8;
 
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
         
-        // Detalles de la empresa (izquierda)
+        // COLUMNA IZQUIERDA - Información principal
         pdf.text('R.U.C: 20123456789', margin, currentY);
-        pdf.text('Email: motoresrepuestos@mail.com', margin, currentY + 4);
-        pdf.text('Dirección: Av. Los Motores 456, San Borja', margin, currentY + 8);
-        pdf.text('Teléfono: 999 888 777', margin, currentY + 12);
-        currentY += 16;
+        pdf.text('EMAIL: MOTORESREPUESTOS@MAIL.COM', margin, currentY + 4);
+        pdf.text('REPORTE GENERADO DESDE TIENDA AV.LOS MOTORES 456 SAN BORJA', margin, currentY + 8);
+        
+        // COLUMNA DERECHA - Información de contacto
+        pdf.text('DIRECCION: AV. LOS MOTORES 456, SAN BORJA', pageWidth / 2, currentY);
+        pdf.text('TELEFONO: 999 888 777', pageWidth / 2, currentY + 4);
+        
+        currentY += 18;
         
         // Información del reporte
         pdf.setFontSize(8);
-        pdf.setFont(fontName, 'bold');
+        pdf.setFont(fontName, 'normal');
         
         const fechaCierre = cierreData.fecha?.toDate ? 
             cierreData.fecha.toDate().toLocaleDateString('es-PE') : 
             (cierreData.fechaString ? new Date(cierreData.fechaString).toLocaleDateString('es-PE') : new Date().toLocaleDateString('es-PE'));
         
         pdf.text('FECHA DE CAJA:', margin, currentY);
-        pdf.setFont(fontName, 'normal');
         pdf.text(fechaCierre, margin + 25, currentY);
 
-        pdf.setFont(fontName, 'bold');
         pdf.text('CERRADA POR:', pageWidth / 2, currentY);
-        pdf.setFont(fontName, 'normal');
-        pdf.text(cierreData.cerradoPor || 'N/A', pageWidth / 2 + 20, currentY);
+        pdf.text((cierreData.cerradoPor || 'N/A').toUpperCase(), pageWidth / 2 + 25, currentY);
         currentY += 5;
 
-        pdf.setFont(fontName, 'bold');
         pdf.text('FECHA DE CIERRE:', margin, currentY);
-        pdf.setFont(fontName, 'normal');
         const fechaCierreCompleta = cierreData.fechaCierre?.toDate ? 
             cierreData.fechaCierre.toDate().toLocaleString('es-PE') : 
             new Date().toLocaleString('es-PE');
@@ -181,371 +288,253 @@ const generarPDFCaja = async (cierreData) => {
         currentY += 8;
 
         // =========================================================================
-        // RESUMEN DE TOTALES - MANTENER IGUAL
+        // RESUMEN DE TOTALES CON TABLA PROFESIONAL
         // =========================================================================
 
-        pdf.setFontSize(10);
         pdf.setFont(fontName, 'bold');
-        pdf.text('RESUMEN DE TOTALES DEL DÍA', margin, currentY);
+        pdf.setFontSize(8);
+        pdf.text('RESUMEN DE TOTALES DEL DIA:', margin, currentY);
         currentY += 8;
 
-        pdf.setFontSize(9);
-        pdf.setFont(fontName, 'normal');
-
-        // Crear tabla de resumen
+        // Headers y datos para tabla de resumen
+        const resumenHeaders = ['METODO DE PAGO', 'MONTO'];
+        const resumenColWidths = [totalWidth * 0.6, totalWidth * 0.4];
+        
         const resumenData = [
-            ['MÉTODO DE PAGO', 'MONTO'],
-            ['Efectivo', `S/. ${(cierreData.totales?.efectivo || 0).toFixed(2)}`],
-            ['Yape', `S/. ${(cierreData.totales?.yape || 0).toFixed(2)}`],
-            ['Plin', `S/. ${(cierreData.totales?.plin || 0).toFixed(2)}`],
-            ['Tarjetas', `S/. ${(cierreData.totales?.tarjeta || 0).toFixed(2)}`],
+            ['EFECTIVO', `S/. ${(cierreData.totales?.efectivo || 0).toFixed(2)}`],
+            ['YAPE', `S/. ${(cierreData.totales?.yape || 0).toFixed(2)}`],
+            ['PLIN', `S/. ${(cierreData.totales?.plin || 0).toFixed(2)}`],
+            ['TARJETAS', `S/. ${(cierreData.totales?.tarjeta || 0).toFixed(2)}`],
         ];
 
-        // Anchos de columnas para resumen
-        const resumenColWidths = [totalWidth * 0.6, totalWidth * 0.4];
-        const resumenColPositions = [margin, margin + resumenColWidths[0]];
-
         // Dibujar tabla de resumen
-        resumenData.forEach((row, index) => {
-            if (index === 0) {
-                pdf.setFont(fontName, 'bold');
-                pdf.setFillColor(240, 240, 240);
-                pdf.rect(margin, currentY - 3, totalWidth, 6, 'F');
-            } else {
-                pdf.setFont(fontName, 'normal');
-            }
-            
-            pdf.text(row[0], resumenColPositions[0] + 2, currentY);
-            pdf.text(row[1], resumenColPositions[1] + resumenColWidths[1] - 2, currentY, { align: 'right' });
-            
-            // Líneas de la tabla
-            pdf.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
-            
-            currentY += 6;
-        });
+        currentY = drawProfessionalTable(pdf, resumenData, resumenHeaders, resumenColWidths, margin, currentY, fontName);
+        currentY += 5;
 
-        // Total general
+        // Total general con estilo destacado
         pdf.setFont(fontName, 'bold');
-        pdf.setFillColor(220, 220, 220);
-        pdf.rect(margin, currentY - 3, totalWidth, 6, 'F');
-        pdf.text('TOTAL GENERAL', resumenColPositions[0] + 2, currentY);
-        pdf.text(`S/. ${(cierreData.totales?.total || 0).toFixed(2)}`, resumenColPositions[1] + resumenColWidths[1] - 2, currentY, { align: 'right' });
-        pdf.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
-        currentY += 10;
+        pdf.setFontSize(9);
+        
+        // Fondo para el total general
+        pdf.setFillColor(200, 200, 200);
+        pdf.setDrawColor(0, 0, 0);
+        pdf.rect(margin, currentY, totalWidth, 8, 'FD');
+        
+        pdf.text('TOTAL GENERAL:', margin + 5, currentY + 5);
+        pdf.text(`S/. ${(cierreData.totales?.total || 0).toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+        
+        currentY += 15;
 
         // =========================================================================
-        // NUEVA SECCIÓN: DEVOLUCIONES DEL DÍA
+        // DEVOLUCIONES DEL DÍA CON TABLA PROFESIONAL
         // =========================================================================
 
         if (cierreData.devoluciones && cierreData.devoluciones.length > 0) {
+            // Verificar si necesitamos nueva página
+            if (currentY > pageHeight - 100) {
+                pdf.addPage();
+                currentY = 15;
+            }
+            
             pdf.setFont(fontName, 'bold');
-            pdf.text('DEVOLUCIONES DEL DÍA', margin, currentY);
+            pdf.setFontSize(8);
+            pdf.text(`DEVOLUCIONES DEL DIA (${cierreData.devoluciones.length}):`, margin, currentY);
             currentY += 8;
 
             // Headers de la tabla de devoluciones
-            const devolucionesHeaders = ['N° VENTA', 'CLIENTE', 'MONTO', 'MÉTODO PAGO', 'ESTADO'];
+            const devolucionesHeaders = ['N° VENTA', 'CLIENTE', 'MONTO', 'METODO', 'ESTADO'];
             const devolucionesColWidths = [
                 totalWidth * 0.15, // N° Venta
-                totalWidth * 0.25, // Cliente  
-                totalWidth * 0.15, // Monto
-                totalWidth * 0.25, // Método Pago
-                totalWidth * 0.20  // Estado
+                totalWidth * 0.30, // Cliente  
+                totalWidth * 0.20, // Monto
+                totalWidth * 0.20, // Método Pago
+                totalWidth * 0.15  // Estado
             ];
-
-            const devolucionesColPositions = [margin];
-            for (let i = 0; i < devolucionesColWidths.length - 1; i++) {
-                devolucionesColPositions.push(devolucionesColPositions[i] + devolucionesColWidths[i]);
-            }
-
-            pdf.setFontSize(8);
-            pdf.setFont(fontName, 'bold');
             
-            // Línea superior de la tabla
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
+            // Preparar datos de devoluciones
+            const devolucionesData = cierreData.devoluciones.map(devolucion => [
+                (devolucion.numeroVenta || 'N/A').toString().toUpperCase(),
+                (devolucion.clienteNombre || 'N/A').toString().toUpperCase(),
+                `S/. ${(devolucion.montoADevolver || 0).toFixed(2)}`,
+                getMetodoPagoLabel(devolucion.metodoPagoOriginal),
+                (devolucion.estado || 'N/A').toString().toUpperCase()
+            ]);
 
-            // Encabezados de devoluciones
-            devolucionesHeaders.forEach((header, index) => {
-                const x = devolucionesColPositions[index];
-                const maxWidth = devolucionesColWidths[index] - 2;
-                
-                let displayText = header;
-                if (pdf.getTextWidth(displayText) > maxWidth) {
-                    while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                        displayText = displayText.slice(0, -1);
-                    }
-                    displayText += '...';
-                }
-                
-                pdf.text(displayText, x + 1, currentY);
-            });
-            currentY += 3;
-
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            
-            pdf.setFont(fontName, 'normal');
-
-            // Procesar devoluciones
-            cierreData.devoluciones.forEach((devolucion) => {
-                if (currentY > pageHeight - 30) {
-                    pdf.addPage();
-                    currentY = 15;
-                }
-
-                const devolucionData = [
-                    devolucion.numeroVenta || 'N/A',
-                    devolucion.clienteNombre || 'N/A',
-                    `S/. ${(devolucion.montoADevolver || 0).toFixed(2)}`,
-                    devolucion.metodoPagoOriginal?.toUpperCase() || 'N/A',
-                    devolucion.estado?.toUpperCase() || 'N/A'
-                ];
-
-                devolucionData.forEach((data, index) => {
-                    const x = devolucionesColPositions[index];
-                    const maxWidth = devolucionesColWidths[index] - 2;
-                    
-                    let displayText = String(data);
-                    if (pdf.getTextWidth(displayText) > maxWidth) {
-                        if (index === 1) { // Cliente - caso especial
-                            while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                                displayText = displayText.slice(0, -1);
-                            }
-                            displayText += '...';
-                        } else {
-                            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
-                                displayText = displayText.slice(0, -1);
-                            }
-                        }
-                    }
-                    
-                    const alignment = index === 2 ? 'right' : 'left'; // Alinear monto a la derecha
-                    const textX = alignment === 'right' ? x + devolucionesColWidths[index] - 1 : x + 1;
-                    
-                    pdf.text(displayText, textX, currentY, { align: alignment });
-                });
-                
-                currentY += 5;
-            });
-
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
+            // Dibujar tabla de devoluciones
+            currentY = drawProfessionalTable(pdf, devolucionesData, devolucionesHeaders, devolucionesColWidths, margin, currentY, fontName);
             currentY += 5;
 
-            // Total de devoluciones
+            // Total de devoluciones con estilo destacado
             pdf.setFont(fontName, 'bold');
-            pdf.text('TOTAL DEVOLUCIONES:', margin + 5, currentY);
+            pdf.setFontSize(9);
+            
             const totalDevoluciones = cierreData.devolucionesDelDia?.totalDevuelto || 
                 cierreData.devoluciones.reduce((total, dev) => total + (dev.montoADevolver || 0), 0);
-            pdf.text(`S/. ${totalDevoluciones.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-            currentY += 10;
+            
+            // Fondo para total de devoluciones
+            pdf.setFillColor(255, 220, 220); // Rojo claro
+            pdf.rect(margin, currentY, totalWidth, 8, 'FD');
+            
+            pdf.text('TOTAL DEVOLUCIONES:', margin + 5, currentY + 5);
+            pdf.text(`S/. ${totalDevoluciones.toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+            currentY += 15;
         }
 
         // =========================================================================
-        // RETIROS DEL DÍA - CORREGIDO EL ALINEAMIENTO
+        // RETIROS DEL DÍA CON TABLA PROFESIONAL
         // =========================================================================
 
         if (cierreData.retiros && cierreData.retiros.length > 0) {
+            // Verificar si necesitamos nueva página
+            if (currentY > pageHeight - 100) {
+                pdf.addPage();
+                currentY = 15;
+            }
+            
             pdf.setFont(fontName, 'bold');
-            pdf.text('RETIROS DEL DÍA', margin, currentY);
+            pdf.setFontSize(8);
+            pdf.text(`RETIROS DEL DIA (${cierreData.retiros.length}):`, margin, currentY);
             currentY += 8;
 
-            // Headers de la tabla de retiros - AJUSTADOS
+            // Headers de la tabla de retiros
             const retirosHeaders = ['HORA', 'TIPO', 'MONTO', 'MOTIVO', 'REALIZADO POR'];
             const retirosColWidths = [
-                totalWidth * 0.12, // Hora - reducido
-                totalWidth * 0.12, // Tipo - reducido  
-                totalWidth * 0.18, // Monto - aumentado para mejor alineación
-                totalWidth * 0.38, // Motivo - aumentado
+                totalWidth * 0.12, // Hora
+                totalWidth * 0.12, // Tipo  
+                totalWidth * 0.18, // Monto
+                totalWidth * 0.38, // Motivo
                 totalWidth * 0.20  // Realizado por
             ];
-
-            const retirosColPositions = [margin];
-            for (let i = 0; i < retirosColWidths.length - 1; i++) {
-                retirosColPositions.push(retirosColPositions[i] + retirosColWidths[i]);
-            }
-
-            pdf.setFontSize(8);
-            pdf.setFont(fontName, 'bold');
             
-            // Línea superior de la tabla
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-
-            // Encabezados de retiros
-            retirosHeaders.forEach((header, index) => {
-                const x = retirosColPositions[index];
-                const maxWidth = retirosColWidths[index] - 2;
-                
-                let displayText = header;
-                if (pdf.getTextWidth(displayText) > maxWidth) {
-                    while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                        displayText = displayText.slice(0, -1);
-                    }
-                    displayText += '...';
-                }
-                
-                pdf.text(displayText, x + 1, currentY);
-            });
-            currentY += 3;
-
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            
-            pdf.setFont(fontName, 'normal');
-
-            // Procesar retiros
-            cierreData.retiros.forEach((retiro) => {
-                if (currentY > pageHeight - 30) {
-                    pdf.addPage();
-                    currentY = 15;
-                }
-
+            // Preparar datos de retiros
+            const retirosData = cierreData.retiros.map(retiro => {
                 const fechaRetiro = retiro.fecha?.toDate ? retiro.fecha.toDate() : new Date();
                 const horaRetiro = fechaRetiro.toLocaleTimeString('es-PE', { 
                     hour: '2-digit', 
                     minute: '2-digit' 
                 });
-
-                const retiroData = [
-                    horaRetiro,
-                    retiro.tipo?.toUpperCase() || 'N/A',
-                    `S/. ${(retiro.monto || 0).toFixed(2)}`,
-                    retiro.motivo || 'N/A',
-                    retiro.realizadoPor || 'N/A'
-                ];
-
-                retiroData.forEach((data, index) => {
-                    const x = retirosColPositions[index];
-                    const maxWidth = retirosColWidths[index] - 4; // Más margen para evitar que se salga
-                    
-                    let displayText = String(data);
-                    if (pdf.getTextWidth(displayText) > maxWidth) {
-                        if (index === 3) { // Motivo - caso especial
-                            while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                                displayText = displayText.slice(0, -1);
-                            }
-                            displayText += '...';
-                        } else {
-                            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
-                                displayText = displayText.slice(0, -1);
-                            }
-                        }
-                    }
-                    
-                    // CORREGIDO: Mejor alineación del monto
-                    const alignment = index === 2 ? 'center' : 'left'; // Centrar monto en lugar de right
-                    let textX = x + 2; // Margen izquierdo estándar
-                    
-                    if (alignment === 'center') {
-                        textX = x + (retirosColWidths[index] / 2); // Centrar el monto
-                    }
-                    
-                    pdf.text(displayText, textX, currentY, { align: alignment });
-                });
                 
-                currentY += 5;
+                return [
+                    horaRetiro,
+                    (retiro.tipo || 'N/A').toString().toUpperCase(),
+                    `S/. ${(retiro.monto || 0).toFixed(2)}`,
+                    (retiro.motivo || 'N/A').toString().toUpperCase(),
+                    (retiro.realizadoPor || 'N/A').toString().toUpperCase()
+                ];
             });
 
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
+            // Dibujar tabla de retiros
+            currentY = drawProfessionalTable(pdf, retirosData, retirosHeaders, retirosColWidths, margin, currentY, fontName);
             currentY += 5;
 
-            // Total de retiros - CORREGIDO
+            // Total de retiros con estilo destacado
             pdf.setFont(fontName, 'bold');
-            pdf.text('TOTAL RETIROS:', margin + 5, currentY);
+            pdf.setFontSize(9);
+            
             const totalRetiros = cierreData.retiros.reduce((total, retiro) => total + (retiro.monto || 0), 0);
-            pdf.text(`S/. ${totalRetiros.toFixed(2)}`, pageWidth - margin - 10, currentY, { align: 'right' }); // Ajustado margen
-            currentY += 10;
+            
+            // Fondo para total de retiros
+            pdf.setFillColor(255, 240, 220); // Naranja claro
+            pdf.rect(margin, currentY, totalWidth, 8, 'FD');
+            
+            pdf.text('TOTAL RETIROS:', margin + 5, currentY + 5);
+            pdf.text(`S/. ${totalRetiros.toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+            currentY += 15;
         }
 
         // =========================================================================
-        // GANANCIAS - MANTENER IGUAL
+        // ANÁLISIS DE GANANCIAS CON ESTILO PROFESIONAL
         // =========================================================================
 
-        pdf.setFont(fontName, 'bold');
-        pdf.text('ANÁLISIS DE GANANCIAS', margin, currentY);
-        currentY += 6;
-
-        pdf.setFont(fontName, 'normal');
-        pdf.text('Ganancia Bruta:', margin + 5, currentY);
-        pdf.text(`S/. ${(cierreData.totales?.gananciaBruta || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
-
-        pdf.text('Ganancia Real:', margin + 5, currentY);
-        pdf.text(`S/. ${(cierreData.totales?.gananciaReal || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 8;
-
-        // =========================================================================
-        // RESUMEN FINAL - MANTENER IGUAL
-        // =========================================================================
-
-        if (currentY > pageHeight - 50) {
+        // Verificar si necesitamos nueva página
+        if (currentY > pageHeight - 80) {
             pdf.addPage();
             currentY = 15;
         }
 
         pdf.setFont(fontName, 'bold');
-        pdf.text('RESUMEN FINAL DE CAJA', margin, currentY);
+        pdf.setFontSize(8);
+        pdf.text('ANALISIS DE GANANCIAS:', margin, currentY);
         currentY += 8;
 
-        pdf.setFont(fontName, 'normal');
+        // Tabla de ganancias
+        const gananciasHeaders = ['CONCEPTO', 'MONTO'];
+        const gananciasColWidths = [totalWidth * 0.6, totalWidth * 0.4];
         
-        // Crear tabla de resumen final
-        const resumenFinal = cierreData.resumenFinal || {};
-        const dineroInicial = cierreData.dineroInicial || 0;
+        const gananciasData = [
+            ['GANANCIA BRUTA', `S/. ${(cierreData.totales?.gananciaBruta || 0).toFixed(2)}`],
+            ['GANANCIA REAL', `S/. ${(cierreData.totales?.gananciaReal || 0).toFixed(2)}`]
+        ];
 
-        pdf.text('Dinero Inicial:', margin + 5, currentY);
-        pdf.text(`S/. ${dineroInicial.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
-        
-        pdf.text('Total de Ventas del Día:', margin + 5, currentY);
-        pdf.text(`${resumenFinal.totalVentas || 0}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
-
-        // NUEVO: Agregar información de devoluciones en el resumen
-        if (cierreData.devoluciones && cierreData.devoluciones.length > 0) {
-            pdf.text('Total de Devoluciones:', margin + 5, currentY);
-            pdf.text(`${resumenFinal.totalDevoluciones || 0}`, pageWidth - margin, currentY, { align: 'right' });
-            currentY += 5;
-        }
-
-        pdf.text('Total de Retiros:', margin + 5, currentY);
-        pdf.text(`${resumenFinal.totalRetiros || 0}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
-
-        pdf.text('Efectivo Final en Caja:', margin + 5, currentY);
-        pdf.text(`S/. ${(resumenFinal.efectivoFinal || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
-
-        pdf.text('Total Digital (Yape + Plin + Tarjeta):', margin + 5, currentY);
-        pdf.text(`S/. ${(resumenFinal.digitalTotal || 0).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
+        // Dibujar tabla de ganancias
+        currentY = drawProfessionalTable(pdf, gananciasData, gananciasHeaders, gananciasColWidths, margin, currentY, fontName);
         currentY += 10;
 
         // =========================================================================
-        // INFORMACIÓN ADICIONAL - MANTENER IGUAL
+        // RESUMEN FINAL CON TABLA PROFESIONAL
         // =========================================================================
+
+        pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(8);
+        pdf.text('RESUMEN FINAL DE CAJA:', margin, currentY);
+        currentY += 8;
+
+        const resumenFinal = cierreData.resumenFinal || {};
+        const dineroInicial = cierreData.dineroInicial || 0;
+
+        // Tabla de resumen final
+        const finalHeaders = ['CONCEPTO', 'CANTIDAD/MONTO'];
+        const finalColWidths = [totalWidth * 0.6, totalWidth * 0.4];
+        
+        const finalData = [
+            ['DINERO INICIAL', `S/. ${dineroInicial.toFixed(2)}`],
+            ['TOTAL DE VENTAS DEL DIA', `${resumenFinal.totalVentas || 0}`],
+            ['TOTAL DE RETIROS', `${resumenFinal.totalRetiros || 0}`],
+            ['EFECTIVO FINAL EN CAJA', `S/. ${(resumenFinal.efectivoFinal || 0).toFixed(2)}`],
+            ['TOTAL DIGITAL (YAPE + PLIN + TARJETA)', `S/. ${(resumenFinal.digitalTotal || 0).toFixed(2)}`]
+        ];
+
+        // Agregar devoluciones si existen
+        if (cierreData.devoluciones && cierreData.devoluciones.length > 0) {
+            finalData.splice(2, 0, ['TOTAL DE DEVOLUCIONES', `${resumenFinal.totalDevoluciones || 0}`]);
+        }
+
+        // Dibujar tabla de resumen final
+        currentY = drawProfessionalTable(pdf, finalData, finalHeaders, finalColWidths, margin, currentY, fontName);
+        currentY += 10;
+
+        // =========================================================================
+        // INFORMACIÓN ADICIONAL
+        // =========================================================================
+        
+        // Verificar si necesitamos nueva página
+        if (currentY > pageHeight - 60) {
+            pdf.addPage();
+            currentY = 15;
+        }
         
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(8);
-        pdf.text('INFORMACIÓN IMPORTANTE:', margin, currentY);
+        pdf.text('INFORMACION IMPORTANTE:', margin, currentY);
         currentY += 6;
         
         pdf.setFont(fontName, 'normal');
         pdf.setFontSize(8);
-        pdf.text('• Este reporte refleja el estado de la caja al momento del cierre.', margin + 5, currentY);
+        pdf.text('• ESTE REPORTE REFLEJA EL ESTADO DE LA CAJA AL MOMENTO DEL CIERRE.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Los montos digitales (Yape, Plin, Tarjeta) se mantienen en las cuentas respectivas.', margin + 5, currentY);
+        pdf.text('• LOS MONTOS DIGITALES (YAPE, PLIN, TARJETA) SE MANTIENEN EN LAS CUENTAS RESPECTIVAS.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• El efectivo final debe coincidir con el dinero físico en caja.', margin + 5, currentY);
+        pdf.text('• EL EFECTIVO FINAL DEBE COINCIDIR CON EL DINERO FISICO EN CAJA.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Las devoluciones ya están descontadas de los totales por método de pago.', margin + 5, currentY);
+        pdf.text('• LAS DEVOLUCIONES YA ESTAN DESCONTADAS DE LOS TOTALES POR METODO DE PAGO.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Conserve este documento para auditorías y controles internos.', margin + 5, currentY);
+        pdf.text('• CONSERVE ESTE DOCUMENTO PARA AUDITORIAS Y CONTROLES INTERNOS.', margin + 5, currentY);
         currentY += 8;
 
         // Pie de página
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
-        pdf.text(`Reporte generado el ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        pdf.text(`REPORTE GENERADO EL ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
         
         return pdf;
         
@@ -555,14 +544,14 @@ const generarPDFCaja = async (cierreData) => {
     }
 };
     
-// Función principal exportada - MANTENER ORIGINAL
+// Función principal exportada
 export const generarPDFCajaCompleta = async (fechaString) => {
     try {
         // Obtener datos del cierre de caja desde Firestore
         const cierreDoc = await getDoc(doc(db, 'cierresCaja', fechaString));
         
         if (!cierreDoc.exists()) {
-            throw new Error('No se encontró el cierre de caja para esta fecha');
+            throw new Error('No se encontro el cierre de caja para esta fecha');
         }
         
         const cierreData = cierreDoc.data();
@@ -578,7 +567,7 @@ export const generarPDFCajaCompleta = async (fechaString) => {
         
     } catch (error) {
         console.error('Error al generar PDF de caja:', error);
-        throw new Error('Error al generar el reporte de caja. Por favor, inténtalo de nuevo.');
+        throw new Error('Error al generar el reporte de caja. Por favor, intentalo de nuevo.');
     }
 };
 

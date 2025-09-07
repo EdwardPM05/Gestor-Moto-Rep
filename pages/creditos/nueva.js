@@ -457,6 +457,8 @@ const NuevoCreditoPage = () => {
           transaction.update(itemRef, {
             cantidad: newQuantity,
             subtotal: newSubtotal,
+            precioCompraDefault: productData.precioCompraDefault || 0,
+            precioVentaMinimo: productData.precioVentaMinimo || 0,
             precioVentaUnitario: precioVenta,
             color: productData.color || '',
             updatedAt: serverTimestamp(),
@@ -471,6 +473,10 @@ const NuevoCreditoPage = () => {
             productoId: selectedProduct.id,
             nombreProducto: productData.nombre || selectedProduct.nombre,
             marca: productData.marca || selectedProduct.marca || '',
+            medida: productData.medida || selectedProduct.medida || '',
+            codigoProveedor: productData.codigoProveedor || selectedProduct.codigoProveedor || '',   
+            precioCompraDefault: productData.precioCompraDefault || selectedProduct.precioCompraDefault || 0,
+            precioVentaMinimo: productData.precioVentaMinimo || selectedProduct.precioVentaMinimo || 0,
             codigoTienda: productData.codigoTienda || selectedProduct.codigoTienda || '',
             descripcion: productData.descripcion || selectedProduct.descripcion || '',
             color: productData.color || selectedProduct.color || '',
@@ -888,12 +894,12 @@ const handleRegistrarCredito = async () => {
 
             <div className="grid grid-cols-12 gap-6 p-6">
               {/* Panel Izquierdo - Créditos Temporales */}
-              <div className="col-span-12 lg:col-span-4">
+              <div className="col-span-12 lg:col-span-3">
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                   <h2 className="text-lg font-semibold mb-4 text-gray-800">Créditos Temporales</h2>
                   <button
                     onClick={handleNuevoCredito}
-                    className="w-full bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
                     disabled={loading}
                   >
                     <PlusIcon className="h-5 w-5 mr-2" />
@@ -909,14 +915,14 @@ const handleRegistrarCredito = async () => {
                           key={credito.id}
                           className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
                             creditoActivo?.id === credito.id
-                              ? 'bg-yellow-50 border-yellow-500 shadow-md'
+                              ? 'bg-purple-50 border-purple-500 shadow-md'
                               : 'bg-white hover:bg-gray-50 border-gray-200'
                           }`}
                           onClick={() => handleSelectCredito(credito)}
                         >
                           <div className="font-medium text-sm text-gray-800">{credito.numeroCredito}</div>
                           <div className="text-xs text-gray-600">{credito.clienteNombre}</div>
-                          <div className="text-xs font-semibold text-yellow-600">S/. {parseFloat(credito.totalCredito || 0).toFixed(2)}</div>
+                          <div className="text-xs font-semibold text-purple-600">S/. {parseFloat(credito.totalCredito || 0).toFixed(2)}</div>
                           <div className="text-xs text-gray-500">
                             {credito.fechaCreacion?.toDate?.() ? 
                               credito.fechaCreacion.toDate().toLocaleDateString() : 
@@ -955,7 +961,7 @@ const handleRegistrarCredito = async () => {
                           type="date"
                           value={fechaVencimiento}
                           onChange={(e) => handleUpdateFechaVencimiento(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                         />
                       </div>
 
@@ -966,14 +972,14 @@ const handleRegistrarCredito = async () => {
                           value={observaciones}
                           onChange={(e) => handleUpdateObservaciones(e.target.value)}
                           placeholder="Observaciones adicionales del crédito..."
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                           rows="3"
                         />
                       </div>
 
                       {/* Total */}
-                      <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-4 rounded-lg border border-yellow-200">
-                        <div className="text-lg font-bold text-yellow-800">
+                      <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
+                        <div className="text-lg font-bold text-purple-800">
                           Total Crédito: S/. {parseFloat(creditoActivo.totalCredito || 0).toFixed(2)}
                         </div>
                       </div>
@@ -1012,7 +1018,7 @@ const handleRegistrarCredito = async () => {
               </div>
 
               {/* Panel Derecho - Buscador y Items */}
-              <div className="col-span-12 lg:col-span-8">
+              <div className="col-span-12 lg:col-span-9">
                 {/* Buscador de Productos */}
                 <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
                   <div className="p-4">
@@ -1024,11 +1030,11 @@ const handleRegistrarCredito = async () => {
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Buscar productos por nombre, marca, código, modelos compatibles..."
-                        className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
+                        className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                       />
                       {isSearching && (
                         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-yellow-600"></div>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-600"></div>
                         </div>
                       )}
                     </div>
@@ -1042,12 +1048,12 @@ const handleRegistrarCredito = async () => {
                     </div>
                   </div>
 
-                  {/* Dropdown de productos */}
+                  {/* Dropdown de productos - VERSIÓN MEJORADA */}
                   {searchTerm.trim() !== '' && (
                     <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
                       {isSearching ? (
                         <div className="flex justify-center py-8">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-600"></div>
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
                         </div>
                       ) : filteredProductos.length === 0 ? (
                         <div className="p-4 text-center text-gray-500">
@@ -1058,38 +1064,58 @@ const handleRegistrarCredito = async () => {
                           {filteredProductos.slice(0, 20).map(producto => (
                             <div
                               key={producto.id}
-                              className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                              className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
                               onClick={() => {
                                 handleSelectProduct(producto);
                                 setSearchTerm('');
                               }}
                             >
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="font-medium text-gray-900 truncate">
-                                    {producto.nombre} ({producto.codigoTienda})
-                                  </h4>
-                                  <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Marca:</span> {producto.marca}
-                                  </p>
-                                  <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Color:</span> {producto.color || 'N/A'}
-                                  </p>
-                                  <p className="text-sm text-gray-500">
-                                    <span className="font-medium">Stock:</span> {producto.stockActual}
-                                  </p>
+                              <div className="flex items-center justify-between gap-6">
+                                {/* Información principal del producto */}
+                                <div className="flex items-center gap-6 flex-1 min-w-0">
+                                  {/* Nombre y código */}
+                                  <div className="min-w-0 flex-shrink-0">
+                                    <h4 className="font-medium text-gray-900 truncate text-sm">
+                                      {producto.nombre} ({producto.codigoTienda})
+                                    </h4>
+                                  </div>
+                                  
+                                  {/* Marca */}
+                                  <div className="flex-shrink-0">
+                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
+                                    <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
+                                  </div>
+                                  
+                                  {/* Color */}
+                                  <div className="flex-shrink-0">
+                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Color:</span>
+                                    <span className="ml-1 text-sm text-gray-700 font-medium">{producto.color || 'N/A'}</span>
+                                  </div>
+                                  
+                                  {/* Stock */}
+                                  <div className="flex-shrink-0">
+                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
+                                    <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
+                                  </div>
+                                  
+                                  {/* Modelos compatibles */}
                                   {producto.modelosCompatiblesTexto && (
-                                    <p className="text-sm text-blue-600 truncate">
-                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesTexto}
-                                    </p>
+                                    <div className="flex-shrink-0 max-w-xs">
+                                      <span className="text-xs text-gray-500 uppercase tracking-wide">Modelos:</span>
+                                      <span className="ml-1 text-sm text-blue-700 font-medium truncate" title={producto.modelosCompatiblesTexto}>
+                                        {producto.modelosCompatiblesTexto}
+                                      </span>
+                                    </div>
                                   )}
                                 </div>
-                                <div className="text-right flex-shrink-0 ml-4">
-                                  <p className="font-semibold text-yellow-600 text-lg">
+                                
+                                {/* Precio */}
+                                <div className="text-right flex-shrink-0">
+                                  <p className="font-bold text-purple-600 text-base">
                                     S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
                                   </p>
-                                  <p className="text-sm text-gray-500">
-                                    Stock: {producto.stockActual || 0}
+                                  <p className="text-xs text-gray-500 uppercase tracking-wide">
+                                    Precio Venta
                                   </p>
                                 </div>
                               </div>
@@ -1104,7 +1130,7 @@ const handleRegistrarCredito = async () => {
                       )}
                     </div>
                   )}
-                </div>
+                  </div>
 
                 {/* Items del Crédito */}
                 {!creditoActivo ? (
@@ -1134,14 +1160,17 @@ const handleRegistrarCredito = async () => {
                           <div className="overflow-x-auto">
                             <table className="w-full border-collapse">
                               {/* Encabezados */}
-                              <thead className="bg-yellow-50">
+                              <thead className="bg-purple-50">
                                 <tr className="border-b border-gray-300">
-                                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
-                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">CÓDIGO</th>
+                                  <th className="w-40 px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">C. PRODUCTO</th>
+                                  <th className="w-48 px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
+                                  <th className="w-20 px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">C. PROVEEDOR</th>
                                   <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">MARCA</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">MEDIDA</th>  
                                   <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-16">CANT.</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P. COMPRA</th>
                                   <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P.V. UNIT.</th>
-                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">COLOR</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P. VENTA MIN</th>
                                   <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-28">SUBTOTAL</th>
                                   <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">ACCIONES</th>
                                 </tr>
@@ -1151,17 +1180,22 @@ const handleRegistrarCredito = async () => {
                               <tbody>
                                 {itemsCreditoActivo.map((item, index) => (
                                   <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                    {/* Código */}
+                                    <td className="px-3 py-3 text-center">
+                                      <span className="text-sm text-gray-900 font-medium">
+                                        {item.codigoTienda || 'N/A'}
+                                      </span>
+                                    </td>
                                     {/* Nombre */}
                                     <td className="px-4 py-3">
                                       <div className="font-medium text-gray-900 text-sm">
                                         {item.nombreProducto}
                                       </div>
                                     </td>
-
                                     {/* Código */}
                                     <td className="px-3 py-3 text-center">
                                       <span className="text-sm text-gray-900 font-medium">
-                                        {item.codigoTienda || 'N/A'}
+                                        {item.codigoProveedor || 'N/A'}
                                       </span>
                                     </td>
 
@@ -1171,11 +1205,24 @@ const handleRegistrarCredito = async () => {
                                         {item.marca || 'Sin marca'}
                                       </span>
                                     </td>
+                                    {/* MEDIDA */}
+                                    <td className="px-3 py-3 text-center">
+                                      <span className="text-sm text-gray-700">
+                                        {item.medida || 'Sin marca'}
+                                      </span>
+                                    </td>
+                                    
 
                                     {/* Cantidad */}
                                     <td className="px-3 py-3 text-center">
                                       <span className="text-sm font-medium text-gray-900">
                                         {item.cantidad}
+                                      </span>
+                                    </td>
+                                   {/* Precio COMPRA */}
+                                    <td className="px-3 py-3 text-center">
+                                      <span className="text-sm font-medium text-gray-900">
+                                        S/. {parseFloat(item.precioCompraDefault || 0).toFixed(2)}
                                       </span>
                                     </td>
 
@@ -1185,13 +1232,13 @@ const handleRegistrarCredito = async () => {
                                         S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
                                       </span>
                                     </td>
-
-                                    {/* Color */}
+                                    {/* Precio VENTA MINIMO */}
                                     <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-600" title={item.color || item.descripcion || 'N/A'}>
-                                        {item.color || item.descripcion || "N/A"}
+                                      <span className="text-sm font-medium text-gray-900">
+                                        S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
                                       </span>
                                     </td>
+
 
                                     {/* Subtotal */}
                                     <td className="px-3 py-3 text-center">
@@ -1205,7 +1252,7 @@ const handleRegistrarCredito = async () => {
                                       <div className="flex justify-center space-x-2">
                                         <button
                                           onClick={() => handleEditItem(item)}
-                                          className="text-yellow-600 hover:text-yellow-800 p-1 rounded hover:bg-yellow-50 transition-colors"
+                                          className="text-purple-600 hover:text-purple-800 p-1 rounded hover:bg-purple-50 transition-colors"
                                           title="Editar"
                                         >
                                           <PencilIcon className="h-4 w-4" />
@@ -1226,11 +1273,11 @@ const handleRegistrarCredito = async () => {
                           </div>
 
                           {/* Total final */}
-                          <div className="bg-gradient-to-r from-yellow-600 to-yellow-700 text-white px-6 py-4 border-t border-gray-300">
+                          <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-4 border-t border-gray-300">
                             <div className="flex justify-between items-center">
                               <div>
                                 <h3 className="text-lg font-semibold">Total del Crédito</h3>
-                                <p className="text-yellow-100 text-sm">{itemsCreditoActivo.length} producto{itemsCreditoActivo.length !== 1 ? 's' : ''}</p>
+                                <p className="text-purple-100 text-sm">{itemsCreditoActivo.length} producto{itemsCreditoActivo.length !== 1 ? 's' : ''}</p>
                               </div>
                               <div className="text-right">
                                 <div className="text-3xl font-bold">
@@ -1252,147 +1299,168 @@ const handleRegistrarCredito = async () => {
 
       {/* Modal de Cantidad y Precio */}
       <Transition.Root show={showQuantityModal} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
-          </Transition.Child>
+  <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
+    <Transition.Child
+      as={Fragment}
+      enter="ease-out duration-300"
+      enterFrom="opacity-0"
+      enterTo="opacity-100"
+      leave="ease-in duration-200"
+      leaveFrom="opacity-100"
+      leaveTo="opacity-0"
+    >
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+    </Transition.Child>
 
-          <div className="fixed inset-0 z-50 overflow-y-auto">
-            <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-                enterTo="opacity-100 translate-y-0 sm:scale-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-                leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+          enterTo="opacity-100 translate-y-0 sm:scale-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+          leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+        >
+          <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
+            <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+              <button
+                type="button"
+                className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                onClick={() => setShowQuantityModal(false)}
               >
-                <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl sm:p-6">
-                  <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                    <button
-                      type="button"
-                      className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2"
-                      onClick={() => setShowQuantityModal(false)}
-                    >
-                      <span className="sr-only">Cerrar</span>
-                      <XMarkIcon className="h-6 w-6" aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  <div className="sm:flex sm:items-start">
-                    <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
-                      <CreditCardIcon className="h-6 w-6 text-yellow-600" aria-hidden="true" />
-                    </div>
-                    <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
-                      <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-                        Agregar Producto a Crédito
-                      </Dialog.Title>
-                      
-                      {selectedProduct && (
-                        <div className="mt-4">
-                          <div className="bg-gray-50 p-6 rounded-lg mb-6">
-                            <h4 className="font-semibold text-lg text-gray-900 mb-2">
-                              {selectedProduct.nombre}
-                            </h4>
-                            <div className="grid grid-cols-2 gap-4 text-sm">
-                              <div>
-                                <span className="font-medium text-gray-700">Código: </span>
-                                <span className="text-gray-600">{selectedProduct.codigoTienda}</span>
-                              </div>
-                              <div>
-                                <span className="font-medium text-gray-700">Marca: </span>
-                                <span className="text-gray-600">{selectedProduct.marca || 'Sin marca'}</span>
-                              </div>
-                              <div>
-                                <span className="font-medium text-gray-700">Stock disponible: </span>
-                                <span className="text-gray-600">{selectedProduct.stockActual || 0}</span>
-                              </div>
-                              <div>
-                                <span className="font-medium text-gray-700">Color: </span>
-                                <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-6">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-3">
-                                Cantidad
-                              </label>
-                              <input
-                                type="number"
-                                value={quantity}
-                                onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                                min="1"
-                                max={selectedProduct.stockActual || 999}
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-lg"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-3">
-                                Precio de Venta (S/.)
-                              </label>
-                              <input
-                                type="number"
-                                value={precioVenta}
-                                onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
-                                min="0"
-                                step="0.01"
-                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-lg"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg border border-yellow-200 mt-6">
-                            <div className="flex justify-between items-center">
-                              <span className="text-lg font-medium text-gray-700">Subtotal:</span>
-                              <span className="font-bold text-yellow-800 text-2xl">S/. {(quantity * precioVenta).toFixed(2)}</span>
-                            </div>
-                          </div>
-
-                          <div className="bg-red-50 p-3 rounded-lg border border-red-200 mt-4">
-                            <p className="text-sm text-red-700">
-                              ⚠️ <strong>Importante:</strong> Este producto se agregará al crédito temporal. El stock NO se reducirá hasta que registres el crédito.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-6 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
-                    <button
-                      type="button"
-                      className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-yellow-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                      onClick={handleAddProductToCredito}
-                      disabled={!creditoActivo || quantity <= 0 || precioVenta <= 0}
-                    >
-                      Agregar a Crédito
-                    </button>
-                    <button
-                      type="button"
-                      className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
-                      onClick={() => setShowQuantityModal(false)}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </Dialog.Panel>
-              </Transition.Child>
+                <span className="sr-only">Cerrar</span>
+                <XMarkIcon className="h-6 w-6" aria-hidden="true" />
+              </button>
             </div>
-          </div>
-        </Dialog>
-      </Transition.Root>
+
+            <div className="sm:flex sm:items-start">
+              <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-purple-100 sm:mx-0 sm:h-10 sm:w-10">
+                <CreditCardIcon className="h-6 w-6 text-purple-600" aria-hidden="true" />
+              </div>
+              <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
+                <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-gray-900 mb-4">
+                  Agregar Producto a Crédito
+                </Dialog.Title>
+                
+                {selectedProduct && (
+                  <div className="mt-4">
+                    <div className="bg-gray-50 p-6 rounded-lg mb-6">
+                      <h4 className="font-semibold text-lg text-gray-900 mb-2">
+                        {selectedProduct.nombre}
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium text-gray-700">Código: </span>
+                          <span className="text-gray-600">{selectedProduct.codigoTienda}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Marca: </span>
+                          <span className="text-gray-600">{selectedProduct.marca || 'Sin marca'}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Stock disponible: </span>
+                          <span className="text-gray-600">{selectedProduct.stockActual || 0}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Color: </span>
+                          <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
+                        </div>
+                      </div>
+                      
+                      {/* AGREGAR ESTA SECCIÓN - Mostrar precio de venta mínimo */}
+                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-yellow-800">
+                            Precio Venta Mínimo:
+                          </span>
+                          <span className="text-lg font-bold text-yellow-900">
+                            S/. {parseFloat(selectedProduct.precioVentaMinimo || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Cantidad
+                        </label>
+                        <input
+                          type="number"
+                          value={quantity}
+                          onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                          min="1"
+                          max={selectedProduct.stockActual || 999}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-lg"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
+                          Precio de Venta (S/.)
+                        </label>
+                        <input
+                          type="number"
+                          value={precioVenta}
+                          onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
+                          min="0"
+                          step="0.01"
+                          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-lg ${
+                            precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0)
+                              ? 'border-red-300 focus:ring-red-500 bg-red-50'
+                              : 'border-gray-300 focus:ring-purple-500'
+                          }`}
+                        />
+                        {precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0) && (
+                          <p className="text-red-600 text-sm mt-1 font-medium">
+                            ⚠️ Precio por debajo del mínimo permitido
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-6 rounded-lg border border-purple-200 mt-6">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-medium text-gray-700">Subtotal:</span>
+                        <span className="font-bold text-purple-800 text-2xl">S/. {(quantity * precioVenta).toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-red-50 p-3 rounded-lg border border-red-200 mt-4">
+                      <p className="text-sm text-red-700">
+                        ⚠️ <strong>Importante:</strong> Este producto se agregará al crédito temporal. El stock NO se reducirá hasta que registres el crédito.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-6 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
+              <button
+                type="button"
+                className="inline-flex w-full justify-center rounded-md bg-purple-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-purple-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                onClick={handleAddProductToCredito}
+                disabled={!creditoActivo || quantity <= 0 || precioVenta <= 0}
+              >
+                Agregar a Crédito
+              </button>
+              <button
+                type="button"
+                className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-6 py-3 text-base font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto transition-colors"
+                onClick={() => setShowQuantityModal(false)}
+              >
+                Cancelar
+              </button>
+            </div>
+          </Dialog.Panel>
+        </Transition.Child>
+      </div>
+    </div>
+  </Dialog>
+</Transition.Root>
 
 
       {/* Modal de Edición de Item - VERSIÓN MEJORADA */}
@@ -1434,8 +1502,8 @@ const handleRegistrarCredito = async () => {
             </div>
 
             <div className="sm:flex sm:items-start">
-              <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-100 sm:mx-0 sm:h-10 sm:w-10">
-                <PencilIcon className="h-6 w-6 text-yellow-600" aria-hidden="true" />
+              <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-purple-100 sm:mx-0 sm:h-10 sm:w-10">
+                <PencilIcon className="h-6 w-6 text-purple-600" aria-hidden="true" />
               </div>
               <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left w-full">
                 <Dialog.Title as="h3" className="text-xl font-semibold leading-6 text-gray-900 mb-4">
@@ -1489,10 +1557,10 @@ const handleRegistrarCredito = async () => {
                       </div>
                     </div>
 
-                    <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-6 rounded-lg border border-yellow-200 mt-6">
+                    <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-6 rounded-lg border border-purple-200 mt-6">
                       <div className="flex justify-between items-center">
                         <span className="text-lg font-medium text-gray-700">Nuevo Subtotal:</span>
-                        <span className="font-bold text-yellow-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
+                        <span className="font-bold text-purple-800 text-2xl">S/. {(editQuantity * editPrecio).toFixed(2)}</span>
                       </div>
                     </div>
                   </div>
@@ -1503,7 +1571,7 @@ const handleRegistrarCredito = async () => {
             <div className="mt-6 sm:mt-6 sm:flex sm:flex-row-reverse gap-3">
               <button
                 type="button"
-                className="inline-flex w-full justify-center rounded-md bg-yellow-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-yellow-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                className="inline-flex w-full justify-center rounded-md bg-purple-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-purple-500 sm:w-auto disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                 onClick={handleUpdateItem}
                 disabled={editQuantity <= 0 || editPrecio <= 0}
               >

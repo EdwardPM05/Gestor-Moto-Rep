@@ -6,6 +6,7 @@ import { db } from '../../lib/firebase';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { generarPDFVentaCompleta } from '../../components/utils/pdfGeneratorVentas';
+import { generarTicketVentaCompleta } from '../../components/utils/pdfGeneratorTicket';
 import {
   collection,
   query,
@@ -28,7 +29,10 @@ import {
   CreditCardIcon,
   TagIcon,
   CalendarIcon,
+    ChevronUpIcon,
+  ChevronDownIcon,
   PrinterIcon,
+  XMarkIcon ,
   FunnelIcon
 } from '@heroicons/react/24/outline';
 
@@ -469,6 +473,90 @@ const VentasIndexPage = () => {
     }
   };
   
+  const handleImprimirTicket = async (venta) => {
+  try {
+    // Mostrar indicador de carga específico para ticket
+    const loadingToast = document.createElement('div');
+    loadingToast.innerHTML = `
+      <div class="fixed top-4 right-4 bg-purple-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+        <div class="flex items-center">
+          <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+          Generando Ticket...
+        </div>
+      </div>
+    `;
+    document.body.appendChild(loadingToast);
+
+    // Obtener información del cliente si existe
+    let clienteData = null;
+    if (venta.clienteId && venta.clienteId !== 'general') {
+      try {
+        const clienteDoc = await getDoc(doc(db, 'clientes', venta.clienteId));
+        if (clienteDoc.exists()) {
+          clienteData = clienteDoc.data();
+        }
+      } catch (error) {
+        console.warn('No se pudo obtener información del cliente:', error);
+      }
+    }
+
+    // Generar Ticket PDF
+    await generarTicketVentaCompleta(venta.id, venta, clienteData);
+    
+    // Mostrar mensaje de éxito
+    document.body.removeChild(loadingToast);
+    
+    const successToast = document.createElement('div');
+    successToast.innerHTML = `
+      <div class="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+        <div class="flex items-center">
+          <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          Ticket generado exitosamente
+        </div>
+      </div>
+    `;
+    document.body.appendChild(successToast);
+    
+    setTimeout(() => {
+      if (document.body.contains(successToast)) {
+        document.body.removeChild(successToast);
+      }
+    }, 3000);
+
+  } catch (error) {
+    // Remover indicador de carga si existe
+    const loadingElements = document.querySelectorAll('div[class*="fixed top-4 right-4 bg-purple-500"]');
+    loadingElements.forEach(el => {
+      if (document.body.contains(el.parentElement)) {
+        document.body.removeChild(el.parentElement);
+      }
+    });
+
+    console.error('Error al generar Ticket:', error);
+    
+    // Mostrar mensaje de error
+    const errorToast = document.createElement('div');
+    errorToast.innerHTML = `
+      <div class="fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+        <div class="flex items-center">
+          <svg class="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          Error al generar Ticket
+        </div>
+      </div>
+    `;
+    document.body.appendChild(errorToast);
+    
+    setTimeout(() => {
+      if (document.body.contains(errorToast)) {
+        document.body.removeChild(errorToast);
+      }
+    }, 3000);
+  }
+};
   // 4. OPCIONAL: Si quieres un botón de impresión masiva, añade esto antes de tu tabla:
   const [selectedVentas, setSelectedVentas] = useState(new Set());
 
@@ -512,170 +600,10 @@ const VentasIndexPage = () => {
             </div>
           )}
 
-          {/* Panel de Filtros */}
-          <div className="mb-6 border border-gray-200 rounded-lg p-6 bg-gray-50">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                <FunnelIcon className="h-5 w-5 mr-2" />
-                Filtros
-              </h3>
-            <button 
-              onClick={clearFilters}
-              className="inline-flex items-center px-4 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 hover:text-red-800 transition-colors duration-200 border border-red-200"
-            >
-              <FunnelIcon className="h-4 w-4 mr-2" />
-              Limpiar filtros
-            </button>
-            </div>
-
-            {/* Contenedor de Botones, Fechas y Limitador */}
-            <div className="flex flex-wrap items-center gap-2 md:gap-4 justify-center md:justify-start mb-6">
-                        
-              {/* Botones de Filtro */}
-              <div className="flex space-x-2 flex-wrap">
-                <button
-                  onClick={() => handleFilterChange('all')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'all'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Todas
-                </button>
-                <button
-                  onClick={() => handleFilterChange('day')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'day'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Hoy
-                </button>
-                <button
-                  onClick={() => handleFilterChange('week')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'week'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Esta Semana
-                </button>
-                <button
-                  onClick={() => handleFilterChange('month')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'month'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Este Mes
-                </button>
-              </div>
-
-              {/* Selectores de Fecha */}
-              <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-2 mt-2 md:mt-0">
-                <DatePicker
-                  selected={startDate}
-                  onChange={(date) => {
-                    setStartDate(date);
-                    setFilterPeriod('custom');
-                  }}
-                  selectsStart
-                  startDate={startDate}
-                  endDate={endDate}
-                  placeholderText="Fecha de inicio"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                <DatePicker
-                  selected={endDate}
-                  onChange={(date) => {
-                    setEndDate(date);
-                    setFilterPeriod('custom');
-                  }}
-                  selectsEnd
-                  startDate={startDate}
-                  endDate={endDate}
-                  minDate={startDate}
-                  placeholderText="Fecha de fin"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>
-
-              {/* Selector de límite por página */}
-              <div className="flex-none min-w-[50px]">
-                <select
-                  id="limit-per-page"
-                  className="mt-0 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-[38px]"
-                  value={limitPerPage}
-                  onChange={(e) => {
-                    setLimitPerPage(Number(e.target.value));
-                  }}
-                >
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Filtros adicionales */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              {/* Filtro por Método de Pago - ACTUALIZADO */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Método de Pago
-                </label>
-                <select
-                  value={selectedMetodoPago}
-                  onChange={(e) => setSelectedMetodoPago(e.target.value)}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">Todos los métodos</option>
-                  <option value="efectivo">EFECTIVO</option>
-                  <option value="tarjeta">TARJETA</option>
-                  <option value="yape">YAPE</option>
-                  <option value="plin">PLIN</option>
-                  <option value="otro">OTRO</option>
-                </select>
-              </div>
-
-              {/* Filtro por Tipo de Venta */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Venta</label>
-                <select
-                  value={selectedTipoVenta}
-                  onChange={(e) => setSelectedTipoVenta(e.target.value)}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">Todos los tipos</option>
-                  <option value="directa">Directa</option>
-                  <option value="cotizacionAprobada">Cotización Aprobada</option>
-                  <option value="abono">Abono</option>
-                </select>
-              </div>
-
-              {/* Filtro por Estado */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-                <select
-                  value={selectedEstado}
-                  onChange={(e) => setSelectedEstado(e.target.value)}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">Todos los estados</option>
-                  <option value="completada">Completada</option>
-                  <option value="anulada">Anulada</option>
-                  <option value="pendiente">Pendiente</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Barra de búsqueda */}
-            <div className="flex justify-between items-center">
+{/* Panel de filtros reorganizado */}
+          <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+            {/* Barra de búsqueda y botones principales */}
+            <div className="flex justify-between items-center mb-4">
               <div className="relative flex-grow mr-4">
                 <input
                   type="text"
@@ -688,28 +616,164 @@ const VentasIndexPage = () => {
                   <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" fill="currentColor" />
                 </div>
               </div>
-              <button
-                onClick={() => router.push('/ventas/nueva')}
-                className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
-              >
-                <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
-                Nueva Venta Directa
-              </button>
-              {/* Boton de seleccionar para impresion de pdfs */}
-              {selectedVentas.size > 0 && (
+              
+              <div className="flex items-center space-x-3">
                 <button
-                  onClick={handleImprimirSeleccionadas}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out ml-2"
+                  onClick={() => router.push('/ventas/nueva')}
+                  className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
                 >
-                  <PrinterIcon className="-ml-1 mr-2 h-4 w-4" aria-hidden="true" />
-                  Imprimir Seleccionadas ({selectedVentas.size})
+                  <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
+                  Nueva Venta Directa
                 </button>
-              )}
+                
+                {selectedVentas.size > 0 && (
+                  <button
+                    onClick={handleImprimirSeleccionadas}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
+                  >
+                    <PrinterIcon className="-ml-1 mr-2 h-4 w-4" aria-hidden="true" />
+                    Imprimir Seleccionadas ({selectedVentas.size})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Línea de filtros compactos */}
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center space-x-4 flex-wrap">
+                {/* Botones de período */}
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleFilterChange('all')}
+                    className={`px-3 py-1 rounded text-sm font-medium ${
+                      filterPeriod === 'all'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    Todas
+                  </button>
+                  <button
+                    onClick={() => handleFilterChange('day')}
+                    className={`px-3 py-1 rounded text-sm font-medium ${
+                      filterPeriod === 'day'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    Hoy
+                  </button>
+                  <button
+                    onClick={() => handleFilterChange('week')}
+                    className={`px-3 py-1 rounded text-sm font-medium ${
+                      filterPeriod === 'week'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    Esta Semana
+                  </button>
+                  <button
+                    onClick={() => handleFilterChange('month')}
+                    className={`px-3 py-1 rounded text-sm font-medium ${
+                      filterPeriod === 'month'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+                    }`}
+                  >
+                    Este Mes
+                  </button>
+                </div>
+
+                {/* Selectores de fecha */}
+                <div className="flex space-x-2">
+                  <DatePicker
+                    selected={startDate}
+                    onChange={(date) => {
+                      setStartDate(date);
+                      setFilterPeriod('custom');
+                    }}
+                    selectsStart
+                    startDate={startDate}
+                    endDate={endDate}
+                    placeholderText="Fecha inicio"
+                    className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
+                  />
+                  <DatePicker
+                    selected={endDate}
+                    onChange={(date) => {
+                      setEndDate(date);
+                      setFilterPeriod('custom');
+                    }}
+                    selectsEnd
+                    startDate={startDate}
+                    endDate={endDate}
+                    minDate={startDate}
+                    placeholderText="Fecha fin"
+                    className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
+                  />
+                </div>
+
+                {/* Limitador por página */}
+                <select
+                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  value={limitPerPage}
+                  onChange={(e) => setLimitPerPage(Number(e.target.value))}
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+
+                {/* Filtros adicionales en la misma línea */}
+                <select
+                  value={selectedMetodoPago}
+                  onChange={(e) => setSelectedMetodoPago(e.target.value)}
+                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                >
+                  <option value="all">Método de Pago</option>
+                  <option value="efectivo">EFECTIVO</option>
+                  <option value="tarjeta">TARJETA</option>
+                  <option value="yape">YAPE</option>
+                  <option value="plin">PLIN</option>
+                  <option value="otro">OTRO</option>
+                </select>
+
+                <select
+                  value={selectedTipoVenta}
+                  onChange={(e) => setSelectedTipoVenta(e.target.value)}
+                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                >
+                  <option value="all">Tipo de Venta</option>
+                  <option value="directa">Directa</option>
+                  <option value="cotizacionAprobada">Cotización Aprobada</option>
+                  <option value="abono">Abono</option>
+                </select>
+
+                <select
+                  value={selectedEstado}
+                  onChange={(e) => setSelectedEstado(e.target.value)}
+                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                >
+                  <option value="all">Estado</option>
+                  <option value="completada">Completada</option>
+                  <option value="anulada">Anulada</option>
+                  <option value="pendiente">Pendiente</option>
+                </select>
+              </div>
+
+              <button 
+                onClick={clearFilters}
+                className="inline-flex items-center px-3 py-1 bg-red-50 text-red-700 rounded text-sm font-medium hover:bg-red-100 hover:text-red-800 transition-colors border border-red-200"
+              >
+                <XMarkIcon className="h-4 w-4 mr-1" />
+                Limpiar
+              </button>
             </div>
           </div>
 
 
-          
 
           {loading ? (
             <div className="flex justify-center items-center h-48">
@@ -834,6 +898,19 @@ const VentasIndexPage = () => {
                             disabled={venta.estado === 'anulada'}
                           >
                             <PrinterIcon className="h-5 w-5" />
+                          </button>
+                          {/* Botón Ticket */}
+                          <button
+                            onClick={() => handleImprimirTicket(venta)}
+                            className="text-purple-600 hover:text-purple-800 p-2 rounded-full hover:bg-purple-50 transition duration-150 ease-in-out"
+                            title="Imprimir Ticket de Venta"
+                            disabled={venta.estado === 'anulada'}
+                          >
+                            {/* Icono de ticket personalizado */}
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" 
+                                    d="M9 12h6m-6 4h6m2 5l-2-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v12l2 2h8z" />
+                            </svg>
                           </button>
                           {venta.estado === 'completada' && (
                             <button

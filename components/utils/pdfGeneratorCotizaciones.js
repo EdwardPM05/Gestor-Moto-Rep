@@ -1,22 +1,21 @@
-// utils/pdfGeneratorCotizaciones.js - VERSIÓN CORREGIDA
+// utils/pdfGeneratorCotizaciones.js - VERSIÓN CON ESTILO PROFESIONAL
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-// Función para cargar la fuente SimplifiedArabic (igual que en ventas)
-const loadCustomFont = async (pdf) => {
+// Función para cargar únicamente Courier PS (igual que ventas)
+const loadCourierPSFont = async (pdf) => {
     try {
-        const fontPaths = [
-            '/fonts/SimplifiedArabic.ttf',
-            '/fonts/Simplified Arabic.ttf', 
-            '/fonts/simplified-arabic.ttf',
-            '/fonts/SimplifiedArabic-Regular.ttf'
+        const courierPaths = [
+            '/fonts/Courier-PS-Regular.ttf',
+            '/fonts/CourierPS.ttf',
+            '/fonts/courier-ps.ttf',
+            '/fonts/CourierPS-Regular.ttf',
+            '/fonts/Courier PS.ttf'
         ];
         
-        let fontLoaded = false;
-        
-        for (const fontPath of fontPaths) {
+        for (const fontPath of courierPaths) {
             try {
-                console.log(`Intentando cargar fuente desde: ${fontPath}`);
+                console.log(`Intentando cargar Courier PS desde: ${fontPath}`);
                 const response = await fetch(fontPath);
                 
                 if (response.ok) {
@@ -32,12 +31,11 @@ const loadCustomFont = async (pdf) => {
                     try {
                         const fileName = fontPath.split('/').pop();
                         pdf.addFileToVFS(fileName, fontBase64);
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'normal');
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'bold');
+                        pdf.addFont(fileName, 'CourierPS', 'normal');
+                        pdf.addFont(fileName, 'CourierPS', 'bold');
                         
-                        console.log(`✅ Fuente SimplifiedArabic cargada exitosamente desde: ${fontPath}`);
-                        fontLoaded = true;
-                        break;
+                        console.log(`✅ Fuente CourierPS cargada exitosamente desde: ${fontPath}`);
+                        return 'CourierPS';
                         
                     } catch (fontRegisterError) {
                         console.warn(`Error registrando fuente ${fontPath}:`, fontRegisterError.message);
@@ -50,16 +48,14 @@ const loadCustomFont = async (pdf) => {
             }
         }
         
-        if (fontLoaded) {
-            return 'SimplifiedArabic';
-        } else {
-            throw new Error('No se pudo cargar ninguna variante de SimplifiedArabic');
-        }
+        // Si no se pudo cargar Courier PS, usar Courier por defecto
+        console.log('⚠️ No se pudo cargar Courier PS, usando Courier por defecto');
+        return 'courier';
         
     } catch (error) {
-        console.error('Error cargando SimplifiedArabic:', error.message);
-        console.log('🔄 Usando fuente Times como alternativa elegante');
-        return 'times';
+        console.error('Error cargando Courier PS:', error.message);
+        console.log('🔄 Usando Courier como alternativa');
+        return 'courier';
     }
 };
 
@@ -195,13 +191,13 @@ const getCotizacionItems = async (cotizacionId) => {
 const getMetodoPagoLabel = (metodo) => {
     const metodos = {
         efectivo: 'EFECTIVO',
-        tarjeta_credito: 'TARJETA DE CRÉDITO',
-        tarjeta_debito: 'TARJETA DE DÉBITO',
+        tarjeta_credito: 'TARJETA DE CREDITO',
+        tarjeta_debito: 'TARJETA DE DEBITO',
         tarjeta: 'TARJETA',
         yape: 'YAPE',
         plin: 'PLIN',
         transferencia: 'TRANSFERENCIA BANCARIA',
-        deposito: 'DEPÓSITO BANCARIO',
+        deposito: 'DEPOSITO BANCARIO',
         cheque: 'CHEQUE',
         mixto: 'PAGO MIXTO',
         otro: 'OTRO'
@@ -223,7 +219,118 @@ const getEstadoCotizacionLabel = (estado) => {
     return estados[estado] || estado?.toUpperCase() || 'PENDIENTE';
 };
 
-// FUNCIÓN PRINCIPAL CORREGIDA PARA GENERAR EL PDF DE COTIZACIÓN
+// Función para dibujar tabla con bordes completos estilo profesional (igual que ventas)
+const drawProfessionalTable = (pdf, data, headers, colWidths, startX, startY, fontName) => {
+    let currentY = startY;
+    const lineHeight = 6;
+    const padding = 1;
+    
+    // Calcular posiciones X para cada columna
+    const colPositions = [startX];
+    for (let i = 0; i < colWidths.length - 1; i++) {
+        colPositions.push(colPositions[i] + colWidths[i]);
+    }
+    
+    const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
+    
+    // Dibujar encabezados con fondo gris medio (igual que el total)
+    pdf.setFillColor(200, 200, 200); // Mismo gris que "TOTAL DE LA COTIZACION"
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.2); // Bordes más delgados
+    
+    // Rectángulo de fondo para encabezados
+    pdf.rect(startX, currentY, tableWidth, lineHeight, 'FD');
+    
+    // Texto de encabezados en negro y negrita
+    pdf.setTextColor(0, 0, 0); // Texto negro
+    pdf.setFont(fontName, 'bold');
+    pdf.setFontSize(7);
+    
+    // Dibujar líneas verticales y texto de encabezados
+    headers.forEach((header, index) => {
+        const x = colPositions[index];
+        const width = colWidths[index];
+        
+        // Línea vertical izquierda de cada columna
+        if (index === 0) {
+            pdf.line(x, currentY, x, currentY + lineHeight);
+        }
+        pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+        
+        // Texto del encabezado centrado
+        let displayText = header;
+        const maxWidth = width - (padding * 2);
+        
+        // Truncar texto si es muy largo
+        while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+            displayText = displayText.slice(0, -1);
+        }
+        
+        pdf.text(displayText, x + width/2, currentY + lineHeight/2 + 1, { align: 'center' });
+    });
+    
+    currentY += lineHeight;
+    
+    // Resetear color de texto para el contenido
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont(fontName, 'normal');
+    pdf.setFontSize(7);
+    
+    // Dibujar filas de datos
+    data.forEach((row, rowIndex) => {
+        // Alternar colores de fila para mejor legibilidad
+        if (rowIndex % 2 === 0) {
+            pdf.setFillColor(248, 248, 248); // Gris muy claro
+            pdf.rect(startX, currentY, tableWidth, lineHeight, 'F');
+        }
+        
+        // Dibujar bordes de la fila
+        pdf.rect(startX, currentY, tableWidth, lineHeight, 'S');
+        
+        row.forEach((cellData, colIndex) => {
+            const x = colPositions[colIndex];
+            const width = colWidths[colIndex];
+            
+            // Líneas verticales
+            pdf.line(x, currentY, x, currentY + lineHeight);
+            if (colIndex === row.length - 1) {
+                pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+            }
+            
+            // Contenido de la celda
+            let displayText = String(cellData || '');
+            const maxWidth = width - (padding * 2);
+            
+            // Truncar texto si es muy largo
+            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+                displayText = displayText.slice(0, -1);
+            }
+            
+            // Alineación según el tipo de contenido
+            let textAlign = 'left';
+            let textX = x + padding;
+            
+            // Centrar números de cantidad
+            if (colIndex === 6) { // CANT.
+                textAlign = 'center';
+                textX = x + width/2;
+            }
+            // Alinear a la derecha precios
+            else if (colIndex >= 7) { // P. UNITARIO y P. TOTAL
+                textAlign = 'right';
+                textX = x + width - padding;
+            }
+            
+            pdf.text(displayText, textX, currentY + lineHeight/2 + 1, { align: textAlign });
+        });
+        
+        currentY += lineHeight;
+    });
+    
+    return currentY;
+};
+
+// FUNCIÓN PRINCIPAL CORREGIDA PARA GENERAR EL PDF DE COTIZACIÓN CON ESTILO PROFESIONAL
 const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
     try {
         const { jsPDF } = await import('jspdf');
@@ -234,8 +341,8 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
             format: 'a4',
         });
         
-        // Cargar fuente personalizada
-        const fontName = await loadCustomFont(pdf);
+        // Cargar fuente Courier PS (igual que ventas)
+        const fontName = await loadCourierPSFont(pdf);
         
         const pageWidth = pdf.internal.pageSize.width;
         const pageHeight = pdf.internal.pageSize.height;
@@ -245,64 +352,67 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
         let currentY = 15;
 
         // =========================================================================
-        // ENCABEZADO: INFORMACIÓN DE LA EMPRESA Y COTIZACIÓN
+        // ENCABEZADO LIMPIO - DISTRIBUIDO EN DOS COLUMNAS SIN FONDO GRIS (IGUAL QUE VENTAS)
         // =========================================================================
 
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(12);
+        pdf.setTextColor(0, 0, 0);
         
-        // Título de la empresa (izquierda)
+        // Título de la empresa (izquierda) - TODO EN MAYÚSCULAS
         pdf.text('MOTORES & REPUESTOS SAC', margin, currentY);
         
-        // Número de cotización (derecha)
+        // Número de cotización (derecha) - TODO EN MAYÚSCULAS
         const numeroCotizacion = cotizacionData.numeroCotizacion || `COT-${cotizacionData.id?.slice(-8) || 'N/A'}`;
-        pdf.text(`COTIZACIÓN Nro. ${numeroCotizacion}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
+        pdf.text(`COTIZACION NRO. ${numeroCotizacion}`, pageWidth - margin, currentY, { align: 'right' });
+        currentY += 8;
 
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
         
-        // Detalles de la empresa (izquierda)
+        // COLUMNA IZQUIERDA - Información principal
         pdf.text('R.U.C: 20123456789', margin, currentY);
-        pdf.text('Email: motoresrepuestos@mail.com', margin, currentY + 4);
-        pdf.text('Dirección: Av. Los Motores 456, San Borja', margin, currentY + 8);
-        pdf.text('Teléfono: 999 888 777', margin, currentY + 12);
-        pdf.text('Cotización generada en tienda Av.Los Motores 456 San Borja', margin, currentY + 16);
-        currentY += 20;
+        pdf.text('EMAIL: MOTORESREPUESTOS@MAIL.COM', margin, currentY + 4);
+        pdf.text('COTIZACION GENERADA EN TIENDA AV.LOS MOTORES 456 SAN BORJA', margin, currentY + 8);
         
-        // INFORMACIÓN DE LA COTIZACIÓN CORREGIDA
+        // COLUMNA DERECHA - Información de contacto
+        pdf.text('DIRECCION: AV. LOS MOTORES 456, SAN BORJA', pageWidth / 2, currentY);
+        pdf.text('TELEFONO: 999 888 777', pageWidth / 2, currentY + 4);
+        
+        currentY += 18;
+        
+        // INFORMACIÓN DE LA COTIZACIÓN MEJORADA
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
         
         // CORREGIR EL MANEJO DE FECHAS
         const fechaCotizacion = formatFirestoreDate(cotizacionData.fechaCreacion);
         
-        pdf.text('FECHA DE COTIZACIÓN:', margin, currentY);
-        pdf.text(fechaCotizacion, margin + 40, currentY);
+        pdf.text('FECHA DE COTIZACION:', margin, currentY);
+        pdf.text(fechaCotizacion, margin + 35, currentY);
 
         pdf.text('ESTADO:', pageWidth / 2, currentY);
         pdf.text(getEstadoCotizacionLabel(cotizacionData.estado), pageWidth / 2 + 15, currentY);
         currentY += 5;
 
         // Método de pago preferido
-        pdf.text('MÉTODO DE PAGO:', margin, currentY);
+        pdf.text('METODO DE PAGO:', margin, currentY);
         const metodoPagoTexto = getMetodoPagoLabel(cotizacionData.metodoPago);
         pdf.text(metodoPagoTexto, margin + 35, currentY);
-        currentY += 5;
 
-        // Validez de la cotización
+        // Validez de la cotización en la misma línea
         if (cotizacionData.validezDias) {
-            pdf.text('VÁLIDA POR:', margin, currentY);
-            pdf.text(`${cotizacionData.validezDias} días`, margin + 25, currentY);
-            currentY += 5;
+            pdf.text('VALIDA POR:', pageWidth / 2, currentY);
+            pdf.text(`${cotizacionData.validezDias} DIAS`, pageWidth / 2 + 25, currentY);
         }
+        currentY += 5;
 
         // Línea divisora
         pdf.line(margin, currentY, pageWidth - margin, currentY);
         currentY += 5;
 
         // =========================================================================
-        // INFORMACIÓN DEL CLIENTE
+        // INFORMACIÓN DEL CLIENTE (IGUAL QUE VENTAS)
         // =========================================================================
 
         pdf.setFontSize(8);
@@ -313,7 +423,7 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
         const clienteNombre = clienteData ? 
             `${clienteData.nombre} ${clienteData.apellido || ''}` : 
             cotizacionData.clienteNombre || 'Cliente General';
-        pdf.text(clienteNombre, margin + 15, currentY);
+        pdf.text(clienteNombre.toUpperCase(), margin + 15, currentY);
         currentY += 5;
         
         if (clienteData && clienteData.dni) {
@@ -333,7 +443,7 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
                 pdf.setFont(fontName, 'bold');
                 pdf.text('EMPLEADO ASIGNADO:', margin, currentY);
                 pdf.setFont(fontName, 'normal');
-                pdf.text(empleadoData.nombreCompleto, margin + 40, currentY);
+                pdf.text(empleadoData.nombreCompleto.toUpperCase(), margin + 40, currentY);
                 currentY += 5;
             }
         }
@@ -342,7 +452,7 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
             pdf.setFont(fontName, 'bold');
             pdf.text('PLACA MOTO:', pageWidth / 2, currentY - 5);
             pdf.setFont(fontName, 'normal');
-            pdf.text(cotizacionData.placaMoto, pageWidth / 2 + 25, currentY - 5);
+            pdf.text(cotizacionData.placaMoto.toUpperCase(), pageWidth / 2 + 25, currentY - 5);
         }
 
         if (cotizacionData.observaciones) {
@@ -351,7 +461,7 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
             pdf.setFont(fontName, 'normal');
             // Dividir texto largo en múltiples líneas si es necesario
             const maxWidth = totalWidth - 30;
-            const lines = pdf.splitTextToSize(cotizacionData.observaciones, maxWidth);
+            const lines = pdf.splitTextToSize(cotizacionData.observaciones.toUpperCase(), maxWidth);
             pdf.text(lines, margin + 30, currentY);
             currentY += lines.length * 4;
         }
@@ -359,177 +469,84 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
         currentY += 5;
         
         // =========================================================================
-        // TABLA DE ITEMS
+        // TABLA PROFESIONAL CON BORDES COMPLETOS (IGUAL QUE VENTAS)
         // =========================================================================
 
         // Obtener items de la cotización
         const items = await getCotizacionItems(cotizacionData.id);
         
-        // Headers de la tabla
-        const tableHeaders = ['Cód. Tienda', 'Descripción', 'Color', 'Marca', 'Ubicación', 'Medida', 'Cant.', 'P. Unitario', 'P. Total'];
+        // Headers de la tabla - TODO EN MAYÚSCULAS
+        const tableHeaders = ['COD.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
         
-        // Anchos de columnas
+        // Anchos de columnas optimizados para el estilo profesional
         const colWidths = [
-            totalWidth * 0.12, // Cód. Tienda
-            totalWidth * 0.30, // Descripción
+            totalWidth * 0.10, // Código
+            totalWidth * 0.32, // Descripción
             totalWidth * 0.08, // Color
             totalWidth * 0.10, // Marca
-            totalWidth * 0.10, // Ubicación
+            totalWidth * 0.12, // Ubicación
             totalWidth * 0.08, // Medida
             totalWidth * 0.06, // Cant.
-            totalWidth * 0.08, // Precio Unitario
-            totalWidth * 0.08  // Precio Total
+            totalWidth * 0.07, // P.U.
+            totalWidth * 0.07  // P.T.
         ];
 
-        // Calcular posiciones X para cada columna
-        const colPositions = [margin];
-        for (let i = 0; i < colWidths.length - 1; i++) {
-            colPositions.push(colPositions[i] + colWidths[i]);
-        }
-
-        pdf.setFontSize(8);
-        pdf.setFont(fontName, 'bold');
-        
-        // Línea superior de la tabla
-        pdf.setDrawColor(0, 0, 0);
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 3;
-
-        // Encabezados de la tabla
-        tableHeaders.forEach((header, index) => {
-            const x = colPositions[index];
-            const maxWidth = colWidths[index] - 2;
-            
-            let displayText = header;
-            if (pdf.getTextWidth(displayText) > maxWidth) {
-                while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                    displayText = displayText.slice(0, -1);
-                }
-                displayText += '...';
-            }
-            
-            pdf.text(displayText, x + 1, currentY);
-        });
-        currentY += 3;
-
-        // Línea después de encabezados
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 3;
-        
-        pdf.setFont(fontName, 'normal');
+        // Preparar datos para la tabla
+        const tableData = [];
         let totalCotizacion = 0;
-
-        // Función para dibujar encabezados en nueva página
-        const drawTableHeaders = () => {
-            pdf.setFont(fontName, 'bold');
-            pdf.setFontSize(8);
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            
-            tableHeaders.forEach((header, index) => {
-                const x = colPositions[index];
-                const maxWidth = colWidths[index] - 2;
-                
-                let displayText = header;
-                if (pdf.getTextWidth(displayText) > maxWidth) {
-                    while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                        displayText = displayText.slice(0, -1);
-                    }
-                    displayText += '...';
-                }
-                
-                pdf.text(displayText, x + 1, currentY);
-            });
-            currentY += 3;
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            pdf.setFont(fontName, 'normal');
-        };
 
         // Procesar items
         for (const item of items) {
-            // Verificar si necesitamos nueva página
-            if (currentY > pageHeight - 50) {
-                pdf.addPage();
-                currentY = 15;
-                drawTableHeaders();
-            }
-            
             // Obtener los detalles del producto
             const productDetails = await getProductDetails(item.productoId);
             
-            // Datos del item
-            const itemData = [
-                productDetails.codigoTienda || item.codigoTienda || 'N/A',
-                item.nombreProducto || 'N/A',
-                productDetails.color || item.color || 'N/A',
-                productDetails.marca || item.marca || 'N/A',
-                productDetails.ubicacion || 'N/A',
-                productDetails.medida || 'N/A',
+            // Datos del item - TODO EN MAYÚSCULAS
+            const itemRow = [
+                (productDetails.codigoTienda || item.codigoTienda || 'N/A').toString().toUpperCase(),
+                (item.nombreProducto || 'N/A').toString().toUpperCase(),
+                (productDetails.color || item.color || 'N/A').toString().toUpperCase(),
+                (productDetails.marca || item.marca || 'N/A').toString().toUpperCase(),
+                (productDetails.ubicacion || 'N/A').toString().toUpperCase(),
+                (productDetails.medida || 'N/A').toString().toUpperCase(),
                 String(item.cantidad || 0),
-                `S/. ${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`,
-                `S/. ${parseFloat(item.subtotal || 0).toFixed(2)}`
+                `${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`,
+                `${parseFloat(item.subtotal || 0).toFixed(2)}`
             ];
             
-            // Alineaciones por columna
-            const alignments = ['left', 'left', 'left', 'left', 'left', 'left', 'center', 'right', 'right'];
-            
-            // Escribir datos de cada columna
-            itemData.forEach((data, index) => {
-                const x = colPositions[index];
-                const maxWidth = colWidths[index] - 2;
-                const alignment = alignments[index];
-                
-                let displayText = String(data);
-                if (pdf.getTextWidth(displayText) > maxWidth) {
-                    if (index === 1) { // Descripción - caso especial
-                        while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                            displayText = displayText.slice(0, -1);
-                        }
-                        displayText += '...';
-                    } else {
-                        while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
-                            displayText = displayText.slice(0, -1);
-                        }
-                    }
-                }
-                
-                // Calcular posición X según alineación
-                let textX = x + 1;
-                if (alignment === 'center') {
-                    textX = x + (colWidths[index] / 2);
-                } else if (alignment === 'right') {
-                    textX = x + colWidths[index] - 1;
-                }
-                
-                pdf.text(displayText, textX, currentY, { align: alignment });
-            });
-            
+            tableData.push(itemRow);
             totalCotizacion += parseFloat(item.subtotal || 0);
-            currentY += 5;
         }
 
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 8;
+        // Dibujar la tabla profesional
+        currentY = drawProfessionalTable(pdf, tableData, tableHeaders, colWidths, margin, currentY, fontName);
+        
+        currentY += 5;
 
         // =========================================================================
-        // TOTAL DE LA COTIZACIÓN
+        // FILA DE TOTAL CON ESTILO PROFESIONAL (IGUAL QUE VENTAS)
         // =========================================================================
         
-        pdf.setFontSize(10);
         pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(9);
         
-        // TOTAL DE LA COTIZACIÓN
-        pdf.setTextColor(0, 0, 0);
-        pdf.text('TOTAL DE LA COTIZACIÓN:', margin + 10, currentY);
-        pdf.text(`S/. ${(cotizacionData.totalCotizacion || totalCotizacion).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 8;
+        // Fondo para la fila de total
+        pdf.setFillColor(200, 200, 200);
+        pdf.setDrawColor(0, 0, 0);
+        pdf.rect(margin, currentY, totalWidth, 8, 'FD');
+        
+        // Texto "TOTAL DE LA COTIZACION"
+        pdf.text('TOTAL DE LA COTIZACION:', margin + 5, currentY + 5);
+        
+        // Monto total alineado a la derecha
+        pdf.text(`S/. ${(cotizacionData.totalCotizacion || totalCotizacion).toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+        
+        currentY += 15;
         
         // Resetear color del texto
         pdf.setTextColor(0, 0, 0);
 
         // =========================================================================
-        // INFORMACIÓN ADICIONAL DE COTIZACIÓN
+        // INFORMACIÓN ADICIONAL DE COTIZACIÓN (MEJORADA)
         // =========================================================================
         
         if (currentY > pageHeight - 50) {
@@ -539,25 +556,25 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
         
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(8);
-        pdf.text('TÉRMINOS Y CONDICIONES:', margin, currentY);
+        pdf.text('TERMINOS Y CONDICIONES:', margin, currentY);
         currentY += 6;
         
         pdf.setFont(fontName, 'normal');
         pdf.setFontSize(8);
-        pdf.text('• Esta cotización tiene una validez de 7 días desde la fecha de emisión.', margin + 5, currentY);
+        pdf.text('• ESTA COTIZACION TIENE UNA VALIDEZ DE 7 DIAS DESDE LA FECHA DE EMISION.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Los precios están sujetos a cambios sin previo aviso.', margin + 5, currentY);
+        pdf.text('• LOS PRECIOS ESTAN SUJETOS A CAMBIOS SIN PREVIO AVISO.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Para confirmar su pedido, comuníquese con nosotros.', margin + 5, currentY);
+        pdf.text('• PARA CONFIRMAR SU PEDIDO, COMUNIQUESE CON NOSOTROS.', margin + 5, currentY);
         currentY += 4;
         
         if (cotizacionData.validezDias) {
-            pdf.text(`• Esta cotización es válida por ${cotizacionData.validezDias} días.`, margin + 5, currentY);
+            pdf.text(`• ESTA COTIZACION ES VALIDA POR ${cotizacionData.validezDias} DIAS.`, margin + 5, currentY);
             currentY += 4;
         }
         
         if (cotizacionData.estado === 'confirmada') {
-            pdf.text('• Esta cotización ha sido CONFIRMADA y convertida en venta.', margin + 5, currentY);
+            pdf.text('• ESTA COTIZACION HA SIDO CONFIRMADA Y CONVERTIDA EN VENTA.', margin + 5, currentY);
             currentY += 4;
         }
         
@@ -566,7 +583,7 @@ const generarPDFCotizacion = async (cotizacionData, clienteData = null) => {
         // Pie de página
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
-        pdf.text(`Cotización generada el ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        pdf.text(`COTIZACION GENERADA EL ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
         
         // Guardar PDF
         const fechaSufijo = new Date().toISOString().split('T')[0];

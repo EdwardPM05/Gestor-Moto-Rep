@@ -4,11 +4,13 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../../../contexts/AuthContext';
 import Layout from '../../../components/Layout';
 import { db } from '../../../lib/firebase';
-import {
+import { 
   collection,
   getDocs,
   doc,
   addDoc,
+  getDoc,
+  updateDoc,
   serverTimestamp,
   query,
   orderBy,
@@ -194,6 +196,7 @@ const NuevoIngresoPage = () => {
       productoId: selectedProduct.id,
       nombreProducto: selectedProduct.nombre,
       marca: selectedProduct.marca || '',
+      medida: selectedProduct.medida || '',
       codigoTienda: selectedProduct.codigoTienda || '',
       color: selectedProduct.color || '',
       numeroLote: numeroLote.trim(),
@@ -260,7 +263,8 @@ const NuevoIngresoPage = () => {
     }
   };
 
-  const handleSubmit = async (e) => {
+
+const handleSubmit = async (e) => {
   e.preventDefault();
   setSaving(true);
   setError(null);
@@ -311,7 +315,13 @@ const NuevoIngresoPage = () => {
   });
 
   try {
+    console.log('Iniciando proceso de registro de ingreso...');
+    
+    // Crear fecha actual para usar en lugar de serverTimestamp en arrays
+    const fechaActual = new Date();
+    
     // 1. Crear el documento de ingreso principal
+    console.log('Creando documento de ingreso...');
     const ingresoDocRef = await addDoc(collection(db, 'ingresos'), {
       numeroBoleta: ingresoPrincipalData.numeroBoleta.trim() || null,
       proveedorId: ingresoPrincipalData.proveedorId,
@@ -325,76 +335,180 @@ const NuevoIngresoPage = () => {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    console.log('Ingreso creado con ID:', ingresoDocRef.id);
 
-    // 2. *** CAMBIO PRINCIPAL: Guardar lotes en colección principal ***
-    // Crear todos los lotes en la colección principal 'lotes'
-    const lotesPrincipalesPromises = itemsIngreso.map(item => 
-      addDoc(collection(db, 'lotes'), {
-        // Referencia al ingreso
-        ingresoId: ingresoDocRef.id,
-        
-        // Datos del producto
-        productoId: item.productoId,
-        nombreProducto: item.nombreProducto,
-        marca: item.marca || '',
-        codigoTienda: item.codigoTienda || '',
-        color: item.color || '',
-        
-        // Datos del lote
-        numeroLote: item.numeroLote,
-        cantidad: parseFloat(item.cantidad),
-        cantidadInicial: parseFloat(item.cantidad), // Para histórico
-        stockRestante: parseFloat(item.cantidad), // Stock disponible del lote
-        precioCompraUnitario: parseFloat(item.precioCompraUnitario),
-        subtotal: parseFloat(item.subtotal),
-        
-        // Fechas y estado
-        fechaIngreso: serverTimestamp(), // *** IMPORTANTE: Para ordenamiento FIFO ***
-        fechaVencimiento: item.fechaVencimiento || null,
-        estado: 'activo', // activo, agotado
-        
-        // Metadatos
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-    );
+    // 2. Crear lotes en colección principal
+    console.log('Creando lotes en colección principal...');
+    const lotesPrincipalesPromises = itemsIngreso.map(async (item, index) => {
+      try {
+        const loteRef = await addDoc(collection(db, 'lotes'), {
+          ingresoId: ingresoDocRef.id,
+          productoId: item.productoId,
+          nombreProducto: item.nombreProducto,
+          marca: item.marca || '',
+          codigoTienda: item.codigoTienda || '',
+          color: item.color || '',
+          numeroLote: item.numeroLote,
+          cantidad: parseFloat(item.cantidad),
+          cantidadInicial: parseFloat(item.cantidad),
+          stockRestante: parseFloat(item.cantidad),
+          precioCompraUnitario: parseFloat(item.precioCompraUnitario),
+          subtotal: parseFloat(item.subtotal),
+          proveedorId: ingresoPrincipalData.proveedorId,
+          proveedorNombre: proveedorSeleccionado.nombreEmpresa,
+          fechaIngreso: serverTimestamp(),
+          fechaVencimiento: item.fechaVencimiento || null,
+          estado: 'activo',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        console.log(`Lote ${index + 1} creado:`, loteRef.id);
+        return loteRef;
+      } catch (err) {
+        console.error(`Error creando lote ${index + 1}:`, err);
+        throw err;
+      }
+    });
 
-    // 3. También mantener la subcolección para compatibilidad con vistas existentes
-    const lotesSubcoleccionPromises = itemsIngreso.map(item => 
-      addDoc(collection(ingresoDocRef, 'lotes'), {
-        productoId: item.productoId,
-        nombreProducto: item.nombreProducto,
-        marca: item.marca || '',
-        codigoTienda: item.codigoTienda || '',
-        color: item.color || '',
-        numeroLote: item.numeroLote,
-        cantidad: parseFloat(item.cantidad),
-        cantidadInicial: parseFloat(item.cantidad),
-        stockRestante: parseFloat(item.cantidad),
-        precioCompraUnitario: parseFloat(item.precioCompraUnitario),
-        subtotal: parseFloat(item.subtotal),
-        fechaIngreso: serverTimestamp(), // También aquí por consistencia
-        fechaVencimiento: item.fechaVencimiento || null,
-        estado: 'activo',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-    );
+    // 3. Crear lotes en subcolección
+    console.log('Creando lotes en subcolección...');
+    const lotesSubcoleccionPromises = itemsIngreso.map(async (item, index) => {
+      try {
+        const loteRef = await addDoc(collection(ingresoDocRef, 'lotes'), {
+          productoId: item.productoId,
+          nombreProducto: item.nombreProducto,
+          marca: item.marca || '',
+          codigoTienda: item.codigoTienda || '',
+          color: item.color || '',
+          numeroLote: item.numeroLote,
+          cantidad: parseFloat(item.cantidad),
+          cantidadInicial: parseFloat(item.cantidad),
+          stockRestante: parseFloat(item.cantidad),
+          precioCompraUnitario: parseFloat(item.precioCompraUnitario),
+          subtotal: parseFloat(item.subtotal),
+          proveedorId: ingresoPrincipalData.proveedorId,
+          proveedorNombre: proveedorSeleccionado.nombreEmpresa,
+          fechaIngreso: serverTimestamp(),
+          fechaVencimiento: item.fechaVencimiento || null,
+          estado: 'activo',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        console.log(`Sublote ${index + 1} creado:`, loteRef.id);
+        return loteRef;
+      } catch (err) {
+        console.error(`Error creando sublote ${index + 1}:`, err);
+        throw err;
+      }
+    });
 
-    // 4. Ejecutar todas las promesas de creación de lotes en paralelo
-    console.log('Guardando lotes en colección principal...');
+    // Ejecutar creación de lotes
     await Promise.all(lotesPrincipalesPromises);
+    console.log('Todos los lotes principales creados');
     
-    console.log('Guardando lotes en subcolección (compatibilidad)...');
     await Promise.all(lotesSubcoleccionPromises);
+    console.log('Todos los sublotes creados');
 
-    console.log('Todos los lotes guardados exitosamente');
+    // 4. ACTUALIZAR PRODUCTOS - SECUENCIAL para mejor debugging
+    console.log('Iniciando actualización de productos...');
+    const productosAActualizar = [...new Set(itemsIngreso.map(item => item.productoId))];
+    console.log('Productos a actualizar:', productosAActualizar);
 
-    alert(`Ingreso registrado con éxito con ${itemsIngreso.length} lotes. Los lotes están disponibles para el sistema FIFO. El stock se actualizará al confirmar la recepción.`);
+    for (let i = 0; i < productosAActualizar.length; i++) {
+      const productoId = productosAActualizar[i];
+      console.log(`Procesando producto ${i + 1}/${productosAActualizar.length}: ${productoId}`);
+      
+      try {
+        const productoRef = doc(db, 'productos', productoId);
+        console.log('Obteniendo documento del producto...');
+        const productoDoc = await getDoc(productoRef);
+        
+        if (productoDoc.exists()) {
+          console.log('Producto encontrado');
+          const productoData = productoDoc.data();
+          console.log('Datos actuales del producto:', {
+            nombre: productoData.nombre,
+            proveedores: productoData.proveedores || 'No tiene',
+            proveedorPrincipal: productoData.proveedorPrincipal || 'No tiene'
+          });
+          
+          let proveedoresArray = Array.isArray(productoData.proveedores) ? productoData.proveedores : [];
+          console.log('Array actual de proveedores:', proveedoresArray);
+          
+          // Buscar si el proveedor ya existe
+          const proveedorIndex = proveedoresArray.findIndex(p => p.proveedorId === ingresoPrincipalData.proveedorId);
+          console.log('Índice del proveedor en array:', proveedorIndex);
+          
+          // Calcular datos del proveedor
+          const itemsDelProducto = itemsIngreso.filter(item => item.productoId === productoId);
+          const precioPromedio = itemsDelProducto.reduce((sum, item) => sum + parseFloat(item.precioCompraUnitario || 0), 0) / itemsDelProducto.length;
+          const cantidadTotal = itemsDelProducto.reduce((sum, item) => sum + parseFloat(item.cantidad || 0), 0);
+          
+          // CAMBIO IMPORTANTE: usar Date() en lugar de serverTimestamp() dentro del array
+          const proveedorInfo = {
+            proveedorId: ingresoPrincipalData.proveedorId,
+            nombreProveedor: proveedorSeleccionado.nombreEmpresa,
+            ultimoIngreso: fechaActual, // Usar Date() en lugar de serverTimestamp()
+            precioCompraPromedio: parseFloat(precioPromedio.toFixed(2)),
+            cantidadTotalIngresada: cantidadTotal
+          };
+          
+          console.log('Info del proveedor a guardar:', proveedorInfo);
+          
+          if (proveedorIndex >= 0) {
+            console.log('Actualizando proveedor existente');
+            const proveedorExistente = proveedoresArray[proveedorIndex];
+            proveedoresArray[proveedorIndex] = {
+              ...proveedorInfo,
+              cantidadTotalIngresada: (proveedorExistente.cantidadTotalIngresada || 0) + cantidadTotal
+            };
+          } else {
+            console.log('Agregando nuevo proveedor');
+            proveedoresArray.push(proveedorInfo);
+          }
+          
+          console.log('Nuevo array de proveedores:', proveedoresArray);
+          
+          // Preparar datos para actualizar
+          const updateData = {
+            proveedores: proveedoresArray,
+            proveedorPrincipal: ingresoPrincipalData.proveedorId,
+            proveedorPrincipalNombre: proveedorSeleccionado.nombreEmpresa,
+            ultimaFechaIngreso: serverTimestamp(), // serverTimestamp está OK aquí porque no está en array
+            updatedAt: serverTimestamp()
+          };
+          
+          console.log('Datos a actualizar:', updateData);
+          
+          // Actualizar el producto
+          await updateDoc(productoRef, updateData);
+          console.log('Producto actualizado exitosamente');
+          
+          // Verificar la actualización
+          const verificacion = await getDoc(productoRef);
+          if (verificacion.exists()) {
+            const datosVerificados = verificacion.data();
+            console.log('Verificación - Proveedores guardados:', datosVerificados.proveedores);
+            console.log('Verificación - Proveedor principal:', datosVerificados.proveedorPrincipal);
+          }
+          
+        } else {
+          console.warn(`Producto ${productoId} no encontrado`);
+        }
+      } catch (err) {
+        console.error(`Error al actualizar producto ${productoId}:`, err);
+        // Continuar con el siguiente producto en lugar de fallar todo
+      }
+    }
+
+    console.log('Proceso completado exitosamente');
+
+    alert(`Ingreso registrado exitosamente!\n\n${itemsIngreso.length} lotes creados\n${productosAActualizar.length} productos procesados\nTotal: S/. ${costoTotalIngreso.toFixed(2)}`);
+    
     router.push('/inventario/ingresos');
 
   } catch (err) {
-    console.error("Error al registrar ingreso:", err);
+    console.error("Error general en el proceso:", err);
     setError("Error al registrar el ingreso: " + err.message);
   } finally {
     setSaving(false);
@@ -568,51 +682,63 @@ const NuevoIngresoPage = () => {
                   </div>
 
                   {/* Dropdown de productos */}
-                  {searchTerm.trim() !== '' && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
-                      {isSearching ? (
-                        <div className="flex justify-center py-8">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                        </div>
-                      ) : filteredProductos.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">
-                          <p>No se encontraron productos</p>
-                        </div>
-                      ) : (
-                        <div className="max-h-80">
-                          {filteredProductos.slice(0, 20).map(producto => (
-                            <div
-                              key={producto.id}
-                              className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                              onClick={() => handleSelectProduct(producto)}
-                            >
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="font-medium text-gray-900 truncate">
-                                    {producto.nombre} ({producto.codigoTienda})
-                                  </h4>
-                                  <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Marca:</span> {producto.marca}
-                                  </p>
-                                  <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Stock Actual:</span> {producto.stockActual || 0}
-                                  </p>
-                                </div>
-                                <div className="text-right flex-shrink-0 ml-4">
-                                  <p className="font-semibold text-blue-600 text-lg">
-                                    S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
-                                  </p>
-                                  <p className="text-sm text-gray-500">
-                                    Precio Compra
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+{searchTerm.trim() !== '' && (
+  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+    {isSearching ? (
+      <div className="flex justify-center py-8">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+      </div>
+    ) : filteredProductos.length === 0 ? (
+      <div className="p-4 text-center text-gray-500">
+        <p>No se encontraron productos</p>
+      </div>
+    ) : (
+      <div className="max-h-80">
+        {filteredProductos.slice(0, 20).map(producto => (
+          <div
+            key={producto.id}
+            className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+            onClick={() => handleSelectProduct(producto)}
+          >
+            <div className="flex items-center justify-between gap-4">
+              {/* Información principal del producto */}
+              <div className="flex items-center gap-6 flex-1 min-w-0">
+                {/* Nombre y código */}
+                <div className="min-w-0 flex-shrink-0">
+                  <h4 className="font-medium text-gray-900 truncate text-sm">
+                    {producto.nombre} ({producto.codigoTienda})
+                  </h4>
+                </div>
+                
+                {/* Marca */}
+                <div className="flex-shrink-0">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
+                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
+                </div>
+                
+                {/* Stock */}
+                <div className="flex-shrink-0">
+                  <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
+                  <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
+                </div>
+              </div>
+              
+              {/* Precio */}
+              <div className="text-right flex-shrink-0">
+                <p className="font-bold text-blue-600 text-base">
+                  S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}
+                </p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                  Precio Compra
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
                 </div>
 
                 {/* Lotes del Ingreso */}
@@ -637,9 +763,11 @@ const NuevoIngresoPage = () => {
                           <table className="w-full border-collapse">
                             <thead className="bg-blue-50">
                               <tr className="border-b border-gray-300">
-                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. TIENDA</th>
+                                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CÓDIGO</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MEDIDA</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. COMPRA</th>
                                 <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
@@ -650,24 +778,31 @@ const NuevoIngresoPage = () => {
                             <tbody>
                               {itemsIngreso.map((item, index) => (
                                 <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {item.codigoTienda || 'N/A'}
+                                    </span>
+                                  </td>
                                   <td className="px-4 py-3">
-                                    <div className="font-medium text-gray-900 text-sm">
-                                      {item.nombreProducto}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      {item.marca} • {item.color || 'Sin color'}
-                                    </div>
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {item.nombreProducto || 'N/A'}
+                                    </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                       {item.numeroLote}
                                     </span>
                                   </td>
-                                  <td className="px-3 py-3 text-center">
+                                  <td className="px-4 py-3">
                                     <span className="text-sm text-gray-900 font-medium">
-                                      {item.codigoTienda || 'N/A'}
+                                      {item.marca || 'N/A'}
                                     </span>
                                   </td>
+                                  <td className="px-4 py-3">
+                                    <span className="text-sm text-gray-900 font-medium">
+                                      {item.medida || 'N/A'}
+                                    </span>
+                                  </td>                        
                                   <td className="px-3 py-3 text-center">
                                     <span className="text-sm font-medium text-gray-900">
                                       {item.cantidad}

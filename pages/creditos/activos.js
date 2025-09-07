@@ -414,7 +414,7 @@ const ClientesConCreditoActivos = () => {
                         <div className="flex flex-col sm:flex-row items-center gap-3">
                             <button
                                 onClick={() => router.push('/creditos/nueva')}
-                                className="w-full md:w-auto inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
+                                className="w-full md:w-auto inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition duration-150 ease-in-out"
                             >
                                 <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
                                 Nuevo Credito

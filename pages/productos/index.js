@@ -26,7 +26,9 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CurrencyDollarIcon,
-  ExclamationTriangleIcon
+  ExclamationTriangleIcon,
+  ChevronUpIcon,
+  ChevronDownIcon
 } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
 
@@ -46,6 +48,7 @@ const ProductosPage = () => {
 
   // Estados para los filtros
   const [filterNombre, setFilterNombre] = useState('');
+  const [filterCodigoProveedor, setFilterCodigoProveedor] = useState('');
   const [filterMarca, setFilterMarca] = useState('');
   const [filterCodigoTienda, setFilterCodigoTienda] = useState('');
   const [filterUbicacion, setFilterUbicacion] = useState('');
@@ -55,6 +58,10 @@ const ProductosPage = () => {
 
   const [filteredProductos, setFilteredProductos] = useState([]);
 
+  // Estados para ordenamiento
+  const [sortColumn, setSortColumn] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' o 'desc'
+
   // Estados para la paginación
   const [currentPage, setCurrentPage] = useState(1);
   const [productsPerPage, setProductsPerPage] = useState(10);
@@ -62,7 +69,6 @@ const ProductosPage = () => {
 
   // Estados para los modales
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
-  const [currentImageUrl, setCurrentImageUrl] = useState('');
   const [isProductDetailsModalOpen, setIsProductDetailsModalOpen] = useState(false);
   const [selectedProductForDetails, setSelectedProductForDetails] = useState(null);
   const [isProductModelsModalOpen, setIsProductModelsModalOpen] = useState(false);
@@ -72,6 +78,70 @@ const ProductosPage = () => {
   const [confirmMessage, setConfirmMessage] = useState('');
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
+
+  // Función para manejar el ordenamiento
+  const handleSort = (columnKey) => {
+    let newDirection = 'asc';
+    
+    // Si ya estamos ordenando por esta columna, cambiar dirección
+    if (sortColumn === columnKey) {
+      newDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    }
+    
+    setSortColumn(columnKey);
+    setSortDirection(newDirection);
+    
+    // Aplicar el ordenamiento
+    const sortedProducts = [...filteredProductos].sort((a, b) => {
+      let aValue = a[columnKey] || '';
+      let bValue = b[columnKey] || '';
+      
+      // Convertir a string para comparación consistente
+      aValue = aValue.toString().toLowerCase();
+      bValue = bValue.toString().toLowerCase();
+      
+      // Para código de tienda, intentar comparación numérica si es posible
+      if (columnKey === 'codigoTienda') {
+        // Extraer números del código para ordenamiento numérico
+        const aNumeric = aValue.match(/\d+/);
+        const bNumeric = bValue.match(/\d+/);
+        
+        if (aNumeric && bNumeric) {
+          const aNum = parseInt(aNumeric[0]);
+          const bNum = parseInt(bNumeric[0]);
+          
+          if (aNum !== bNum) {
+            return newDirection === 'asc' ? aNum - bNum : bNum - aNum;
+          }
+        }
+      }
+      
+      // Comparación alfabética estándar
+      if (aValue < bValue) {
+        return newDirection === 'asc' ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return newDirection === 'asc' ? 1 : -1;
+      }
+      return 0;
+    });
+    
+    setFilteredProductos(sortedProducts);
+    setCurrentPage(1); // Resetear a la primera página al ordenar
+  };
+
+  // Función para mostrar el icono de ordenamiento
+  const getSortIcon = (columnKey) => {
+    if (sortColumn !== columnKey) {
+      return null;
+    }
+    
+    return sortDirection === 'asc' ? (
+      <ChevronUpIcon className="h-4 w-4 inline ml-1" />
+    ) : (
+      <ChevronDownIcon className="h-4 w-4 inline ml-1" />
+    );
+  };
 
   // Función para recalcular el precio de compra de un producto basado en FIFO
   const recalcularPrecioCompraFIFO = async (productoId) => {
@@ -222,7 +292,7 @@ const ProductosPage = () => {
   // Lógica de filtrado combinada
   const applyFilters = () => {
     const lowerFilterNombre = filterNombre.toLowerCase();
-    const lowerFilterMarca = filterMarca.toLowerCase();
+    const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
     const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
     const lowerFilterUbicacion = filterUbicacion.toLowerCase();
     const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
@@ -231,17 +301,22 @@ const ProductosPage = () => {
 
     const filtered = productos.filter(producto => {
       const matchesNombre = producto.nombre.toLowerCase().includes(lowerFilterNombre);
-      const matchesMarca = (producto.marca && producto.marca.toLowerCase().includes(lowerFilterMarca)) || lowerFilterMarca === '';
+      const matchesCodigoProveedor = (producto.codigoProveedor && producto.codigoProveedor.toLowerCase().includes(lowerFilterCodigoProveedor)) || lowerFilterCodigoProveedor === '';
       const matchesCodigoTienda = producto.codigoTienda.toLowerCase().includes(lowerFilterCodigoTienda);
       const matchesUbicacion = (producto.ubicacion && producto.ubicacion.toLowerCase().includes(lowerFilterUbicacion)) || lowerFilterUbicacion === '';
       const matchesModelosCompatibles = (producto.modelosCompatiblesTexto && producto.modelosCompatiblesTexto.toLowerCase().includes(lowerFilterModelosCompatibles)) || lowerFilterModelosCompatibles === '';
       const matchesColor = (producto.color && producto.color.toLowerCase().includes(lowerFilterColor)) || lowerFilterColor === '';
       const matchesMedida = (producto.medida && producto.medida.toLowerCase().includes(lowerFilterMedida)) || lowerFilterMedida === '';
 
-      return matchesNombre && matchesCodigoTienda && matchesMarca && matchesUbicacion && matchesModelosCompatibles && matchesColor && matchesMedida;
+      return matchesNombre && matchesCodigoTienda && matchesCodigoProveedor && matchesUbicacion && matchesModelosCompatibles && matchesColor && matchesMedida;
     });
+    
     setFilteredProductos(filtered);
     setCurrentPage(1); // Resetear a la primera página al aplicar filtros
+    
+    // Limpiar el ordenamiento al aplicar filtros
+    setSortColumn(null);
+    setSortDirection('asc');
   };
 
   const handleSearchClick = () => {
@@ -250,7 +325,7 @@ const ProductosPage = () => {
 
   const handleClearFilters = () => {
     setFilterNombre('');
-    setFilterMarca('');
+    setFilterCodigoProveedor('');
     setFilterCodigoTienda('');
     setFilterUbicacion('');
     setFilterModelosCompatibles('');
@@ -258,6 +333,10 @@ const ProductosPage = () => {
     setFilterMedida('');
     setFilteredProductos(productos);
     setCurrentPage(1);
+    
+    // Limpiar el ordenamiento
+    setSortColumn(null);
+    setSortDirection('asc');
   };
 
   const handleDelete = async (productId) => {
@@ -284,14 +363,14 @@ const ProductosPage = () => {
   };
 
   // Funciones para los modales
-  const openImageModal = (imageUrl) => {
-    setCurrentImageUrl(imageUrl);
-    setIsImageModalOpen(true);
-  };
+  const openImageModal = (producto) => {
+  setSelectedProductForDetails(producto);
+  setIsImageModalOpen(true);
+};
   const closeImageModal = () => {
-    setIsImageModalOpen(false);
-    setCurrentImageUrl('');
-  };
+  setIsImageModalOpen(false);
+  setSelectedProductForDetails(null);
+};
 
   const openProductDetailsModal = (product) => {
     setSelectedProductForDetails(product);
@@ -372,18 +451,6 @@ const ProductosPage = () => {
                     placeholder="Nombre..."
                   />
                 </div>
-                {/* Marca */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterMarca" className="block text-sm font-medium text-gray-700">MARCA</label>
-                  <input
-                    type="text"
-                    id="filterMarca"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterMarca}
-                    onChange={(e) => setFilterMarca(e.target.value)}
-                    placeholder="Marca..."
-                  />
-                </div>
                 {/* Código Tienda */}
                 <div className="flex-1 min-w-[140px]">
                   <label htmlFor="filterCodigoTienda" className="block text-sm font-medium text-gray-700">C. TIENDA</label>
@@ -396,6 +463,19 @@ const ProductosPage = () => {
                     placeholder="Cód. Tienda..."
                   />
                 </div>
+                {/* PROVEEDOR */}
+                <div className="flex-1 min-w-[140px]">
+                  <label htmlFor="filterCodigoProveedor" className="block text-sm font-medium text-gray-700">C. PROVEEDOR</label>
+                  <input
+                    type="text"
+                    id="filterCodigoProveedor"
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    value={filterCodigoProveedor}
+                    onChange={(e) => setFilterCodigoProveedor(e.target.value)}
+                    placeholder="CodigoProveedor..."
+                  />
+                </div>
+                
                 {/* Color */}
                 <div className="flex-1 min-w-[140px]">
                   <label htmlFor="filterColor" className="block text-sm font-medium text-gray-700">COLOR</label>
@@ -522,15 +602,34 @@ const ProductosPage = () => {
               <table className="min-w-full border-collapse">
                 <thead className="sticky top-0 z-10 bg-gray-100">
                   <tr>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">NOMBRE</th>
+                    <th 
+                      scope="col" 
+                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
+                      onClick={() => handleSort('codigoTienda')}>
+                      C. TIENDA
+                      {getSortIcon('codigoTienda')}
+                    </th>
+                    <th 
+                      scope="col" 
+                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
+                      onClick={() => handleSort('nombre')}>
+                      NOMBRE
+                      {getSortIcon('nombre')}
+                    </th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MARCA</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">C. TIENDA</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">C. Proveedor</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COLOR</th>
+                    <th className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COLOR</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MEDIDA</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">UBICACION</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">STOCK</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO FIFO (S/.)</th>
+                    <th 
+                      scope="col" 
+                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center cursor-pointer hover:bg-gray-200 select-none"
+                      onClick={() => handleSort('stockActual')}
+                    >
+                      STOCK
+                      {getSortIcon('stockActual')}
+                    </th>
+                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA MIN (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
@@ -545,14 +644,14 @@ const ProductosPage = () => {
                     
                     return (
                       <tr key={producto.id} className={rowBgClass}>
+                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
+                          {producto.codigoTienda}
+                        </td>
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-left ${textColorClass}`}>
                           {producto.nombre}
                         </td>
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
                           {producto.marca || 'N/A'}
-                        </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
-                          {producto.codigoTienda}
                         </td>
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-left ${textColorClass}`}>
                           {producto.codigoProveedor}
@@ -590,17 +689,10 @@ const ProductosPage = () => {
                         <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-left text-sm font-medium">
                           <div className="flex items-center space-x-1 justify-center">
                             <button
-                              onClick={() => recalcularProductoEspecifico(producto.id)}
-                              className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-gray-100"
-                              title="Recalcular precio FIFO de este producto"
-                            >
-                              <CurrencyDollarIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                              onClick={() => openImageModal(producto.imageUrl)}
+                              onClick={() => openImageModal(producto)}
                               className="text-gray-600 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100"
-                              title="Ver Imagen"
-                              disabled={!producto.imageUrl}
+                              title="Ver Imágenes"
+                              disabled={!producto.imageUrl && (!producto.imageUrls || producto.imageUrls.length === 0)}
                             >
                               <PhotoIcon className="h-5 w-5" />
                             </button>
@@ -671,7 +763,13 @@ const ProductosPage = () => {
       </div>
 
       {/* Modales */}
-      <ImageModal imageUrl={currentImageUrl} onClose={closeImageModal} />
+      {isImageModalOpen && (
+        <ImageModal 
+          imageUrl={selectedProductForDetails?.imageUrl} 
+          imageUrls={selectedProductForDetails?.imageUrls} 
+          onClose={closeImageModal} 
+        />
+      )}
       <ProductDetailsModal isOpen={isProductDetailsModalOpen} onClose={closeProductDetailsModal} product={selectedProductForDetails} />
       <ProductModelsModal isOpen={isProductModelsModalOpen} onClose={closeProductModelsModal} product={selectedProductForModels} />
       <ConfirmModal isOpen={isConfirmModalOpen} onClose={() => setIsConfirmModalOpen(false)} onConfirm={confirmAction} message={confirmMessage} />

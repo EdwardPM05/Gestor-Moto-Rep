@@ -1,49 +1,41 @@
-// utils/pdfGenerator.js
+// utils/pdfGenerator.js - VERSIÓN CON ESTILO PROFESIONAL
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-// Función para cargar la fuente SimplifiedArabic
-const loadCustomFont = async (pdf) => {
+// Función para cargar únicamente Courier PS (consistente con otros generadores)
+const loadCourierPSFont = async (pdf) => {
     try {
-        // Intentar diferentes rutas y nombres de archivo
-        const fontPaths = [
-            '/fonts/SimplifiedArabic.ttf',
-            '/fonts/Simplified Arabic.ttf', 
-            '/fonts/simplified-arabic.ttf',
-            '/fonts/SimplifiedArabic-Regular.ttf'
+        const courierPaths = [
+            '/fonts/Courier-PS-Regular.ttf',
+            '/fonts/CourierPS.ttf',
+            '/fonts/courier-ps.ttf',
+            '/fonts/CourierPS-Regular.ttf',
+            '/fonts/Courier PS.ttf'
         ];
         
-        let fontLoaded = false;
-        
-        for (const fontPath of fontPaths) {
+        for (const fontPath of courierPaths) {
             try {
-                console.log(`Intentando cargar fuente desde: ${fontPath}`);
+                console.log(`Intentando cargar Courier PS desde: ${fontPath}`);
                 const response = await fetch(fontPath);
                 
                 if (response.ok) {
                     const fontData = await response.arrayBuffer();
                     
-                    // Verificar que el ArrayBuffer no esté vacío
                     if (fontData.byteLength === 0) {
                         console.warn(`Archivo de fuente vacío: ${fontPath}`);
                         continue;
                     }
                     
-                    // Convertir a base64
                     const fontBase64 = arrayBufferToBase64(fontData);
                     
-                    // Intentar registrar la fuente
                     try {
                         const fileName = fontPath.split('/').pop();
                         pdf.addFileToVFS(fileName, fontBase64);
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'normal');
+                        pdf.addFont(fileName, 'CourierPS', 'normal');
+                        pdf.addFont(fileName, 'CourierPS', 'bold');
                         
-                        // Usar la misma fuente para bold si no tenemos una versión separada
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'bold');
-                        
-                        console.log(`✅ Fuente SimplifiedArabic cargada exitosamente desde: ${fontPath}`);
-                        fontLoaded = true;
-                        break;
+                        console.log(`✅ Fuente CourierPS cargada exitosamente desde: ${fontPath}`);
+                        return 'CourierPS';
                         
                     } catch (fontRegisterError) {
                         console.warn(`Error registrando fuente ${fontPath}:`, fontRegisterError.message);
@@ -56,16 +48,14 @@ const loadCustomFont = async (pdf) => {
             }
         }
         
-        if (fontLoaded) {
-            return 'SimplifiedArabic';
-        } else {
-            throw new Error('No se pudo cargar ninguna variante de SimplifiedArabic');
-        }
+        // Si no se pudo cargar Courier PS, usar Courier por defecto
+        console.log('⚠️ No se pudo cargar Courier PS, usando Courier por defecto');
+        return 'courier';
         
     } catch (error) {
-        console.error('Error cargando SimplifiedArabic:', error.message);
-        console.log('🔄 Usando fuente Times como alternativa elegante');
-        return 'times'; // Fallback más elegante que helvetica
+        console.error('Error cargando Courier PS:', error.message);
+        console.log('🔄 Usando Courier como alternativa');
+        return 'courier';
     }
 };
 
@@ -113,7 +103,136 @@ const getProductDetails = async (productoId) => {
     }
 };
 
-// Función para generar el PDF con un diseño de cotización ACTUALIZADA CON ABONOS
+// Función para obtener etiqueta del método de pago
+const getMetodoPagoLabel = (metodo) => {
+    const metodos = {
+        efectivo: 'EFECTIVO',
+        tarjeta_credito: 'TARJETA DE CREDITO',
+        tarjeta_debito: 'TARJETA DE DEBITO',
+        tarjeta: 'TARJETA',
+        yape: 'YAPE',
+        plin: 'PLIN',
+        transferencia: 'TRANSFERENCIA BANCARIA',
+        deposito: 'DEPOSITO BANCARIO',
+        cheque: 'CHEQUE',
+        mixto: 'PAGO MIXTO',
+        otro: 'OTRO'
+    };
+    return metodos[metodo?.toLowerCase()] || metodo?.toUpperCase() || 'N/A';
+};
+
+// Función para dibujar tabla con bordes completos estilo profesional
+const drawProfessionalTable = (pdf, data, headers, colWidths, startX, startY, fontName) => {
+    let currentY = startY;
+    const lineHeight = 6;
+    const padding = 1;
+    
+    // Calcular posiciones X para cada columna
+    const colPositions = [startX];
+    for (let i = 0; i < colWidths.length - 1; i++) {
+        colPositions.push(colPositions[i] + colWidths[i]);
+    }
+    
+    const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
+    
+    // Dibujar encabezados con fondo gris medio
+    pdf.setFillColor(200, 200, 200);
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.2);
+    
+    // Rectángulo de fondo para encabezados
+    pdf.rect(startX, currentY, tableWidth, lineHeight, 'FD');
+    
+    // Texto de encabezados en negro y negrita
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont(fontName, 'bold');
+    pdf.setFontSize(7);
+    
+    // Dibujar líneas verticales y texto de encabezados
+    headers.forEach((header, index) => {
+        const x = colPositions[index];
+        const width = colWidths[index];
+        
+        // Línea vertical izquierda de cada columna
+        if (index === 0) {
+            pdf.line(x, currentY, x, currentY + lineHeight);
+        }
+        pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+        
+        // Texto del encabezado centrado
+        let displayText = header;
+        const maxWidth = width - (padding * 2);
+        
+        // Truncar texto si es muy largo
+        while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+            displayText = displayText.slice(0, -1);
+        }
+        
+        pdf.text(displayText, x + width/2, currentY + lineHeight/2 + 1, { align: 'center' });
+    });
+    
+    currentY += lineHeight;
+    
+    // Resetear color de texto para el contenido
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont(fontName, 'normal');
+    pdf.setFontSize(7);
+    
+    // Dibujar filas de datos
+    data.forEach((row, rowIndex) => {
+        // Alternar colores de fila para mejor legibilidad
+        if (rowIndex % 2 === 0) {
+            pdf.setFillColor(248, 248, 248);
+            pdf.rect(startX, currentY, tableWidth, lineHeight, 'F');
+        }
+        
+        // Dibujar bordes de la fila
+        pdf.rect(startX, currentY, tableWidth, lineHeight, 'S');
+        
+        row.forEach((cellData, colIndex) => {
+            const x = colPositions[colIndex];
+            const width = colWidths[colIndex];
+            
+            // Líneas verticales
+            pdf.line(x, currentY, x, currentY + lineHeight);
+            if (colIndex === row.length - 1) {
+                pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+            }
+            
+            // Contenido de la celda
+            let displayText = String(cellData || '');
+            const maxWidth = width - (padding * 2);
+            
+            // Truncar texto si es muy largo
+            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+                displayText = displayText.slice(0, -1);
+            }
+            
+            // Alineación según el tipo de contenido
+            let textAlign = 'left';
+            let textX = x + padding;
+            
+            // Centrar números de cantidad
+            if (colIndex === 6) { // CANT.
+                textAlign = 'center';
+                textX = x + width/2;
+            }
+            // Alinear a la derecha precios
+            else if (colIndex >= 7) { // P. UNITARIO y P. TOTAL
+                textAlign = 'right';
+                textX = x + width - padding;
+            }
+            
+            pdf.text(displayText, textX, currentY + lineHeight/2 + 1, { align: textAlign });
+        });
+        
+        currentY += lineHeight;
+    });
+    
+    return currentY;
+};
+
+// Función para generar el PDF con un diseño de crédito profesional
 const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
     try {
         const { jsPDF } = await import('jspdf');
@@ -124,8 +243,8 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
             format: 'a4',
         });
         
-        // Cargar fuente personalizada
-        const fontName = await loadCustomFont(pdf);
+        // Cargar fuente Courier PS
+        const fontName = await loadCourierPSFont(pdf);
         
         const pageWidth = pdf.internal.pageSize.width;
         const pageHeight = pdf.internal.pageSize.height;
@@ -135,33 +254,38 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
         let currentY = 15;
 
         // =========================================================================
-        // ENCABEZADO: INFORMACIÓN DE LA EMPRESA, CRÉDITO Y VENDEDOR
+        // ENCABEZADO LIMPIO - DISTRIBUIDO EN DOS COLUMNAS SIN FONDO GRIS
         // =========================================================================
 
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(12);
+        pdf.setTextColor(0, 0, 0);
         
-        // Título de la empresa (izquierda)
+        // Título de la empresa (izquierda) - TODO EN MAYÚSCULAS
         pdf.text('MOTORES & REPUESTOS SAC', margin, currentY);
         
-        // Número de crédito (derecha) - modificado para incluir período si aplica
-        const tituloReporte = periodo ? `REPORTE CRÉDITOS - ${periodo.toUpperCase()}` : `CRÉDITO Nro. ${creditos[0]?.numeroCredito || 'N/A'}`;
+        // Número de crédito o reporte (derecha) - TODO EN MAYÚSCULAS
+        const tituloReporte = periodo ? 
+            `REPORTE CREDITOS - ${periodo.toUpperCase()}` : 
+            `CREDITO NRO. ${creditos[0]?.numeroCredito || 'N/A'}`;
         pdf.text(tituloReporte, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
+        currentY += 8;
 
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
         
-        // Detalles de la empresa (izquierda)
+        // COLUMNA IZQUIERDA - Información principal
         pdf.text('R.U.C: 20123456789', margin, currentY);
-        pdf.text('Email: motoresrepuestos@mail.com', margin, currentY + 4);
-        pdf.text('Dirección: Av. Los Motores 456, San Borja', margin, currentY + 8);
-        pdf.text('Teléfono: 999 888 777', margin, currentY + 12);
-        pdf.text('Credito realizado en tienda Av.Los Motores 456 San Borja', margin, currentY + 16);
-        currentY += 20;
+        pdf.text('EMAIL: MOTORESREPUESTOS@MAIL.COM', margin, currentY + 4);
+        pdf.text('CREDITO REALIZADO EN TIENDA AV.LOS MOTORES 456 SAN BORJA', margin, currentY + 8);
         
-
-        // Información de la cotización (abajo del encabezado)
+        // COLUMNA DERECHA - Información de contacto
+        pdf.text('DIRECCION: AV. LOS MOTORES 456, SAN BORJA', pageWidth / 2, currentY);
+        pdf.text('TELEFONO: 999 888 777', pageWidth / 2, currentY + 4);
+        
+        currentY += 18;
+        
+        // Información del crédito
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
         
@@ -169,14 +293,11 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
             creditos[0].fechaCreacion.toDate().toLocaleDateString('es-PE') : 
             new Date().toLocaleDateString('es-PE');
         
-        pdf.text('FECHA DE CREACIÓN:', margin, currentY);
-        pdf.setFont(fontName, 'normal');
-        pdf.text(fechaCreacion, margin + 33, currentY);
+        pdf.text('FECHA DE CREACION:', margin, currentY);
+        pdf.text(fechaCreacion, margin + 35, currentY);
 
-        pdf.setFont(fontName, 'normal');
         pdf.text('FORMA DE PAGO:', pageWidth / 2, currentY);
-        pdf.setFont(fontName, 'normal');
-        pdf.text('  Todos los medios de pago', pageWidth / 2 + 25, currentY);
+        pdf.text('TODOS LOS MEDIOS DE PAGO', pageWidth / 2 + 30, currentY);
         currentY += 5;
 
         // Línea divisora
@@ -191,7 +312,7 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
         pdf.setFont(fontName, 'bold');
         pdf.text('CLIENTE:', margin, currentY);
         pdf.setFont(fontName, 'normal');
-        pdf.text(`${cliente.nombre} ${cliente.apellido || ''}`, margin + 15, currentY);
+        pdf.text(`${cliente.nombre} ${cliente.apellido || ''}`.toUpperCase(), margin + 15, currentY);
         currentY += 5;
         
         pdf.setFont(fontName, 'bold');
@@ -201,291 +322,175 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
         currentY += 5;
         
         // =========================================================================
-        // TABLA DE ITEMS - CORREGIDA LA ALINEACIÓN
+        // TABLA PROFESIONAL CON BORDES COMPLETOS
         // =========================================================================
 
-        // Headers de la tabla
-        const tableHeaders = ['Cód. Tienda', 'Descripción', 'Color', 'Marca', 'Ubicación', 'Medida', 'Cant.', 'P. Unitario', 'P. Total'];
+        // Headers de la tabla - TODO EN MAYÚSCULAS
+        const tableHeaders = ['COD.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
         
-        // Anchos de columnas ajustados
+        // Anchos de columnas optimizados para el estilo profesional
         const colWidths = [
-            totalWidth * 0.12, // Cód. Tienda
-            totalWidth * 0.30, // Descripción - más ancho para texto largo
+            totalWidth * 0.10, // Código
+            totalWidth * 0.32, // Descripción
             totalWidth * 0.08, // Color
             totalWidth * 0.10, // Marca
-            totalWidth * 0.10, // Ubicación
+            totalWidth * 0.12, // Ubicación
             totalWidth * 0.08, // Medida
             totalWidth * 0.06, // Cant.
-            totalWidth * 0.08, // Precio Unitario
-            totalWidth * 0.08  // Precio Total
+            totalWidth * 0.07, // P.U.
+            totalWidth * 0.07  // P.T.
         ];
 
-        // Calcular posiciones X para cada columna
-        const colPositions = [margin];
-        for (let i = 0; i < colWidths.length - 1; i++) {
-            colPositions.push(colPositions[i] + colWidths[i]);
-        }
-
-        pdf.setFontSize(8);
-        pdf.setFont(fontName, 'bold');
-        
-        // Línea superior de la tabla
-        pdf.setDrawColor(0, 0, 0);
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 3;
-
-        // Encabezados de la tabla
-        tableHeaders.forEach((header, index) => {
-            const x = colPositions[index];
-            const maxWidth = colWidths[index] - 2; // Dejar margen interno
-            
-            // Truncar texto si es muy largo para el encabezado
-            let displayText = header;
-            if (pdf.getTextWidth(displayText) > maxWidth) {
-                while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                    displayText = displayText.slice(0, -1);
-                }
-                displayText += '...';
-            }
-            
-            pdf.text(displayText, x + 1, currentY);
-        });
-        currentY += 3;
-
-        // Línea después de encabezados
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 3;
-        
-        pdf.setFont(fontName, 'normal');
+        // Preparar datos para la tabla
+        const tableData = [];
         let totalOriginalCredito = 0;
-
-        // Función para dibujar encabezados en nueva página
-        const drawTableHeaders = () => {
-            pdf.setFont(fontName, 'bold');
-            pdf.setFontSize(8);
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            
-            tableHeaders.forEach((header, index) => {
-                const x = colPositions[index];
-                const maxWidth = colWidths[index] - 2;
-                
-                let displayText = header;
-                if (pdf.getTextWidth(displayText) > maxWidth) {
-                    while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                        displayText = displayText.slice(0, -1);
-                    }
-                    displayText += '...';
-                }
-                
-                pdf.text(displayText, x + 1, currentY);
-            });
-            currentY += 3;
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            pdf.setFont(fontName, 'normal');
-        };
 
         // Procesar items
         for (const credito of creditos) {
             if (credito.items && credito.items.length > 0) {
                 for (const item of credito.items) {
-                    // Verificar si necesitamos nueva página
-                    if (currentY > pageHeight - 50) {
-                        pdf.addPage();
-                        currentY = 15;
-                        drawTableHeaders();
-                    }
-                    
                     // Obtener los detalles del producto
                     const productDetails = await getProductDetails(item.productoId);
                     
-                    // Datos del item
-                    const itemData = [
-                        productDetails.codigoTienda || 'N/A',
-                        item.nombreProducto || 'N/A',
-                        productDetails.color || 'N/A',
-                        productDetails.marca || 'N/A',
-                        productDetails.ubicacion || 'N/A',
-                        productDetails.medida || 'N/A',
+                    // Datos del item - TODO EN MAYÚSCULAS
+                    const itemRow = [
+                        (productDetails.codigoTienda || 'N/A').toString().toUpperCase(),
+                        (item.nombreProducto || 'N/A').toString().toUpperCase(),
+                        (productDetails.color || 'N/A').toString().toUpperCase(),
+                        (productDetails.marca || 'N/A').toString().toUpperCase(),
+                        (productDetails.ubicacion || 'N/A').toString().toUpperCase(),
+                        (productDetails.medida || 'N/A').toString().toUpperCase(),
                         String(item.cantidad || 0),
-                        `S/. ${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`,
-                        `S/. ${parseFloat(item.subtotal || 0).toFixed(2)}`
+                        `${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`,
+                        `${parseFloat(item.subtotal || 0).toFixed(2)}`
                     ];
                     
-                    // Alineaciones por columna
-                    const alignments = ['left', 'left', 'left', 'left', 'left', 'left', 'center', 'right', 'right'];
-                    
-                    // Escribir datos de cada columna
-                    itemData.forEach((data, index) => {
-                        const x = colPositions[index];
-                        const maxWidth = colWidths[index] - 2; // Margen interno
-                        const alignment = alignments[index];
-                        
-                        // Truncar texto si es muy largo
-                        let displayText = String(data);
-                        if (pdf.getTextWidth(displayText) > maxWidth) {
-                            if (index === 1) { // Descripción - caso especial
-                                while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                                    displayText = displayText.slice(0, -1);
-                                }
-                                displayText += '...';
-                            } else {
-                                while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
-                                    displayText = displayText.slice(0, -1);
-                                }
-                            }
-                        }
-                        
-                        // Calcular posición X según alineación
-                        let textX = x + 1; // Margen izquierdo por defecto
-                        if (alignment === 'center') {
-                            textX = x + (colWidths[index] / 2);
-                        } else if (alignment === 'right') {
-                            textX = x + colWidths[index] - 1; // Margen derecho
-                        }
-                        
-                        pdf.text(displayText, textX, currentY, { align: alignment });
-                    });
-                    
+                    tableData.push(itemRow);
                     totalOriginalCredito += parseFloat(item.subtotal || 0);
-                    currentY += 5;
                 }
             }
         }
 
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 8;
+        // Dibujar la tabla profesional
+        currentY = drawProfessionalTable(pdf, tableData, tableHeaders, colWidths, margin, currentY, fontName);
+        
+        currentY += 5;
 
         // =========================================================================
-        // SECCIÓN DE DESGLOSE FINANCIERO (NUEVA)
+        // FILA DE TOTAL CON ESTILO PROFESIONAL
         // =========================================================================
         
-        // Calcular totales de abonos
-        const totalAbonos = abonos.reduce((sum, abono) => sum + (abono.monto || 0), 0);
-        const saldoPendiente = totalOriginalCredito - totalAbonos;
+        pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(9);
         
+        // Fondo para la fila de total del crédito
+        pdf.setFillColor(200, 200, 200);
+        pdf.setDrawColor(0, 0, 0);
+        pdf.rect(margin, currentY, totalWidth, 8, 'FD');
+        
+        // Texto "TOTAL DEL CREDITO"
+        pdf.text('TOTAL DEL CREDITO:', margin + 5, currentY + 5);
+        
+        // Monto total alineado a la derecha
+        pdf.text(`S/. ${totalOriginalCredito.toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+        
+        currentY += 10;
+
+        // =========================================================================
+        // SECCIÓN DE DESGLOSE FINANCIERO CON ESTILO PROFESIONAL
+        // =========================================================================
+        
+        // Filtrar y calcular totales solo de abonos activos (no procesados/saldados)
+        const abonosActivos = abonos.filter(abono => 
+            abono.estado !== 'procesado' && 
+            abono.estado !== 'saldado' && 
+            abono.estado !== 'cancelado'
+        );
+        const totalAbonosActivos = abonosActivos.reduce((sum, abono) => sum + (abono.monto || 0), 0);
+        const saldoPendiente = totalOriginalCredito - totalAbonosActivos;
         
         pdf.setFontSize(8);
         
-        // TOTAL ORIGINAL
-        pdf.setTextColor(0, 0, 0);
-        pdf.text('TOTAL DEL CRÉDITO:', margin + 10, currentY);
-        pdf.text(`S/. ${totalOriginalCredito.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 6;
+
+        // SALDO PENDIENTE con estilo destacado
+        pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(9);
         
-        // TOTAL ABONADO
-        pdf.setTextColor(0, 150, 0); // Verde para abonos
-        pdf.text('TOTAL ABONADO:', margin + 10, currentY);
-        pdf.text(`S/. ${totalAbonos.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 6;
+        // Fondo para saldo pendiente
+        const saldoColor = saldoPendiente > 0 ? [255, 200, 200] : [200, 255, 200]; // Rojo claro o verde claro
+        pdf.setFillColor(...saldoColor);
+        pdf.rect(margin, currentY, totalWidth, 8, 'FD');
         
-        // SALDO PENDIENTE
-        pdf.setTextColor(200, 0, 0); // Rojo para saldo pendiente
-        pdf.text('SALDO PENDIENTE:', margin + 10, currentY);
-        pdf.text(`S/. ${saldoPendiente.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 8;
+        pdf.setTextColor(saldoPendiente > 0 ? 150 : 0, 0, 0); // Rojo oscuro o negro
+        pdf.text('SALDO PENDIENTE:', margin + 5, currentY + 5);
+        pdf.text(`S/. ${saldoPendiente.toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+        currentY += 15;
         
         // Resetear color del texto
         pdf.setTextColor(0, 0, 0);
 
         // =========================================================================
-        // HISTORIAL DE ABONOS (SI EXISTEN)
+        // HISTORIAL DE ABONOS CON TABLA PROFESIONAL (SOLO ABONOS ACTIVOS)
         // =========================================================================
         
-        if (abonos && abonos.length > 0) {
+        if (abonosActivos && abonosActivos.length > 0) {
             // Verificar si necesitamos nueva página
-            if (currentY > pageHeight - 60) {
+            if (currentY > pageHeight - 80) {
                 pdf.addPage();
                 currentY = 15;
             }
             
             pdf.setFont(fontName, 'bold');
             pdf.setFontSize(8);
-            pdf.text('HISTORIAL DE ABONOS:', margin, currentY);
-            currentY += 6;
+            pdf.text(`HISTORIAL DE ABONOS PENDIENTES (${abonosActivos.length}):`, margin, currentY);
+            currentY += 8;
             
             // Encabezados de la tabla de abonos
-            pdf.setFontSize(8);
-            pdf.setFont(fontName, 'bold');
+            const abonosHeaders = ['FECHA', 'MONTO', 'METODO DE PAGO', 'ESTADO'];
+            const abonosColWidths = [40, 30, 50, 30];
             
-            const abonosHeaders = ['Fecha', 'Monto', 'Método de Pago', 'Estado'];
-            const abonosColWidths = [40, 30, 40, 30];
-            const abonosColPositions = [margin + 10];
-            for (let i = 0; i < abonosColWidths.length - 1; i++) {
-                abonosColPositions.push(abonosColPositions[i] + abonosColWidths[i]);
-            }
-            
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            
-            abonosHeaders.forEach((header, index) => {
-                pdf.text(header, abonosColPositions[index] + 1, currentY);
-            });
-            currentY += 3;
-            
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 4;
-            
-            // Datos de abonos
-            pdf.setFont(fontName, 'normal');
-            abonos.forEach((abono) => {
-                if (currentY > pageHeight - 20) {
-                    pdf.addPage();
-                    currentY = 15;
-                }
-                
-                // Fecha
-                const fechaAbono = abono.fecha?.toDate ? 
+            // Preparar datos de abonos activos únicamente
+            const abonosData = abonosActivos.map(abono => [
+                abono.fecha?.toDate ? 
                     abono.fecha.toDate().toLocaleDateString('es-PE') : 
-                    (abono.fecha && new Date(abono.fecha.seconds * 1000).toLocaleDateString('es-PE')) || 'N/A';
-                pdf.text(fechaAbono, abonosColPositions[0] + 1, currentY);
-                
-                // Monto
-                pdf.setTextColor(0, 0, 0);
-                pdf.text(`S/. ${(abono.monto || 0).toFixed(2)}`, abonosColPositions[1] + 1, currentY);
-                pdf.setTextColor(0, 0, 0);
-                
-                // Método de pago
-                pdf.text((abono.metodoPago || 'N/A').charAt(0).toUpperCase() + (abono.metodoPago || 'N/A').slice(1), abonosColPositions[2] + 1, currentY);
-                
-                // Estado
-                pdf.text('Pagado', abonosColPositions[3] + 1, currentY);
-                
-                currentY += 5;
-            });
+                    (abono.fecha && new Date(abono.fecha.seconds * 1000).toLocaleDateString('es-PE')) || 'N/A',
+                `${(abono.monto || 0).toFixed(2)}`,
+                getMetodoPagoLabel(abono.metodoPago),
+                abono.estado ? abono.estado.toUpperCase() : 'ACTIVO'
+            ]);
             
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 8;
+            // Dibujar tabla de abonos activos
+            currentY = drawProfessionalTable(pdf, abonosData, abonosHeaders, abonosColWidths, margin, currentY, fontName);
+            currentY += 10;
         }
 
         // =========================================================================
         // INFORMACIÓN ADICIONAL
         // =========================================================================
         
-        if (currentY > pageHeight - 40) {
+        if (currentY > pageHeight - 50) {
             pdf.addPage();
             currentY = 15;
         }
         
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(8);
-        pdf.text('INFORMACIÓN IMPORTANTE:', margin, currentY);
+        pdf.text('INFORMACION IMPORTANTE:', margin, currentY);
         currentY += 6;
         
         pdf.setFont(fontName, 'normal');
         pdf.setFontSize(8);
-        pdf.text('• Este documento es un resumen del estado actual de su crédito.', margin + 5, currentY);
+        pdf.text('• ESTE DOCUMENTO ES UN RESUMEN DEL ESTADO ACTUAL DE SU CREDITO.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Para cualquier consulta o aclaración, comuníquese con nosotros.', margin + 5, currentY);
+        pdf.text('• PARA CUALQUIER CONSULTA O ACLARACION, COMUNIQUESE CON NOSOTROS.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Conserve este documento para sus registros.', margin + 5, currentY);
+        pdf.text('• CONSERVE ESTE DOCUMENTO PARA SUS REGISTROS.', margin + 5, currentY);
         currentY += 8;
 
         // Pie de página
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
-        pdf.text(`Reporte generado el ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        pdf.text(`REPORTE GENERADO EL ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
         
         // Guardar PDF
         const fechaSufijo = new Date().toISOString().split('T')[0];
@@ -502,7 +507,7 @@ const generarPDF = async (cliente, creditos, abonos = [], periodo = '') => {
     }
 };
 
-// Función principal para generar PDF de un cliente específico - ACTUALIZADA
+// Función principal para generar PDF de un cliente específico
 export const generarPDFCliente = async (cliente, creditos, abonos = [], periodo = '') => {
     try {
         await generarPDF(cliente, creditos, abonos, periodo);
@@ -512,7 +517,7 @@ export const generarPDFCliente = async (cliente, creditos, abonos = [], periodo 
     }
 };
 
-// Función para generar PDF de múltiples clientes (por período)
+// Función para generar PDF de múltiples clientes con tabla profesional
 export const generarPDFPorPeriodo = async (clientesConCreditos, periodo) => {
     try {
         const { jsPDF } = await import('jspdf');
@@ -523,101 +528,91 @@ export const generarPDFPorPeriodo = async (clientesConCreditos, periodo) => {
             format: 'a4',
         });
         
-        // Cargar fuente personalizada
-        const fontName = await loadCustomFont(pdf);
+        // Cargar fuente Courier PS
+        const fontName = await loadCourierPSFont(pdf);
         
         const pageWidth = pdf.internal.pageSize.width;
         const pageHeight = pdf.internal.pageSize.height;
         const margin = 10;
+        const totalWidth = pageWidth - 2 * margin;
         
         let currentY = 15;
 
-        // Encabezado del reporte
+        // =========================================================================
+        // ENCABEZADO PROFESIONAL
+        // =========================================================================
+        
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(14);
         pdf.text('MOTORES & REPUESTOS SAC', pageWidth / 2, currentY, { align: 'center' });
         currentY += 8;
 
         pdf.setFontSize(12);
-        pdf.text(`REPORTE DE CRÉDITOS - ${periodo.toUpperCase()}`, pageWidth / 2, currentY, { align: 'center' });
+        pdf.text(`REPORTE DE CREDITOS - ${periodo.toUpperCase()}`, pageWidth / 2, currentY, { align: 'center' });
         currentY += 10;
 
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
-        pdf.text(`Fecha de generación: ${new Date().toLocaleDateString('es-PE')}`, pageWidth / 2, currentY, { align: 'center' });
+        pdf.text(`FECHA DE GENERACION: ${new Date().toLocaleDateString('es-PE')}`, pageWidth / 2, currentY, { align: 'center' });
+        currentY += 15;
+
+        // =========================================================================
+        // TABLA PROFESIONAL DE RESUMEN
+        // =========================================================================
+        
+        const tableHeaders = ['CLIENTE', 'DNI', 'MONTO ADEUDADO'];
+        const colWidths = [totalWidth * 0.5, totalWidth * 0.2, totalWidth * 0.3];
+        
+        // Preparar datos
+        const tableData = clientesConCreditos.map(cliente => [
+            `${cliente.nombre} ${cliente.apellido || ''}`.toUpperCase(),
+            String(cliente.dni || 'N/A'),
+            `${parseFloat(cliente.montoCreditoActual || 0).toFixed(2)}`
+        ]);
+        
+        // Dibujar tabla de resumen
+        currentY = drawProfessionalTable(pdf, tableData, tableHeaders, colWidths, margin, currentY, fontName);
         currentY += 10;
 
-        // Tabla de resumen
-        const tableHeaders = ['Cliente', 'DNI', 'Monto Adeudado'];
-        const colWidths = [60, 40, 40];
-        const colPositions = [margin];
-        for (let i = 0; i < colWidths.length - 1; i++) {
-            colPositions.push(colPositions[i] + colWidths[i]);
-        }
+        // =========================================================================
+        // TOTAL GENERAL CON ESTILO PROFESIONAL
+        // =========================================================================
+        
+        const totalGeneral = clientesConCreditos.reduce((sum, cliente) => 
+            sum + parseFloat(cliente.montoCreditoActual || 0), 0);
         
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(9);
         
-        // Línea superior de la tabla
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 4;
+        // Fondo para el total general
+        pdf.setFillColor(200, 200, 200);
+        pdf.setDrawColor(0, 0, 0);
+        pdf.rect(margin, currentY, totalWidth, 8, 'FD');
+        
+        pdf.text('TOTAL GENERAL:', margin + 5, currentY + 5);
+        pdf.text(`S/. ${totalGeneral.toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+        
+        currentY += 15;
 
-        // Encabezados
-        tableHeaders.forEach((header, index) => {
-            pdf.text(header, colPositions[index] + 2, currentY);
-        });
-        currentY += 4;
-
-        // Línea de separación
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 4;
-
-        pdf.setFont(fontName, 'normal');
-        let totalGeneral = 0;
-
-        // Datos de los clientes
-        clientesConCreditos.forEach((cliente, index) => {
-            if (currentY > pageHeight - 20) {
-                pdf.addPage();
-                currentY = 15;
-            }
-
-            // Nombre del cliente
-            pdf.text(`${cliente.nombre} ${cliente.apellido || ''}`, colPositions[0] + 2, currentY);
-            // DNI
-            pdf.text(String(cliente.dni || 'N/A'), colPositions[1] + 2, currentY);
-            // Monto adeudado
-            const monto = parseFloat(cliente.montoCreditoActual || 0);
-            pdf.text(`S/. ${monto.toFixed(2)}`, colPositions[2] + 2, currentY);
-            
-            totalGeneral += monto;
-            currentY += 5;
-
-            // Línea de separación cada 5 filas
-            if ((index + 1) % 5 === 0) {
-                pdf.setDrawColor(200, 200, 200);
-                pdf.line(margin, currentY, pageWidth - margin, currentY);
-                currentY += 2;
-                pdf.setDrawColor(0, 0, 0);
-            }
-        });
-
-        // Línea final de la tabla
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
+        // =========================================================================
+        // ESTADÍSTICAS ADICIONALES
+        // =========================================================================
+        
+        pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(8);
+        pdf.text('ESTADISTICAS:', margin, currentY);
         currentY += 6;
-
-        // Total general
-        pdf.setFont(fontName, 'bold');
-        pdf.setFontSize(11);
-        pdf.text('TOTAL GENERAL:', pageWidth - margin - 60, currentY);
-        pdf.text(`S/. ${totalGeneral.toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-
-        // Estadísticas adicionales
-        currentY += 10;
-        pdf.setFontSize(9);
-        pdf.text(`Total de clientes con crédito: ${clientesConCreditos.length}`, margin, currentY);
+        
+        pdf.setFont(fontName, 'normal');
+        pdf.text(`TOTAL DE CLIENTES CON CREDITO: ${clientesConCreditos.length}`, margin + 5, currentY);
         currentY += 4;
-        pdf.text(`Promedio por cliente: S/. ${clientesConCreditos.length > 0 ? (totalGeneral / clientesConCreditos.length).toFixed(2) : '0.00'}`, margin, currentY);
+        pdf.text(`PROMEDIO POR CLIENTE: S/. ${clientesConCreditos.length > 0 ? (totalGeneral / clientesConCreditos.length).toFixed(2) : '0.00'}`, margin + 5, currentY);
+        currentY += 4;
+        
+        // Pie de página
+        pdf.setFontSize(8);
+        pdf.setFont(fontName, 'normal');
+        pdf.text(`REPORTE GENERADO EL ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
 
         // Guardar PDF
         const fechaSufijo = new Date().toISOString().split('T')[0];

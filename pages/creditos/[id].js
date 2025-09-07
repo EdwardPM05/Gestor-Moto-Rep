@@ -83,69 +83,72 @@ const ClienteCreditoDetalle = () => {
 
   // Cargar detalles del cliente, créditos con sus ítems y abonos
   useEffect(() => {
-    if (!clienteId || !user) {
-      setLoading(false);
-      return;
-    }
+  if (!clienteId || !user) {
+    setLoading(false);
+    return;
+  }
 
-    const fetchClientAndCreditos = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // 1. Fetch Client Details
-        const clientDocRef = doc(db, 'cliente', clienteId);
-        const clientDocSnap = await getDoc(clientDocRef);
-        if (clientDocSnap.exists()) {
-          setCliente({ id: clientDocSnap.id, ...clientDocSnap.data() });
-        } else {
-          setError("Cliente no encontrado.");
-          setLoading(false);
-          return;
-        }
+  const fetchClientAndCreditos = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Fetch Client Details
+      const clientDocRef = doc(db, 'cliente', clienteId);
+      const clientDocSnap = await getDoc(clientDocRef);
+      if (clientDocSnap.exists()) {
+        setCliente({ id: clientDocSnap.id, ...clientDocSnap.data() });
+      } else {
+        setError("Cliente no encontrado.");
+        setLoading(false);
+        return;
+      }
 
-        // 2. Fetch Active Credits for the client
-        console.log("Cargando créditos para clienteId:", clienteId);
-        const creditosQuery = query(
-          collection(db, 'creditos'),
-          where('clienteId', '==', clienteId),
-          where('estado', '==', 'activo')
+      // 2. Fetch Active Credits for the client
+      console.log("Cargando créditos para clienteId:", clienteId);
+      const creditosQuery = query(
+        collection(db, 'creditos'),
+        where('clienteId', '==', clienteId),
+        where('estado', '==', 'activo')
+      );
+      const creditosSnapshot = await getDocs(creditosQuery);
+      
+      console.log("Créditos activos encontrados para clienteId", clienteId, ":", creditosSnapshot.docs.length);
+
+      let totalAdeudadoCalculado = 0;
+      const loadedCreditosConItems = [];
+      for (const creditoDoc of creditosSnapshot.docs) {
+        const creditoData = { id: creditoDoc.id, ...creditoDoc.data(), items: [] };
+        console.log("Procesando crédito ID:", creditoDoc.id, "para clienteId:", clienteId);
+
+        // Fetch items for each credit
+        const itemsCreditoQuery = query(
+          collection(db, 'creditos', creditoDoc.id, 'itemsCredito'),
+          orderBy('createdAt', 'desc')
         );
-        const creditosSnapshot = await getDocs(creditosQuery);
-        
-        console.log("Créditos activos encontrados para clienteId", clienteId, ":", creditosSnapshot.docs.length);
+        const itemsSnapshot = await getDocs(itemsCreditoQuery);
+        console.log(`Items en subcolección 'itemsCredito' para crédito ${creditoDoc.id}:`, itemsSnapshot.docs.length);
 
-        let totalAdeudadoCalculado = 0;
-        const loadedCreditosConItems = [];
-        for (const creditoDoc of creditosSnapshot.docs) {
-          const creditoData = { id: creditoDoc.id, ...creditoDoc.data(), items: [] };
-          console.log("Procesando crédito ID:", creditoDoc.id, "para clienteId:", clienteId);
+        itemsSnapshot.forEach(itemDoc => {
+          const itemData = {
+            id: itemDoc.id,
+            creditoId: creditoDoc.id,
+            ...itemDoc.data()
+          };
+          creditoData.items.push(itemData);
+          totalAdeudadoCalculado += (itemData.subtotal || 0);
+        });
+        loadedCreditosConItems.push(creditoData);
+      }
+      
+      setCreditosConItems(loadedCreditosConItems);
 
-          // Fetch items for each credit
-          const itemsCreditoQuery = query(
-            collection(db, 'creditos', creditoDoc.id, 'itemsCredito'),
-            orderBy('createdAt', 'desc')
-          );
-          const itemsSnapshot = await getDocs(itemsCreditoQuery);
-          console.log(`Items en subcolección 'itemsCredito' para crédito ${creditoDoc.id}:`, itemsSnapshot.docs.length);
-
-          itemsSnapshot.forEach(itemDoc => {
-            const itemData = {
-              id: itemDoc.id,
-              creditoId: creditoDoc.id,
-              ...itemDoc.data()
-            };
-            creditoData.items.push(itemData);
-            totalAdeudadoCalculado += (itemData.subtotal || 0);
-          });
-          loadedCreditosConItems.push(creditoData);
-        }
-        
-        setCreditosConItems(loadedCreditosConItems);
-
-        // 3. Fetch Abonos del cliente
+      // 3. Fetch Abonos del cliente SOLO si hay créditos activos
+      if (loadedCreditosConItems.length > 0) {
+        // Solo mostrar abonos si hay créditos activos
         const abonosQuery = query(
           collection(db, 'abonos'),
           where('clienteId', '==', clienteId),
+          where('estado', 'in', ['activo', 'pendiente']), // Solo abonos no procesados
           orderBy('fecha', 'desc')
         );
         const abonosSnapshot = await getDocs(abonosQuery);
@@ -154,25 +157,30 @@ const ClienteCreditoDetalle = () => {
           ...doc.data()
         }));
         setAbonos(loadedAbonos);
-
-        // Actualizar el estado del cliente con el monto calculado
-        setCliente(prevCliente => ({
-            ...prevCliente,
-            montoCreditoActual: totalAdeudadoCalculado
-        }));
-        console.log("Todos los créditos con sus ítems cargados:", loadedCreditosConItems);
-        console.log("Total adeudado calculado desde ítems:", totalAdeudadoCalculado);
-        console.log("Abonos cargados:", loadedAbonos);
-
-      } catch (err) {
-        console.error('Error al cargar datos del cliente y créditos:', err);
-        setError("Error al cargar la información del crédito: " + err.message);
-      } finally {
-        setLoading(false);
+        console.log("Abonos activos cargados:", loadedAbonos);
+      } else {
+        // Si no hay créditos activos, no mostrar abonos
+        setAbonos([]);
+        console.log("No hay créditos activos, ocultando abonos");
       }
-    };
 
-    fetchClientAndCreditos();
+      // Actualizar el estado del cliente con el monto calculado
+      setCliente(prevCliente => ({
+          ...prevCliente,
+          montoCreditoActual: totalAdeudadoCalculado
+      }));
+      console.log("Todos los créditos con sus ítems cargados:", loadedCreditosConItems);
+      console.log("Total adeudado calculado desde ítems:", totalAdeudadoCalculado);
+
+    } catch (err) {
+      console.error('Error al cargar datos del cliente y créditos:', err);
+      setError("Error al cargar la información del crédito: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchClientAndCreditos();
   }, [clienteId, user]);
 
   // Efecto para manejar la paginación de abonos
@@ -182,44 +190,45 @@ const ClienteCreditoDetalle = () => {
     setAbonosPaginados(abonos.slice(startIndex, endIndex));
   }, [abonos, currentPageAbonos, limitAbonosPerPage]);
 
-  // Función procesarAbono optimizada e integrada
-  const procesarAbono = async () => {
-    const monto = parseFloat(montoAbono);
-    
-    if (!monto || monto <= 0) {
-      showAlert('Ingresa un monto válido para el abono');
-      return;
-    }
+  // Modificación en la función procesarAbono
+const procesarAbono = async () => {
+  const monto = parseFloat(montoAbono);
+  
+  if (!monto || monto <= 0) {
+    showAlert('Ingresa un monto válido para el abono');
+    return;
+  }
 
-    if (monto > cliente.montoCreditoActual) {
-      showAlert('El monto del abono no puede ser mayor al saldo que debe');
-      return;
-    }
+  if (monto > cliente.montoCreditoActual) {
+    showAlert('El monto del abono no puede ser mayor al saldo que debe');
+    return;
+  }
 
-    const confirmPayment = window.confirm(
-      `¿Confirmar abono de S/. ${monto.toFixed(2)} por ${metodoPago}?`
-    );
-    if (!confirmPayment) {
-      return;
-    }
+  const confirmPayment = window.confirm(
+    `¿Confirmar abono de S/. ${monto.toFixed(2)} por ${metodoPago}?`
+  );
+  if (!confirmPayment) {
+    return;
+  }
 
-    try {
-      // 1. Crear registro de abono
-      const abonoData = {
-        clienteId: cliente.id,
-        clienteNombre: cliente.nombre,
-        clienteDNI: cliente.dni,
-        monto: monto,
-        metodoPago: metodoPago,
-        fecha: new Date(),
-        empleadoId: user.email || user.uid,
-        descripcion: 'Abono a cuenta de crédito',
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+  try {
+    // 1. Crear registro de abono CON ESTADO
+    const abonoData = {
+      clienteId: cliente.id,
+      clienteNombre: cliente.nombre,
+      clienteDNI: cliente.dni,
+      monto: monto,
+      metodoPago: metodoPago,
+      fecha: new Date(),
+      empleadoId: user.email || user.uid,
+      descripcion: 'Abono a cuenta de crédito',
+      estado: 'activo', // NUEVO CAMPO
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
 
-      const abonoRef = await addDoc(collection(db, 'abonos'), abonoData);
-      console.log("Abono creado con ID:", abonoRef.id);
+    const abonoRef = await addDoc(collection(db, 'abonos'), abonoData);
+    console.log("Abono creado con ID:", abonoRef.id);
 
       // 2. Preparar información de productos para la venta
       let productosEnCredito = [];
@@ -320,45 +329,69 @@ const ClienteCreditoDetalle = () => {
       
       console.log(`Saldo anterior: S/. ${saldoActualReal.toFixed(2)}, Abono: S/. ${monto.toFixed(2)}, Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
 
-      // 7. Si el saldo llega a 0, marcar todos los items como saldados
-      if (nuevoSaldo === 0) {
-        console.log("Saldo llegó a 0, marcando productos como saldados");
-        for (const credito of creditosConItems) {
-          if (credito.items.length > 0) {
-            // Actualizar estado del crédito
-            await updateDoc(doc(db, 'creditos', credito.id), {
+      // 7. Si el saldo llega a 0, marcar todos los items como saldados Y PROCESAR ABONOS
+    if (nuevoSaldo === 0) {
+      console.log("Saldo llegó a 0, marcando productos como saldados y procesando abonos");
+      
+      // Marcar créditos y items como saldados
+      for (const credito of creditosConItems) {
+        if (credito.items.length > 0) {
+          // Actualizar estado del crédito
+          await updateDoc(doc(db, 'creditos', credito.id), {
+            estado: 'saldado',
+            fechaSaldado: new Date(),
+            updatedAt: new Date()
+          });
+
+          // Marcar todos los items como saldados
+          for (const item of credito.items) {
+            await updateDoc(doc(db, 'creditos', credito.id, 'itemsCredito', item.id), {
               estado: 'saldado',
               fechaSaldado: new Date(),
               updatedAt: new Date()
             });
-
-            // Marcar todos los items como saldados
-            for (const item of credito.items) {
-              await updateDoc(doc(db, 'creditos', credito.id, 'itemsCredito', item.id), {
-                estado: 'saldado',
-                fechaSaldado: new Date(),
-                updatedAt: new Date()
-              });
-            }
           }
         }
-        showAlert(`¡Crédito saldado completamente! Abono de S/. ${monto.toFixed(2)} procesado. Redirigiendo...`);
-        setTimeout(() => {
-          router.push('/creditos/activos');
-        }, 2000);
-      } else {
-        // Actualizar estados locales con el saldo correcto
-        setCliente(prev => ({ ...prev, montoCreditoActual: nuevoSaldo }));
-        setAbonos(prev => [{ id: abonoRef.id, ...abonoData }, ...prev]);
-        setMontoAbono('');
-        showAlert(`Abono de S/. ${monto.toFixed(2)} registrado exitosamente. Nuevo saldo que debe: S/. ${nuevoSaldo.toFixed(2)}`);
       }
 
-    } catch (error) {
-      console.error('Error al procesar abono:', error);
-      showAlert('Error al procesar el abono. Inténtalo de nuevo.');
+      // NUEVO: Marcar todos los abonos de este cliente como procesados
+      console.log("Marcando todos los abonos como procesados...");
+      const todosLosAbonosQuery = query(
+        collection(db, 'abonos'),
+        where('clienteId', '==', cliente.id),
+        where('estado', '==', 'activo')
+      );
+      const todosLosAbonosSnapshot = await getDocs(todosLosAbonosQuery);
+      
+      const batchPromises = todosLosAbonosSnapshot.docs.map(async (abonoDoc) => {
+        return updateDoc(doc(db, 'abonos', abonoDoc.id), {
+          estado: 'procesado',
+          fechaProcesado: new Date(),
+          motivoProcesado: 'Crédito saldado completamente',
+          updatedAt: new Date()
+        });
+      });
+      
+      await Promise.all(batchPromises);
+      console.log(`${todosLosAbonosSnapshot.docs.length} abonos marcados como procesados`);
+
+      showAlert(`¡Crédito saldado completamente! Abono de S/. ${monto.toFixed(2)} procesado. Redirigiendo...`);
+      setTimeout(() => {
+        router.push('/creditos/activos');
+      }, 2000);
+    } else {
+      // Actualizar estados locales con el saldo correcto
+      setCliente(prev => ({ ...prev, montoCreditoActual: nuevoSaldo }));
+      setAbonos(prev => [{ id: abonoRef.id, ...abonoData }, ...prev]);
+      setMontoAbono('');
+      showAlert(`Abono de S/. ${monto.toFixed(2)} registrado exitosamente. Nuevo saldo que debe: S/. ${nuevoSaldo.toFixed(2)}`);
     }
-  };
+
+  } catch (error) {
+    console.error('Error al procesar abono:', error);
+    showAlert('Error al procesar el abono. Inténtalo de nuevo.');
+  }
+};
 
   // Funciones para paginación de abonos
   const totalPagesAbonos = Math.ceil(abonos.length / limitAbonosPerPage);
@@ -456,12 +489,6 @@ const ClienteCreditoDetalle = () => {
                 <p className="text-sm text-gray-600">Monto Original</p>
                 <p className="text-lg font-semibold text-blue-600">
                   S/. {montoOriginalCredito.toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Total Abonado</p>
-                <p className="text-lg font-semibold text-green-600">
-                  S/. {totalAbonos.toFixed(2)}
                 </p>
               </div>
               <div>

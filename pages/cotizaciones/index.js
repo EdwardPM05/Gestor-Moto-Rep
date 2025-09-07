@@ -279,11 +279,11 @@ const recalcularPrecioCompraProducto = async (productoId, transaction) => {
     setFilteredCotizaciones(filtered);
   }, [searchTerm, cotizaciones]);
 
-// FUNCIÓN PRINCIPAL CORREGIDA - handleConfirmarCotizacion CON FIFO
+// FUNCIÓN PRINCIPAL ACTUALIZADA - handleConfirmarCotizacion CON MANEJO DE ITEMS YA SEPARADOS
 const handleConfirmarCotizacion = async (cotizacionId) => {
   if (
     !window.confirm(
-      '¿Estás seguro de que quieres CONFIRMAR esta cotización? Esto la convertirá en una VENTA y consumirá stock de lotes según FIFO.'
+      '¿Estás seguro de que quieres CONFIRMAR esta cotización? Esto la convertirá en una VENTA y consumirá stock de lotes según los items ya calculados.'
     )
   ) {
     return;
@@ -293,6 +293,9 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
   setError(null);
   try {
     await runTransaction(db, async (transaction) => {
+      // ===== FASE 1: TODAS LAS LECTURAS =====
+      
+      // Leer cotización
       const cotizacionRef = doc(db, 'cotizaciones', cotizacionId);
       const cotizacionSnap = await transaction.get(cotizacionRef);
 
@@ -308,6 +311,7 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         throw new Error('Esta cotización ya ha sido confirmada o cancelada.');
       }
 
+      // Leer items de cotización
       const itemsCotizacionCollectionRef = collection(
         db,
         'cotizaciones',
@@ -320,36 +324,121 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         throw new Error('No se encontraron productos asociados a esta cotización.');
       }
 
-      // 1. Verificar productos y stock
-      const productoRefsAndData = [];
+      // Leer todos los datos necesarios
+      const itemsData = [];
+      const productosAActualizar = new Map();
+      const lotesAActualizar = new Map();
+      const lotesData = new Map();
+
       for (const itemDoc of itemsCotizacionSnapshot.docs) {
         const itemData = itemDoc.data();
+        
+        // Leer producto
         const productoRef = doc(db, 'productos', itemData.productoId);
         const productoSnap = await transaction.get(productoRef);
 
-        if (productoSnap.exists()) {
-          const currentStock = typeof productoSnap.data().stockActual === 'number' ? productoSnap.data().stockActual : 0;
-          const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
-          
-          if (currentStock < cantidadVendida) {
-            throw new Error(
-              `Stock insuficiente para el producto "${itemData.nombreProducto}". Stock actual: ${currentStock}, Cantidad solicitada: ${cantidadVendida}.`
-            );
-          }
-
-          productoRefsAndData.push({
-            itemData: itemData,
-            productoRef: productoRef,
-            currentProductoData: productoSnap.data(),
-          });
-        } else {
+        if (!productoSnap.exists()) {
           throw new Error(
             `Producto con ID ${itemData.productoId} no encontrado. No se puede confirmar la venta.`
           );
         }
+
+        const productoData = productoSnap.data();
+        const currentStock = typeof productoData.stockActual === 'number' ? productoData.stockActual : 0;
+        const cantidadVendida = typeof itemData.cantidad === 'number' ? itemData.cantidad : 0;
+
+        // Acumular stock usado por producto
+        const stockUsadoProducto = productosAActualizar.get(itemData.productoId)?.stockUsado || 0;
+        const nuevoStockUsado = stockUsadoProducto + cantidadVendida;
+        
+        if (currentStock < nuevoStockUsado) {
+          throw new Error(
+            `Stock insuficiente para el producto "${itemData.nombreProducto}". Stock actual: ${currentStock}, Cantidad total solicitada: ${nuevoStockUsado}.`
+          );
+        }
+
+        productosAActualizar.set(itemData.productoId, {
+          productoRef: productoRef,
+          currentProductoData: productoData,
+          stockUsado: nuevoStockUsado
+        });
+
+        // Si tiene loteId, leer el lote
+        if (itemData.loteId) {
+          if (!lotesData.has(itemData.loteId)) {
+            const loteRef = doc(db, 'lotes', itemData.loteId);
+            const loteSnap = await transaction.get(loteRef);
+            
+            if (!loteSnap.exists()) {
+              throw new Error(`Lote con ID ${itemData.loteId} no encontrado.`);
+            }
+
+            const loteData = loteSnap.data();
+            lotesData.set(itemData.loteId, {
+              ref: loteRef,
+              data: loteData,
+              stockUsado: 0
+            });
+          }
+
+          // Acumular stock usado del lote
+          const loteInfo = lotesData.get(itemData.loteId);
+          const nuevoStockUsadoLote = loteInfo.stockUsado + cantidadVendida;
+          
+          if (loteInfo.data.stockRestante < nuevoStockUsadoLote) {
+            throw new Error(
+              `Stock insuficiente en el lote ${loteInfo.data.numeroLote}. Disponible: ${loteInfo.data.stockRestante}, Solicitado: ${nuevoStockUsadoLote}`
+            );
+          }
+
+          loteInfo.stockUsado = nuevoStockUsadoLote;
+        } else {
+          // Para FIFO, leer lotes disponibles
+          const lotesQuery = query(
+            collection(db, 'lotes'),
+            where('productoId', '==', itemData.productoId),
+            where('stockRestante', '>', 0),
+            where('estado', '==', 'activo'),
+            orderBy('fechaIngreso', 'asc')
+          );
+          
+          const lotesSnapshot = await getDocs(lotesQuery);
+          let cantidadPendienteFIFO = cantidadVendida;
+          
+          for (const loteDoc of lotesSnapshot.docs) {
+            if (cantidadPendienteFIFO <= 0) break;
+            
+            const loteId = loteDoc.id;
+            const loteData = loteDoc.data();
+            
+            if (!lotesData.has(loteId)) {
+              lotesData.set(loteId, {
+                ref: doc(db, 'lotes', loteId),
+                data: loteData,
+                stockUsado: 0
+              });
+            }
+            
+            const consumir = Math.min(cantidadPendienteFIFO, loteData.stockRestante - lotesData.get(loteId).stockUsado);
+            lotesData.get(loteId).stockUsado += consumir;
+            cantidadPendienteFIFO -= consumir;
+          }
+          
+          if (cantidadPendienteFIFO > 0) {
+            throw new Error(`Stock insuficiente. Faltan ${cantidadPendienteFIFO} unidades del producto ${itemData.nombreProducto}.`);
+          }
+        }
+
+        itemsData.push({
+          itemData: itemData,
+          productoRef: productoRef,
+          currentProductoData: productoData
+        });
       }
 
-      // 2. CREAR LA VENTA CON GANANCIA TOTAL
+      // ===== FASE 2: TODAS LAS ESCRITURAS =====
+
+      // Crear venta
       const newVentaRef = doc(collection(db, 'ventas'));
       const clienteNombre = currentCotizacionData.clienteNombre || 'Cliente No Especificado';
       const numeroVenta = `V-${Date.now().toString().slice(-8)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -361,7 +450,6 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         clienteNombre: clienteNombre,
         clienteDNI: currentCotizacionData.clienteDNI || null,
         totalVenta: currentCotizacionData.totalCotizacion,
-        // GANANCIA TOTAL REAL CON PRECIOS FIFO
         gananciaTotalVenta: currentCotizacionData.gananciaTotalCotizacion || 0,
         fechaVenta: serverTimestamp(),
         empleadoId: user.email || user.uid,
@@ -369,7 +457,6 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         estado: 'completada',
         metodoPago: currentCotizacionData.metodoPago || 'efectivo',
         tipoVenta: 'cotizacionAprobada',
-        // TRANSFERIR DATOS DE PAGO MIXTO
         paymentData: currentCotizacionData.paymentData || {
           totalAmount: currentCotizacionData.totalCotizacion,
           paymentMethods: [{
@@ -384,32 +471,25 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         updatedAt: serverTimestamp(),
       });
 
-      // 3. CONSUMIR STOCK DE LOTES SEGÚN FIFO Y ACTUALIZAR STOCK TOTAL
+      // Actualizar lotes
       const todosLosMovimientos = [];
-      for (const { itemData, productoRef, currentProductoData } of productoRefsAndData) {
+      for (const [loteId, loteInfo] of lotesData) {
+        if (loteInfo.stockUsado > 0) {
+          const nuevoStock = loteInfo.data.stockRestante - loteInfo.stockUsado;
+          
+          transaction.update(loteInfo.ref, {
+            stockRestante: nuevoStock,
+            estado: nuevoStock <= 0 ? 'agotado' : 'activo',
+            updatedAt: serverTimestamp()
+          });
+        }
+      }
+
+      // Crear items de venta y movimientos
+      for (const { itemData } of itemsData) {
         const cantidadVendida = parseFloat(itemData.cantidad);
         
-        // CONSUMIR STOCK DE LOTES SEGÚN FIFO
-        const movimientos = await consumirStockFIFO(itemData.productoId, cantidadVendida, transaction);
-        todosLosMovimientos.push({
-          productoId: itemData.productoId,
-          nombreProducto: itemData.nombreProducto,
-          movimientos: movimientos
-        });
-        
-        // ACTUALIZAR STOCK TOTAL DEL PRODUCTO
-        const currentStock = typeof currentProductoData.stockActual === 'number' ? currentProductoData.stockActual : 0;
-        const newStock = currentStock - cantidadVendida;
-        
-        transaction.update(productoRef, {
-          stockActual: newStock,
-          updatedAt: serverTimestamp(),
-        });
-
-        // RECALCULAR PRECIO DE COMPRA DEL PRODUCTO
-        await recalcularPrecioCompraProducto(itemData.productoId, transaction);
-
-        // 4. CREAR ITEM DE VENTA CON CAMPOS OCULTOS DE GANANCIA
+        // Crear item de venta
         transaction.set(doc(collection(newVentaRef, 'itemsVenta')), {
           productoId: itemData.productoId,
           nombreProducto: itemData.nombreProducto,
@@ -420,39 +500,101 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
           cantidad: itemData.cantidad,
           precioVentaUnitario: itemData.precioVentaUnitario,
           subtotal: itemData.subtotal,
-          // CAMPOS OCULTOS TRANSFERIDOS DE LA COTIZACIÓN
-          precioCompraUnitario: itemData.precioCompraUnitario || 0, // OCULTO
-          gananciaUnitaria: itemData.gananciaUnitaria || 0, // OCULTO  
-          gananciaTotal: itemData.gananciaTotal || 0, // OCULTO
+          loteId: itemData.loteId || null,
+          numeroLote: itemData.numeroLote || null,
+          precioCompraUnitario: itemData.precioCompraUnitario || 0,
+          gananciaUnitaria: itemData.gananciaUnitaria || 0,
+          gananciaTotal: itemData.gananciaTotal || 0,
+          loteOriginal: itemData.loteOriginal || null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-      }
 
-      // 5. CREAR REGISTROS DE MOVIMIENTOS DE LOTES PARA AUDITORÍA
-      for (const productoMovimiento of todosLosMovimientos) {
-        for (const movimiento of productoMovimiento.movimientos) {
+        // Registrar movimientos
+        if (itemData.loteId) {
+          // Item con lote específico
+          const loteInfo = lotesData.get(itemData.loteId);
           const movimientoRef = doc(collection(db, 'movimientosLotes'));
           transaction.set(movimientoRef, {
             ventaId: newVentaRef.id,
             numeroVenta: numeroVenta,
             cotizacionId: cotizacionId,
-            productoId: productoMovimiento.productoId,
-            nombreProducto: productoMovimiento.nombreProducto,
-            loteId: movimiento.loteId,
-            numeroLote: movimiento.numeroLote,
-            cantidadConsumida: movimiento.cantidadConsumida,
-            precioCompraUnitario: movimiento.precioCompraUnitario,
-            stockRestanteLote: movimiento.stockRestante,
+            productoId: itemData.productoId,
+            nombreProducto: itemData.nombreProducto,
+            loteId: itemData.loteId,
+            numeroLote: loteInfo.data.numeroLote,
+            cantidadConsumida: cantidadVendida,
+            precioCompraUnitario: parseFloat(itemData.precioCompraUnitario || 0),
+            stockRestanteLote: loteInfo.data.stockRestante - cantidadVendida,
             tipoMovimiento: 'cotizacion-confirmada',
             fechaMovimiento: serverTimestamp(),
             empleadoId: user.email || user.uid,
             createdAt: serverTimestamp()
           });
+        } else {
+          // Item FIFO - crear movimientos para cada lote usado
+          let cantidadPendiente = cantidadVendida;
+          const lotesUsados = Array.from(lotesData.entries())
+            .filter(([loteId, loteInfo]) => loteInfo.data.productoId === itemData.productoId)
+            .sort((a, b) => new Date(a[1].data.fechaIngreso.seconds * 1000) - new Date(b[1].data.fechaIngreso.seconds * 1000));
+
+          for (const [loteId, loteInfo] of lotesUsados) {
+            if (cantidadPendiente <= 0) break;
+            
+            const consumir = Math.min(cantidadPendiente, loteInfo.stockUsado);
+            if (consumir > 0) {
+              const movimientoRef = doc(collection(db, 'movimientosLotes'));
+              transaction.set(movimientoRef, {
+                ventaId: newVentaRef.id,
+                numeroVenta: numeroVenta,
+                cotizacionId: cotizacionId,
+                productoId: itemData.productoId,
+                nombreProducto: itemData.nombreProducto,
+                loteId: loteId,
+                numeroLote: loteInfo.data.numeroLote,
+                cantidadConsumida: consumir,
+                precioCompraUnitario: loteInfo.data.precioCompraUnitario,
+                stockRestanteLote: loteInfo.data.stockRestante - loteInfo.stockUsado,
+                tipoMovimiento: 'cotizacion-confirmada-fifo',
+                fechaMovimiento: serverTimestamp(),
+                empleadoId: user.email || user.uid,
+                createdAt: serverTimestamp()
+              });
+              
+              cantidadPendiente -= consumir;
+            }
+          }
         }
       }
 
-      // 6. CREAR REGISTROS DE PAGOS
+      // Actualizar productos
+      for (const [productoId, productoInfo] of productosAActualizar) {
+        const currentStock = typeof productoInfo.currentProductoData.stockActual === 'number' ? productoInfo.currentProductoData.stockActual : 0;
+        const newStock = currentStock - productoInfo.stockUsado;
+        
+        transaction.update(productoInfo.productoRef, {
+          stockActual: newStock,
+          updatedAt: serverTimestamp(),
+        });
+
+        // Recalcular precio de compra (buscar primer lote disponible)
+        const lotesDisponibles = Array.from(lotesData.entries())
+          .filter(([loteId, loteInfo]) => 
+            loteInfo.data.productoId === productoId && 
+            (loteInfo.data.stockRestante - loteInfo.stockUsado) > 0
+          )
+          .sort((a, b) => new Date(a[1].data.fechaIngreso.seconds * 1000) - new Date(b[1].data.fechaIngreso.seconds * 1000));
+
+        const nuevoPrecioCompra = lotesDisponibles.length > 0 
+          ? parseFloat(lotesDisponibles[0][1].data.precioCompraUnitario || 0)
+          : 0;
+
+        transaction.update(productoInfo.productoRef, {
+          precioCompraDefault: nuevoPrecioCompra
+        });
+      }
+
+      // Crear pagos
       const paymentData = currentCotizacionData.paymentData;
       if (paymentData && paymentData.isMixedPayment) {
         for (const paymentMethod of paymentData.paymentMethods) {
@@ -494,17 +636,17 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
         });
       }
 
-      // 7. MARCAR COTIZACIÓN COMO CONFIRMADA
+      // Marcar cotización como confirmada
       transaction.update(cotizacionRef, { 
         estado: 'confirmada', 
         fechaConfirmacion: serverTimestamp(),
-        ventaGeneradaId: newVentaRef.id, // Referencia a la venta creada
-        numeroVentaGenerada: numeroVenta, // Número de venta generada
+        ventaGeneradaId: newVentaRef.id,
+        numeroVentaGenerada: numeroVenta,
         updatedAt: serverTimestamp() 
       });
     });
 
-    alert('Cotización confirmada exitosamente. Stock consumido según FIFO y precios recalculados automáticamente.');
+    alert('Cotización confirmada exitosamente. Stock descontado según los lotes ya calculados.');
     setCotizaciones((prevCotizaciones) =>
       prevCotizaciones.map((cot) =>
         cot.id === cotizacionId ? { ...cot, estado: 'confirmada' } : cot

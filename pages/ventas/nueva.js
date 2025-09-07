@@ -425,9 +425,13 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
       productoId: producto.id,
       nombreProducto: producto.nombre,
       marca: producto.marca || '',
+      medida: producto.medida || '',
       codigoTienda: producto.codigoTienda || '',
+      codigoProveedor: producto.codigoProveedor || '',
       color: producto.color || '',
       cantidad: cantidadDelLote,
+      precioCompraDefault: parseFloat(producto.precioCompraDefault || lote.precioCompraUnitario || 0).toFixed(2),
+      precioVentaMinimo: parseFloat(producto.precioVentaMinimo || 0).toFixed(2),
       precioVentaUnitario: precioVenta.toFixed(2),
       subtotal: (cantidadDelLote * precioVenta).toFixed(2),
       // DATOS DEL LOTE ESPECÍFICO
@@ -487,6 +491,8 @@ const crearItemsSeparadosPorLote = async (producto, cantidadTotal, precioVenta, 
           cantidad: editQuantity,
           precioVentaUnitario: editPrecio.toFixed(2),
           subtotal: (editQuantity * editPrecio).toFixed(2),
+           precioCompraDefault: precioCompraFIFO.toFixed(2), // PARA LA TABLA
+        precioVentaMinimo: parseFloat(productoOriginal?.precioVentaMinimo || 0).toFixed(2), // PARA LA TABLA
           // ACTUALIZAR CON PRECIO FIFO REAL
           precioCompraUnitario: precioCompraFIFO, // PRECIO FIFO REAL ACTUALIZADO
           gananciaUnitaria: nuevaGananciaUnitaria, // GANANCIA REAL
@@ -772,6 +778,8 @@ const handleSubmit = async (e) => {
           productoId: item.productoId,
           nombreProducto: item.nombreProducto,
           marca: item.marca || '',
+          medida: item.medida || '',
+          codigoProveedor: item.codigoProveedor || '',
           codigoTienda: item.codigoTienda || '',
           color: item.color || '',
           cantidad: parseFloat(item.cantidad),
@@ -922,7 +930,7 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
             <div className="grid grid-cols-12 gap-6 p-6">
               
               {/* Panel Izquierdo - Información de la Venta */}
-              <div className="col-span-12 lg:col-span-4">
+              <div className="col-span-12 lg:col-span-3">
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                   <div className="flex justify-between items-center mb-4">
                     <h2 className="text-lg font-semibold text-gray-800">Nueva Venta Directa</h2>
@@ -1071,7 +1079,7 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
               </div>
 
               {/* Panel Derecho - Buscador y Items */}
-              <div className="col-span-12 lg:col-span-8">
+              <div className="col-span-12 lg:col-span-9">
                 {/* Buscador de Productos */}
                 <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
                   <div className="p-4">
@@ -1103,63 +1111,86 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
 
                   {/* Dropdown de productos */}
                   {searchTerm.trim() !== '' && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
-                      {isSearching ? (
-                        <div className="flex justify-center py-8">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
-                        </div>
-                      ) : filteredProductos.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">
-                          <p>No se encontraron productos</p>
-                        </div>
-                      ) : (
-                        <div className="max-h-80">
-                          {filteredProductos.slice(0, 20).map(producto => (
-                            <div
-                              key={producto.id}
-                              className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-                              onClick={() => handleSelectProduct(producto)}
-                            >
-                              <div className="flex justify-between items-start">
-                                <div className="flex-1 min-w-0">
-                                  <h4 className="font-medium text-gray-900 truncate">
+                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+                    {isSearching ? (
+                      <div className="flex justify-center py-8">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                      </div>
+                    ) : filteredProductos.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500">
+                        <p>No se encontraron productos</p>
+                      </div>
+                    ) : (
+                      <div className="max-h-80">
+                        {filteredProductos.slice(0, 20).map(producto => (
+                          <div
+                            key={producto.id}
+                            className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                            onClick={() => {
+                              handleSelectProduct(producto);
+                              setSearchTerm('');
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-6">
+                              {/* Información principal del producto */}
+                              <div className="flex items-center gap-6 flex-1 min-w-0">
+                                {/* Nombre y código */}
+                                <div className="min-w-0 flex-shrink-0">
+                                  <h4 className="font-medium text-gray-900 truncate text-sm">
                                     {producto.nombre} ({producto.codigoTienda})
                                   </h4>
-                                  <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Marca:</span> {producto.marca}
-                                  </p>
-                                  <p className="text-sm text-gray-600 truncate">
-                                    <span className="font-medium">Color:</span> {producto.color || 'N/A'}
-                                  </p>
-                                  <p className="text-sm text-gray-500">
-                                    <span className="font-medium">Stock:</span> {producto.stockActual}
-                                  </p>
-                                  {producto.modelosCompatiblesTexto && (
-                                    <p className="text-sm text-blue-600 truncate">
-                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesTexto}
-                                    </p>
-                                  )}
                                 </div>
-                                <div className="text-right flex-shrink-0 ml-4">
-                                  <p className="font-semibold text-green-600 text-lg">
-                                    S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
-                                  </p>
-                                  <p className="text-sm text-gray-500">
-                                    Stock: {producto.stockActual || 0}
-                                  </p>
+                                
+                                {/* Marca */}
+                                <div className="flex-shrink-0">
+                                  <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
+                                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
                                 </div>
+                                
+                                {/* Color */}
+                                <div className="flex-shrink-0">
+                                  <span className="text-xs text-gray-500 uppercase tracking-wide">Color:</span>
+                                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.color || 'N/A'}</span>
+                                </div>
+                                
+                                {/* Stock */}
+                                <div className="flex-shrink-0">
+                                  <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
+                                  <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
+                                </div>
+                                
+                                {/* Modelos compatibles */}
+                                {producto.modelosCompatiblesTexto && (
+                                  <div className="flex-shrink-0 max-w-xs">
+                                    <span className="text-xs text-gray-500 uppercase tracking-wide">Modelos:</span>
+                                    <span className="ml-1 text-sm text-blue-700 font-medium truncate" title={producto.modelosCompatiblesTexto}>
+                                      {producto.modelosCompatiblesTexto}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {/* Precio */}
+                              <div className="text-right flex-shrink-0">
+                                <p className="font-bold text-green-600 text-base">
+                                  S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
+                                </p>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">
+                                  Precio Venta
+                                </p>
                               </div>
                             </div>
-                          ))}
-                          {filteredProductos.length > 20 && (
-                            <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-                              Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                          </div>
+                        ))}
+                        {filteredProductos.length > 20 && (
+                          <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                            Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 </div>
 
                 {/* Items de la Venta */}
@@ -1183,38 +1214,69 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
                           <table className="w-full border-collapse">
                             <thead className="bg-green-50">
                               <tr className="border-b border-gray-300">
-                                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">CÓDIGO</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">MARCA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-16">CANT.</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P.V. UNIT.</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">COLOR</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-28">SUBTOTAL</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">ACCIONES</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. TIENDA</th>
+                                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. PROVEEDOR</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MEDIDA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">COLOR</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. COMPRA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA MIN</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
+                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">ACCIONES</th>
                               </tr>
                             </thead>
                             
                             <tbody>
                               {itemsVenta.map((item, index) => (
                                 <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                  <td className="px-4 py-3">
-                                    <div className="font-medium text-gray-900 text-sm">
-                                      {item.nombreProducto}
-                                    </div>
-                                  </td>
                                   <td className="px-3 py-3 text-center">
                                     <span className="text-sm text-gray-900 font-medium">
                                       {item.codigoTienda || 'N/A'}
                                     </span>
                                   </td>
+                                  <td className="px-4 py-3">
+                                    <div className="font-medium text-gray-900 text-sm">
+                                      {item.nombreProducto}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="font-medium text-gray-900 text-sm">
+                                      {item.codigoProveedor}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
+                                        {item.numeroLote || 'N/A'}
+                                      </span>
+                                    </td>
                                   <td className="px-3 py-3 text-center">
                                     <span className="text-sm text-gray-700">
                                       {item.marca || 'Sin marca'}
                                     </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
+                                    <span className="text-sm text-gray-700">
+                                      {item.medida || 'N/A'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm text-gray-700">
+                                      {item.color || 'N/A'}
+                                    </span>
+                                  </td>
+                                  
+                                  <td className="px-3 py-3 text-center">
                                     <span className="text-sm font-medium text-gray-900">
                                       {item.cantidad}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3 text-center">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      S/. {parseFloat(item.precioCompraDefault || 0).toFixed(2)}
                                     </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
@@ -1223,8 +1285,8 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
                                     </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
-                                    <span className="text-sm text-gray-600">
-                                      {item.color || "N/A"}
+                                    <span className="text-sm font-medium text-gray-900">
+                                      S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
                                     </span>
                                   </td>
                                   <td className="px-3 py-3 text-center">
@@ -1331,6 +1393,18 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
                             <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
                           </div>
                         </div>
+                        
+                        {/* Mostrar precio de venta mínimo */}
+                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-yellow-800">
+                              Precio Venta Mínimo:
+                            </span>
+                            <span className="text-lg font-bold text-yellow-900">
+                              S/. {parseFloat(selectedProduct.precioVentaMinimo || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-6">
@@ -1358,8 +1432,17 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
                             onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
                             min="0"
                             step="0.01"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-lg"
+                            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-lg ${
+                              precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0)
+                                ? 'border-red-300 focus:ring-red-500 bg-red-50'
+                                : 'border-gray-300 focus:ring-green-500'
+                            }`}
                           />
+                          {precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0) && (
+                            <p className="text-red-600 text-sm mt-1 font-medium">
+                              ⚠️ Precio por debajo del mínimo permitido
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -1395,7 +1478,6 @@ const simularConsumoYObtenerProximoLote = (lotes, cantidadAConsumir) => {
           </div>
         </div>
       )}
-
       {/* Modal de Edición */}
       {showEditItemModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">

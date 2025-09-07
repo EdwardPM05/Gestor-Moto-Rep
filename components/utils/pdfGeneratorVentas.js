@@ -2,21 +2,20 @@
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-// Función para cargar la fuente SimplifiedArabic
-const loadCustomFont = async (pdf) => {
+// Función para cargar únicamente Courier PS
+const loadCourierPSFont = async (pdf) => {
     try {
-        const fontPaths = [
-            '/fonts/SimplifiedArabic.ttf',
-            '/fonts/Simplified Arabic.ttf', 
-            '/fonts/simplified-arabic.ttf',
-            '/fonts/SimplifiedArabic-Regular.ttf'
+        const courierPaths = [
+            '/fonts/Courier-PS-Regular.ttf',
+            '/fonts/CourierPS.ttf',
+            '/fonts/courier-ps.ttf',
+            '/fonts/CourierPS-Regular.ttf',
+            '/fonts/Courier PS.ttf'
         ];
         
-        let fontLoaded = false;
-        
-        for (const fontPath of fontPaths) {
+        for (const fontPath of courierPaths) {
             try {
-                console.log(`Intentando cargar fuente desde: ${fontPath}`);
+                console.log(`Intentando cargar Courier PS desde: ${fontPath}`);
                 const response = await fetch(fontPath);
                 
                 if (response.ok) {
@@ -32,12 +31,11 @@ const loadCustomFont = async (pdf) => {
                     try {
                         const fileName = fontPath.split('/').pop();
                         pdf.addFileToVFS(fileName, fontBase64);
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'normal');
-                        pdf.addFont(fileName, 'SimplifiedArabic', 'bold');
+                        pdf.addFont(fileName, 'CourierPS', 'normal');
+                        pdf.addFont(fileName, 'CourierPS', 'bold');
                         
-                        console.log(`✅ Fuente SimplifiedArabic cargada exitosamente desde: ${fontPath}`);
-                        fontLoaded = true;
-                        break;
+                        console.log(`✅ Fuente CourierPS cargada exitosamente desde: ${fontPath}`);
+                        return 'CourierPS';
                         
                     } catch (fontRegisterError) {
                         console.warn(`Error registrando fuente ${fontPath}:`, fontRegisterError.message);
@@ -50,16 +48,14 @@ const loadCustomFont = async (pdf) => {
             }
         }
         
-        if (fontLoaded) {
-            return 'SimplifiedArabic';
-        } else {
-            throw new Error('No se pudo cargar ninguna variante de SimplifiedArabic');
-        }
+        // Si no se pudo cargar Courier PS, usar Courier por defecto
+        console.log('⚠️ No se pudo cargar Courier PS, usando Courier por defecto');
+        return 'courier';
         
     } catch (error) {
-        console.error('Error cargando SimplifiedArabic:', error.message);
-        console.log('🔄 Usando fuente Times como alternativa elegante');
-        return 'times';
+        console.error('Error cargando Courier PS:', error.message);
+        console.log('🔄 Usando Courier como alternativa');
+        return 'courier';
     }
 };
 
@@ -132,13 +128,13 @@ const getVentaItems = async (ventaId) => {
 const getMetodoPagoLabel = (metodo) => {
     const metodos = {
         efectivo: 'EFECTIVO',
-        tarjeta_credito: 'TARJETA DE CRÉDITO',
-        tarjeta_debito: 'TARJETA DE DÉBITO',
+        tarjeta_credito: 'TARJETA DE CREDITO',
+        tarjeta_debito: 'TARJETA DE DEBITO',
         tarjeta: 'TARJETA',
         yape: 'YAPE',
         plin: 'PLIN',
         transferencia: 'TRANSFERENCIA BANCARIA',
-        deposito: 'DEPÓSITO BANCARIO',
+        deposito: 'DEPOSITO BANCARIO',
         cheque: 'CHEQUE',
         mixto: 'PAGO MIXTO',
         otro: 'OTRO'
@@ -150,11 +146,122 @@ const getMetodoPagoLabel = (metodo) => {
 const getTipoVentaLabel = (tipo) => {
     const tipos = {
         directa: 'VENTA DIRECTA',
-        cotizacionAprobada: 'COTIZACIÓN APROBADA',
-        abono: 'ABONO A CRÉDITO',
-        credito: 'VENTA A CRÉDITO'
+        cotizacionAprobada: 'COTIZACION APROBADA',
+        abono: 'ABONO A CREDITO',
+        credito: 'VENTA A CREDITO'
     };
     return tipos[tipo] || tipo?.toUpperCase() || 'VENTA DIRECTA';
+};
+
+// Función para dibujar tabla con bordes completos estilo profesional
+const drawProfessionalTable = (pdf, data, headers, colWidths, startX, startY, fontName) => {
+    let currentY = startY;
+    const lineHeight = 6;
+    const padding = 1;
+    
+    // Calcular posiciones X para cada columna
+    const colPositions = [startX];
+    for (let i = 0; i < colWidths.length - 1; i++) {
+        colPositions.push(colPositions[i] + colWidths[i]);
+    }
+    
+    const tableWidth = colWidths.reduce((sum, width) => sum + width, 0);
+    
+    // Dibujar encabezados con fondo gris medio (igual que el total)
+    pdf.setFillColor(200, 200, 200); // Mismo gris que "TOTAL DE LA VENTA"
+    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.2); // Bordes más delgados
+    
+    // Rectángulo de fondo para encabezados
+    pdf.rect(startX, currentY, tableWidth, lineHeight, 'FD');
+    
+    // Texto de encabezados en negro y negrita
+    pdf.setTextColor(0, 0, 0); // Texto negro
+    pdf.setFont(fontName, 'bold');
+    pdf.setFontSize(7);
+    
+    // Dibujar líneas verticales y texto de encabezados
+    headers.forEach((header, index) => {
+        const x = colPositions[index];
+        const width = colWidths[index];
+        
+        // Línea vertical izquierda de cada columna
+        if (index === 0) {
+            pdf.line(x, currentY, x, currentY + lineHeight);
+        }
+        pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+        
+        // Texto del encabezado centrado
+        let displayText = header;
+        const maxWidth = width - (padding * 2);
+        
+        // Truncar texto si es muy largo
+        while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+            displayText = displayText.slice(0, -1);
+        }
+        
+        pdf.text(displayText, x + width/2, currentY + lineHeight/2 + 1, { align: 'center' });
+    });
+    
+    currentY += lineHeight;
+    
+    // Resetear color de texto para el contenido
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont(fontName, 'normal');
+    pdf.setFontSize(7);
+    
+    // Dibujar filas de datos
+    data.forEach((row, rowIndex) => {
+        // Alternar colores de fila para mejor legibilidad
+        if (rowIndex % 2 === 0) {
+            pdf.setFillColor(248, 248, 248); // Gris muy claro
+            pdf.rect(startX, currentY, tableWidth, lineHeight, 'F');
+        }
+        
+        // Dibujar bordes de la fila
+        pdf.rect(startX, currentY, tableWidth, lineHeight, 'S');
+        
+        row.forEach((cellData, colIndex) => {
+            const x = colPositions[colIndex];
+            const width = colWidths[colIndex];
+            
+            // Líneas verticales
+            pdf.line(x, currentY, x, currentY + lineHeight);
+            if (colIndex === row.length - 1) {
+                pdf.line(x + width, currentY, x + width, currentY + lineHeight);
+            }
+            
+            // Contenido de la celda
+            let displayText = String(cellData || '');
+            const maxWidth = width - (padding * 2);
+            
+            // Truncar texto si es muy largo
+            while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
+                displayText = displayText.slice(0, -1);
+            }
+            
+            // Alineación según el tipo de contenido
+            let textAlign = 'left';
+            let textX = x + padding;
+            
+            // Centrar números de cantidad
+            if (colIndex === 6) { // CANT.
+                textAlign = 'center';
+                textX = x + width/2;
+            }
+            // Alinear a la derecha precios
+            else if (colIndex >= 7) { // P. UNITARIO y P. TOTAL
+                textAlign = 'right';
+                textX = x + width - padding;
+            }
+            
+            pdf.text(displayText, textX, currentY + lineHeight/2 + 1, { align: textAlign });
+        });
+        
+        currentY += lineHeight;
+    });
+    
+    return currentY;
 };
 
 // Función principal para generar el PDF de venta
@@ -168,8 +275,8 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
             format: 'a4',
         });
         
-        // Cargar fuente personalizada
-        const fontName = await loadCustomFont(pdf);
+        // Cargar fuente Courier PS
+        const fontName = await loadCourierPSFont(pdf);
         
         const pageWidth = pdf.internal.pageSize.width;
         const pageHeight = pdf.internal.pageSize.height;
@@ -179,32 +286,36 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
         let currentY = 15;
 
         // =========================================================================
-        // ENCABEZADO: INFORMACIÓN DE LA EMPRESA Y VENTA
+        // ENCABEZADO LIMPIO - DISTRIBUIDO EN DOS COLUMNAS SIN FONDO GRIS
         // =========================================================================
-
+        
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(12);
+        pdf.setTextColor(0, 0, 0);
         
-        // Título de la empresa (izquierda)
+        // Título de la empresa (izquierda) - TODO EN MAYÚSCULAS
         pdf.text('MOTORES & REPUESTOS SAC', margin, currentY);
         
-        // Número de venta (derecha)
+        // Número de venta (derecha) - TODO EN MAYÚSCULAS
         const numeroVenta = ventaData.numeroVenta || `V-${ventaData.id?.slice(-8) || 'N/A'}`;
-        pdf.text(`VENTA Nro. ${numeroVenta}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 5;
+        pdf.text(`VENTA NRO. ${numeroVenta}`, pageWidth - margin, currentY, { align: 'right' });
+        currentY += 8;
 
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
         
-        // Detalles de la empresa (izquierda)
+        // COLUMNA IZQUIERDA - Información principal
         pdf.text('R.U.C: 20123456789', margin, currentY);
-        pdf.text('Email: motoresrepuestos@mail.com', margin, currentY + 4);
-        pdf.text('Dirección: Av. Los Motores 456, San Borja', margin, currentY + 8);
-        pdf.text('Teléfono: 999 888 777', margin, currentY + 12);
-        pdf.text('Venta realizada en tienda Av.Los Motores 456 San Borja', margin, currentY + 16);
-        currentY += 20;
+        pdf.text('EMAIL: MOTORESREPUESTOS@MAIL.COM', margin, currentY + 4);
+        pdf.text('VENTA REALIZADA EN TIENDA AV.LOS MOTORES 456 SAN BORJA', margin, currentY + 8);
         
-        // Información de la venta (abajo del encabezado)
+        // COLUMNA DERECHA - Información de contacto
+        pdf.text('DIRECCION: AV. LOS MOTORES 456, SAN BORJA', pageWidth / 2, currentY);
+        pdf.text('TELEFONO: 999 888 777', pageWidth / 2, currentY + 4);
+        
+        currentY += 18;
+        
+        // Información de la venta
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
         
@@ -213,18 +324,14 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
             (ventaData.fechaVenta ? new Date(ventaData.fechaVenta).toLocaleDateString('es-PE') : new Date().toLocaleDateString('es-PE'));
         
         pdf.text('FECHA DE VENTA:', margin, currentY);
-        pdf.setFont(fontName, 'normal');
         pdf.text(fechaVenta, margin + 30, currentY);
 
-        pdf.setFont(fontName, 'normal');
         pdf.text('TIPO DE VENTA:', pageWidth / 2, currentY);
-        pdf.setFont(fontName, 'normal');
         pdf.text(getTipoVentaLabel(ventaData.tipoVenta), pageWidth / 2 + 25, currentY);
         currentY += 5;
 
-        // Método de pago
-        pdf.setFont(fontName, 'normal');
-        pdf.text('MÉTODO DE PAGO:', margin, currentY);
+        // Método de pago y Estado en la misma línea
+        pdf.text('METODO DE PAGO:', margin, currentY);
         
         // Manejar métodos de pago mixtos
         let metodoPagoTexto = '';
@@ -240,14 +347,10 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
             metodoPagoTexto = getMetodoPagoLabel(ventaData.metodoPago);
         }
         
-        pdf.setFont(fontName, 'normal');
         pdf.text(metodoPagoTexto, margin + 35, currentY);
-        currentY += 5;
 
-        // Estado de la venta
-        pdf.setFont(fontName, 'normal');
+        // Estado de la venta (MISMA LÍNEA que método de pago)
         pdf.text('ESTADO:', pageWidth / 2, currentY);
-        pdf.setFont(fontName, 'normal');
         const estadoTexto = ventaData.estado === 'completada' ? 'COMPLETADA' : 
                            ventaData.estado === 'anulada' ? 'ANULADA' : 
                            ventaData.estado?.toUpperCase() || 'PENDIENTE';
@@ -270,7 +373,7 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
         const clienteNombre = clienteData ? 
             `${clienteData.nombre} ${clienteData.apellido || ''}` : 
             ventaData.clienteNombre || 'Cliente General';
-        pdf.text(clienteNombre, margin + 15, currentY);
+        pdf.text(clienteNombre.toUpperCase(), margin + 15, currentY);
         currentY += 5;
         
         if (clienteData && clienteData.dni) {
@@ -285,9 +388,8 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
             pdf.setFont(fontName, 'bold');
             pdf.text('OBSERVACIONES:', margin, currentY);
             pdf.setFont(fontName, 'normal');
-            // Dividir texto largo en múltiples líneas si es necesario
             const maxWidth = totalWidth - 30;
-            const lines = pdf.splitTextToSize(ventaData.observaciones, maxWidth);
+            const lines = pdf.splitTextToSize(ventaData.observaciones.toUpperCase(), maxWidth);
             pdf.text(lines, margin + 30, currentY);
             currentY += lines.length * 4;
         }
@@ -295,174 +397,77 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
         currentY += 5;
         
         // =========================================================================
-        // TABLA DE ITEMS
+        // TABLA PROFESIONAL CON BORDES COMPLETOS
         // =========================================================================
 
         // Obtener items de la venta
         const items = await getVentaItems(ventaData.id);
         
-        // Headers de la tabla
-        const tableHeaders = ['Cód. Tienda', 'Descripción', 'Color', 'Marca', 'Ubicación', 'Medida', 'Cant.', 'P. Unitario', 'P. Total'];
+        // Headers de la tabla - TODO EN MAYÚSCULAS
+        const tableHeaders = ['COD.', 'DESCRIPCION', 'COLOR', 'MARCA', 'UBICACION', 'MEDIDA', 'CANT', 'P.U.', 'P.T.'];
         
-        // Anchos de columnas
+        // Anchos de columnas optimizados para el estilo profesional
         const colWidths = [
-            totalWidth * 0.12, // Cód. Tienda
-            totalWidth * 0.30, // Descripción
+            totalWidth * 0.10, // Código
+            totalWidth * 0.32, // Descripción
             totalWidth * 0.08, // Color
             totalWidth * 0.10, // Marca
-            totalWidth * 0.10, // Ubicación
+            totalWidth * 0.12, // Ubicación
             totalWidth * 0.08, // Medida
             totalWidth * 0.06, // Cant.
-            totalWidth * 0.08, // Precio Unitario
-            totalWidth * 0.08  // Precio Total
+            totalWidth * 0.07, // P.U.
+            totalWidth * 0.07  // P.T.
         ];
 
-        // Calcular posiciones X para cada columna
-        const colPositions = [margin];
-        for (let i = 0; i < colWidths.length - 1; i++) {
-            colPositions.push(colPositions[i] + colWidths[i]);
-        }
-
-        pdf.setFontSize(8);
-        pdf.setFont(fontName, 'bold');
-        
-        // Línea superior de la tabla
-        pdf.setDrawColor(0, 0, 0);
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 3;
-
-        // Encabezados de la tabla
-        tableHeaders.forEach((header, index) => {
-            const x = colPositions[index];
-            const maxWidth = colWidths[index] - 2;
-            
-            let displayText = header;
-            if (pdf.getTextWidth(displayText) > maxWidth) {
-                while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                    displayText = displayText.slice(0, -1);
-                }
-                displayText += '...';
-            }
-            
-            pdf.text(displayText, x + 1, currentY);
-        });
-        currentY += 3;
-
-        // Línea después de encabezados
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 3;
-        
-        pdf.setFont(fontName, 'normal');
+        // Preparar datos para la tabla
+        const tableData = [];
         let totalVenta = 0;
 
-        // Función para dibujar encabezados en nueva página
-        const drawTableHeaders = () => {
-            pdf.setFont(fontName, 'bold');
-            pdf.setFontSize(8);
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            
-            tableHeaders.forEach((header, index) => {
-                const x = colPositions[index];
-                const maxWidth = colWidths[index] - 2;
-                
-                let displayText = header;
-                if (pdf.getTextWidth(displayText) > maxWidth) {
-                    while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                        displayText = displayText.slice(0, -1);
-                    }
-                    displayText += '...';
-                }
-                
-                pdf.text(displayText, x + 1, currentY);
-            });
-            currentY += 3;
-            pdf.line(margin, currentY, pageWidth - margin, currentY);
-            currentY += 3;
-            pdf.setFont(fontName, 'normal');
-        };
-
-        // Procesar items
         for (const item of items) {
-            // Verificar si necesitamos nueva página
-            if (currentY > pageHeight - 50) {
-                pdf.addPage();
-                currentY = 15;
-                drawTableHeaders();
-            }
-            
             // Obtener los detalles del producto
             const productDetails = await getProductDetails(item.productoId);
             
-            // Datos del item
-            const itemData = [
-                productDetails.codigoTienda || 'N/A',
-                item.nombreProducto || 'N/A',
-                productDetails.color || 'N/A',
-                productDetails.marca || 'N/A',
-                productDetails.ubicacion || 'N/A',
-                productDetails.medida || 'N/A',
+            // Datos del item - TODO EN MAYÚSCULAS
+            const itemRow = [
+                (productDetails.codigoTienda || 'N/A').toString().toUpperCase(),
+                (item.nombreProducto || 'N/A').toString().toUpperCase(),
+                (productDetails.color || 'N/A').toString().toUpperCase(),
+                (productDetails.marca || 'N/A').toString().toUpperCase(),
+                (productDetails.ubicacion || 'N/A').toString().toUpperCase(),
+                (productDetails.medida || 'N/A').toString().toUpperCase(),
                 String(item.cantidad || 0),
-                `S/. ${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`,
-                `S/. ${parseFloat(item.subtotal || 0).toFixed(2)}`
+                `${parseFloat(item.precioVentaUnitario || 0).toFixed(2)}`,
+                `${parseFloat(item.subtotal || 0).toFixed(2)}`
             ];
             
-            // Alineaciones por columna
-            const alignments = ['left', 'left', 'left', 'left', 'left', 'left', 'center', 'right', 'right'];
-            
-            // Escribir datos de cada columna
-            itemData.forEach((data, index) => {
-                const x = colPositions[index];
-                const maxWidth = colWidths[index] - 2;
-                const alignment = alignments[index];
-                
-                let displayText = String(data);
-                if (pdf.getTextWidth(displayText) > maxWidth) {
-                    if (index === 1) { // Descripción - caso especial
-                        while (pdf.getTextWidth(displayText + '...') > maxWidth && displayText.length > 1) {
-                            displayText = displayText.slice(0, -1);
-                        }
-                        displayText += '...';
-                    } else {
-                        while (pdf.getTextWidth(displayText) > maxWidth && displayText.length > 1) {
-                            displayText = displayText.slice(0, -1);
-                        }
-                    }
-                }
-                
-                // Calcular posición X según alineación
-                let textX = x + 1;
-                if (alignment === 'center') {
-                    textX = x + (colWidths[index] / 2);
-                } else if (alignment === 'right') {
-                    textX = x + colWidths[index] - 1;
-                }
-                
-                pdf.text(displayText, textX, currentY, { align: alignment });
-            });
-            
+            tableData.push(itemRow);
             totalVenta += parseFloat(item.subtotal || 0);
-            currentY += 5;
         }
 
-        pdf.line(margin, currentY, pageWidth - margin, currentY);
-        currentY += 8;
-
+        // Dibujar la tabla profesional
+        currentY = drawProfessionalTable(pdf, tableData, tableHeaders, colWidths, margin, currentY, fontName);
+        
+        currentY += 5;
+        
         // =========================================================================
-        // TOTAL DE LA VENTA
+        // FILA DE TOTAL CON ESTILO PROFESIONAL
         // =========================================================================
         
-        pdf.setFontSize(10);
         pdf.setFont(fontName, 'bold');
+        pdf.setFontSize(9);
         
-        // TOTAL DE LA VENTA
-        pdf.setTextColor(0, 0, 0);
-        pdf.text('TOTAL DE LA VENTA:', margin + 10, currentY);
-        pdf.text(`S/. ${(ventaData.totalVenta || totalVenta).toFixed(2)}`, pageWidth - margin, currentY, { align: 'right' });
-        currentY += 8;
+        // Fondo para la fila de total
+        pdf.setFillColor(200, 200, 200);
+        pdf.setDrawColor(0, 0, 0);
+        pdf.rect(margin, currentY, totalWidth, 8, 'FD');
         
-        // Resetear color del texto
-        pdf.setTextColor(0, 0, 0);
+        // Texto "TOTAL DE LA VENTA"
+        pdf.text('TOTAL DE LA VENTA:', margin + 5, currentY + 5);
+        
+        // Monto total alineado a la derecha
+        pdf.text(`S/. ${(ventaData.totalVenta || totalVenta).toFixed(2)}`, pageWidth - margin - 5, currentY + 5, { align: 'right' });
+        
+        currentY += 15;
 
         // =========================================================================
         // INFORMACIÓN ADICIONAL
@@ -475,20 +480,20 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
         
         pdf.setFont(fontName, 'bold');
         pdf.setFontSize(8);
-        pdf.text('INFORMACIÓN IMPORTANTE:', margin, currentY);
+        pdf.text('INFORMACION IMPORTANTE:', margin, currentY);
         currentY += 6;
         
         pdf.setFont(fontName, 'normal');
         pdf.setFontSize(8);
-        pdf.text('• Este documento es un comprobante de su compra.', margin + 5, currentY);
+        pdf.text('• ESTE DOCUMENTO ES UN COMPROBANTE DE SU COMPRA.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Para cualquier reclamo o consulta, comuníquese con nosotros.', margin + 5, currentY);
+        pdf.text('• PARA CUALQUIER RECLAMO O CONSULTA, COMUNIQUESE CON NOSOTROS.', margin + 5, currentY);
         currentY += 4;
-        pdf.text('• Conserve este documento como garantía de su compra.', margin + 5, currentY);
+        pdf.text('• CONSERVE ESTE DOCUMENTO COMO GARANTIA DE SU COMPRA.', margin + 5, currentY);
         currentY += 4;
         
         if (ventaData.tipoVenta === 'cotizacionAprobada') {
-            pdf.text('• Esta venta fue generada a partir de una cotización aprobada.', margin + 5, currentY);
+            pdf.text('• ESTA VENTA FUE GENERADA A PARTIR DE UNA COTIZACION APROBADA.', margin + 5, currentY);
             currentY += 4;
         }
         
@@ -497,7 +502,7 @@ const generarPDFVenta = async (ventaData, clienteData = null) => {
         // Pie de página
         pdf.setFontSize(8);
         pdf.setFont(fontName, 'normal');
-        pdf.text(`Comprobante generado el ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        pdf.text(`COMPROBANTE GENERADO EL ${new Date().toLocaleString('es-PE')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
         
         // Guardar PDF
         const fechaSufijo = new Date().toISOString().split('T')[0];
@@ -528,7 +533,7 @@ export const generarPDFVentaCompleta = async (ventaId, ventaData = null, cliente
         }
         
         if (!venta) {
-            throw new Error('No se pudo obtener la información de la venta');
+            throw new Error('No se pudo obtener la informacion de la venta');
         }
         
         // Si no se proporciona clienteData y hay un clienteId, obtenerlo
@@ -540,7 +545,7 @@ export const generarPDFVentaCompleta = async (ventaId, ventaData = null, cliente
                     cliente = clienteDoc.data();
                 }
             } catch (error) {
-                console.warn('No se pudo obtener información del cliente:', error);
+                console.warn('No se pudo obtener informacion del cliente:', error);
             }
         }
         
@@ -549,7 +554,7 @@ export const generarPDFVentaCompleta = async (ventaId, ventaData = null, cliente
         
     } catch (error) {
         console.error('Error al generar PDF de venta:', error);
-        throw new Error('Error al generar el comprobante de venta. Por favor, inténtalo de nuevo.');
+        throw new Error('Error al generar el comprobante de venta. Por favor, intentalo de nuevo.');
     }
 };
 

@@ -46,9 +46,9 @@ const LotesPage = () => {
   const [sortOrder, setSortOrder] = useState('desc');
 
   // Estados de vista
-  const [viewMode, setViewMode] = useState('agrupado'); // 'agrupado', 'tabla', 'tarjetas'
   const [showFilters, setShowFilters] = useState(false);
   const [expandedProducts, setExpandedProducts] = useState(new Set());
+  const [limitPerPage, setLimitPerPage] = useState(20);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -96,9 +96,7 @@ const LotesPage = () => {
               // Campos del producto
               productoId: loteData.productoId || null,
               nombreProducto: loteData.nombreProducto || 'Sin nombre',
-              marca: loteData.marca || 'Sin marca',
               codigoTienda: loteData.codigoTienda || 'Sin código',
-              color: loteData.color || 'Sin color',
               
               // Campos del lote
               numeroLote: loteData.numeroLote || 'Sin número',
@@ -157,9 +155,7 @@ const LotesPage = () => {
         agrupados[productoId] = {
           productoId: productoId,
           nombreProducto: lote.nombreProducto,
-          marca: lote.marca,
           codigoTienda: lote.codigoTienda,
-          color: lote.color,
           lotes: [],
           // Estadísticas consolidadas
           totalStock: 0,
@@ -225,144 +221,76 @@ const LotesPage = () => {
 
   // Aplicar filtros y búsqueda
   useEffect(() => {
-    if (viewMode === 'agrupado') {
-      let filtered = [...lotesAgrupados];
+    let filtered = [...lotesAgrupados];
 
-      // Filtro por búsqueda
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase();
-        filtered = filtered.filter(grupo => 
-          (grupo.nombreProducto || '').toLowerCase().includes(searchLower) ||
-          (grupo.marca || '').toLowerCase().includes(searchLower) ||
-          (grupo.codigoTienda || '').toLowerCase().includes(searchLower) ||
-          grupo.lotes.some(lote => (lote.numeroLote || '').toLowerCase().includes(searchLower))
-        );
-      }
-
-      // Filtro por estado
-      if (estadoFilter) {
-        if (estadoFilter === 'activo') {
-          filtered = filtered.filter(grupo => grupo.estadoGeneral === 'activo');
-        } else if (estadoFilter === 'agotado') {
-          filtered = filtered.filter(grupo => grupo.estadoGeneral === 'agotado');
-        }
-      }
-
-      // Filtro por producto
-      if (productoFilter) {
-        filtered = filtered.filter(grupo => grupo.productoId === productoFilter);
-      }
-
-      // Ordenamiento
-      filtered.sort((a, b) => {
-        let aValue, bValue;
-        
-        switch (sortBy) {
-          case 'nombreProducto':
-            aValue = (a.nombreProducto || '').toLowerCase();
-            bValue = (b.nombreProducto || '').toLowerCase();
-            break;
-          case 'stockRestante':
-            aValue = a.stockActivo;
-            bValue = b.stockActivo;
-            break;
-          case 'fechaIngreso':
-          default:
-            aValue = a.fechaUltimoIngreso || new Date(0);
-            bValue = b.fechaUltimoIngreso || new Date(0);
-            break;
-        }
-
-        if (sortOrder === 'asc') {
-          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-        } else {
-          return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-        }
-      });
-
-      setFilteredLotes(filtered);
-    } else {
-      // Filtros para vista de tabla/tarjetas (lotes individuales)
-      let filtered = [...lotes];
-
-      if (searchTerm.trim()) {
-        const searchLower = searchTerm.toLowerCase();
-        filtered = filtered.filter(lote => 
-          (lote.nombreProducto || '').toLowerCase().includes(searchLower) ||
-          (lote.numeroLote || '').toLowerCase().includes(searchLower) ||
-          (lote.marca || '').toLowerCase().includes(searchLower) ||
-          (lote.codigoTienda || '').toLowerCase().includes(searchLower)
-        );
-      }
-
-      if (estadoFilter) {
-        filtered = filtered.filter(lote => lote.estado === estadoFilter);
-      }
-
-      if (productoFilter) {
-        filtered = filtered.filter(lote => lote.productoId === productoFilter);
-      }
-
-      filtered.sort((a, b) => {
-        let aValue, bValue;
-        
-        switch (sortBy) {
-          case 'nombreProducto':
-            aValue = (a.nombreProducto || '').toLowerCase();
-            bValue = (b.nombreProducto || '').toLowerCase();
-            break;
-          case 'numeroLote':
-            aValue = a.numeroLote || '';
-            bValue = b.numeroLote || '';
-            break;
-          case 'stockRestante':
-            aValue = parseFloat(a.stockRestante || 0);
-            bValue = parseFloat(b.stockRestante || 0);
-            break;
-          case 'fechaIngreso':
-          default:
-            aValue = a.fechaIngreso ? 
-              (a.fechaIngreso.toDate ? a.fechaIngreso.toDate() : new Date(a.fechaIngreso)) : 
-              new Date(0);
-            bValue = b.fechaIngreso ? 
-              (b.fechaIngreso.toDate ? b.fechaIngreso.toDate() : new Date(b.fechaIngreso)) : 
-              new Date(0);
-            break;
-        }
-
-        if (sortOrder === 'asc') {
-          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-        } else {
-          return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-        }
-      });
-
-      setFilteredLotes(filtered);
+    // Filtro por búsqueda
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(grupo => 
+        (grupo.nombreProducto || '').toLowerCase().includes(searchLower) ||
+        (grupo.codigoTienda || '').toLowerCase().includes(searchLower) ||
+        grupo.lotes.some(lote => (lote.numeroLote || '').toLowerCase().includes(searchLower))
+      );
     }
-  }, [lotes, lotesAgrupados, searchTerm, estadoFilter, productoFilter, sortBy, sortOrder, viewMode]);
+
+    // Filtro por estado
+    if (estadoFilter) {
+      if (estadoFilter === 'activo') {
+        filtered = filtered.filter(grupo => grupo.estadoGeneral === 'activo');
+      } else if (estadoFilter === 'agotado') {
+        filtered = filtered.filter(grupo => grupo.estadoGeneral === 'agotado');
+      }
+    }
+
+    // Filtro por producto
+    if (productoFilter) {
+      filtered = filtered.filter(grupo => grupo.productoId === productoFilter);
+    }
+
+    // Ordenamiento
+    filtered.sort((a, b) => {
+      let aValue, bValue;
+      
+      switch (sortBy) {
+        case 'nombreProducto':
+          aValue = (a.nombreProducto || '').toLowerCase();
+          bValue = (b.nombreProducto || '').toLowerCase();
+          break;
+        case 'stockRestante':
+          aValue = a.stockActivo;
+          bValue = b.stockActivo;
+          break;
+        case 'fechaIngreso':
+        default:
+          aValue = a.fechaUltimoIngreso || new Date(0);
+          bValue = b.fechaUltimoIngreso || new Date(0);
+          break;
+      }
+
+      if (sortOrder === 'asc') {
+        return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+      } else {
+        return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+      }
+    });
+
+    setFilteredLotes(filtered);
+  }, [lotes, lotesAgrupados, searchTerm, estadoFilter, productoFilter, sortBy, sortOrder]);
 
   // Obtener estadísticas
   const getEstadisticas = () => {
-    if (viewMode === 'agrupado') {
-      const total = lotesAgrupados.length;
-      const activos = lotesAgrupados.filter(g => g.estadoGeneral === 'activo').length;
-      const agotados = lotesAgrupados.filter(g => g.estadoGeneral === 'agotado').length;
-      const stockBajo = lotesAgrupados.filter(g => g.estadoGeneral === 'stock-bajo').length;
-      
-      return { total, activos, agotados, stockBajo };
-    } else {
-      const total = lotes.length;
-      const activos = lotes.filter(l => l.estado === 'activo').length;
-      const agotados = lotes.filter(l => l.estado === 'agotado').length;
-      const stockBajo = lotes.filter(l => 
-        l.estado === 'activo' && parseFloat(l.stockRestante || 0) <= 5
-      ).length;
-
-      return { total, activos, agotados, stockBajo };
-    }
+    const total = lotesAgrupados.length;
+    const activos = lotesAgrupados.filter(g => g.estadoGeneral === 'activo').length;
+    const agotados = lotesAgrupados.filter(g => g.estadoGeneral === 'agotado').length;
+    const stockBajo = lotesAgrupados.filter(g => g.estadoGeneral === 'stock-bajo').length;
+    
+    return { total, activos, agotados, stockBajo };
   };
 
   const estadisticas = getEstadisticas();
+
+  // Limitar los resultados mostrados
+  const displayedLotes = filteredLotes.slice(0, limitPerPage);
 
   const getEstadoBadge = (estado, stockRestante) => {
     if (estado === 'agotado') {
@@ -464,7 +392,7 @@ const LotesPage = () => {
                     Gestión de Lotes
                   </h1>
                   <p className="text-blue-100 mt-1">
-                    Control detallado de lotes de inventario {viewMode === 'agrupado' ? 'agrupados por producto' : 'individuales'}
+                    Control detallado de lotes agrupados por producto
                   </p>
                 </div>
               </div>
@@ -475,9 +403,7 @@ const LotesPage = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
                   <div className="text-3xl font-bold text-gray-900">{estadisticas.total}</div>
-                  <div className="text-sm text-gray-600">
-                    {viewMode === 'agrupado' ? 'Productos' : 'Lotes'}
-                  </div>
+                  <div className="text-sm text-gray-600">Productos</div>
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-green-600">{estadisticas.activos}</div>
@@ -504,7 +430,7 @@ const LotesPage = () => {
                       type="text"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Buscar por producto, lote, marca, código..."
+                      placeholder="Buscar por producto, lote, código..."
                       className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
@@ -522,37 +448,18 @@ const LotesPage = () => {
                   Filtros
                 </button>
 
-                <div className="flex border border-gray-300 rounded-lg">
-                  <button
-                    onClick={() => setViewMode('agrupado')}
-                    className={`px-3 py-2 text-sm font-medium rounded-l-lg ${
-                      viewMode === 'agrupado' 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
+                {/* Selector de límite por página */}
+                <div className="flex-none min-w-[50px]">
+                  <select
+                    value={limitPerPage}
+                    onChange={(e) => setLimitPerPage(Number(e.target.value))}
+                    className="mt-0 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-[38px]"
                   >
-                    Agrupado
-                  </button>
-                  <button
-                    onClick={() => setViewMode('tabla')}
-                    className={`px-3 py-2 text-sm font-medium ${
-                      viewMode === 'tabla' 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Tabla
-                  </button>
-                  <button
-                    onClick={() => setViewMode('tarjetas')}
-                    className={`px-3 py-2 text-sm font-medium rounded-r-lg ${
-                      viewMode === 'tarjetas' 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Tarjetas
-                  </button>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
                 </div>
               </div>
 
@@ -587,7 +494,7 @@ const LotesPage = () => {
                         <option value="">Todos los productos</option>
                         {productos.map((producto) => (
                           <option key={producto.id} value={producto.id}>
-                            {producto.nombre} ({producto.codigoTienda})
+                            {producto.codigoTienda} - {producto.nombre}
                           </option>
                         ))}
                       </select>
@@ -604,7 +511,6 @@ const LotesPage = () => {
                       >
                         <option value="fechaIngreso">Fecha de ingreso</option>
                         <option value="nombreProducto">Nombre del producto</option>
-                        {viewMode !== 'agrupado' && <option value="numeroLote">Número de lote</option>}
                         <option value="stockRestante">Stock restante</option>
                       </select>
                     </div>
@@ -625,7 +531,7 @@ const LotesPage = () => {
 
                   <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
                     <div className="text-sm text-gray-600">
-                      {filteredLotes.length} {viewMode === 'agrupado' ? 'producto' : 'lote'}{filteredLotes.length !== 1 ? 's' : ''} encontrado{filteredLotes.length !== 1 ? 's' : ''}
+                      {filteredLotes.length} producto{filteredLotes.length !== 1 ? 's' : ''} encontrado{filteredLotes.length !== 1 ? 's' : ''}
                     </div>
                     <button
                       onClick={() => {
@@ -645,9 +551,9 @@ const LotesPage = () => {
             </div>
           </div>
 
-          {/* Contenido principal */}
+          {/* Contenido principal - Vista agrupada */}
           <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-            {filteredLotes.length === 0 ? (
+            {displayedLotes.length === 0 ? (
               <div className="text-center py-12">
                 <ArchiveBoxIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
                 <h3 className="text-lg font-medium text-gray-600 mb-2">
@@ -660,10 +566,9 @@ const LotesPage = () => {
                   }
                 </p>
               </div>
-            ) : viewMode === 'agrupado' ? (
-              /* Vista agrupada por producto */
+            ) : (
               <div className="divide-y divide-gray-200">
-                {filteredLotes.map((grupo) => (
+                {displayedLotes.map((grupo) => (
                   <div key={grupo.productoId} className="p-6">
                     {/* Encabezado del grupo */}
                     <div 
@@ -683,11 +588,10 @@ const LotesPage = () => {
                           <div className="flex items-center justify-between">
                             <div>
                               <h3 className="text-lg font-semibold text-gray-900">
-                                {grupo.nombreProducto}
+                                {grupo.codigoTienda}
                               </h3>
                               <p className="text-sm text-gray-500">
-                                {grupo.marca} • {grupo.codigoTienda}
-                                {grupo.color && ` • ${grupo.color}`}
+                                {grupo.nombreProducto}
                               </p>
                             </div>
                           </div>
@@ -701,7 +605,7 @@ const LotesPage = () => {
                           </div>
                           <div className="text-xs text-gray-500">
                             {grupo.totalLotes} lote{grupo.totalLotes !== 1 ? 's' : ''} • 
-                            Precio prom: S/. {grupo.precioPromedio.toFixed(2)}
+                            Precio prom: S/. {(grupo.precioPromedio || 0).toFixed(2)}
                           </div>
                         </div>
                         
@@ -765,145 +669,6 @@ const LotesPage = () => {
                     )}
                   </div>
                 ))}
-              </div>
-            ) : viewMode === 'tabla' ? (
-              /* Vista de tabla */
-              <div className="overflow-x-auto">
-                <table className="w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Producto
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Lote
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Stock
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Precio Compra
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Estado
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Fecha Ingreso
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Acciones
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredLotes.map((lote, index) => (
-                      <tr key={lote.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="font-medium text-gray-900 text-sm">
-                              {lote.nombreProducto}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {lote.marca} • {lote.codigoTienda}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {lote.numeroLote}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            <span className="font-medium">{lote.stockRestante || 0}</span>
-                            <span className="text-gray-500"> / {lote.cantidadInicial || 0}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          S/. {parseFloat(lote.precioCompraUnitario || 0).toFixed(2)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {getEstadoBadge(lote.estado, lote.stockRestante)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {formatDate(lote.fechaIngreso)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <button
-                            onClick={() => router.push(`/inventario/lotes/${lote.id}`)}
-                            className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 transition-colors"
-                            title="Ver detalles"
-                          >
-                            <EyeIcon className="h-5 w-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              /* Vista de tarjetas */
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {filteredLotes.map((lote) => (
-                    <div key={lote.id} className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
-                      <div className="p-5">
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 text-sm truncate">
-                              {lote.nombreProducto}
-                            </h3>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {lote.marca} • {lote.codigoTienda}
-                            </p>
-                          </div>
-                          <div className="ml-2 flex-shrink-0">
-                            {getEstadoBadge(lote.estado, lote.stockRestante)}
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 mb-4">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-medium text-gray-600">Lote:</span>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                              {lote.numeroLote}
-                            </span>
-                          </div>
-                          
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-medium text-gray-600">Stock:</span>
-                            <span className="text-sm font-semibold text-gray-900">
-                              {lote.stockRestante || 0} / {lote.cantidadInicial || 0}
-                            </span>
-                          </div>
-
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-medium text-gray-600">Precio:</span>
-                            <span className="text-sm font-semibold text-gray-900">
-                              S/. {parseFloat(lote.precioCompraUnitario || 0).toFixed(2)}
-                            </span>
-                          </div>
-
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-medium text-gray-600">Ingreso:</span>
-                            <span className="text-xs text-gray-500">
-                              {formatDate(lote.fechaIngreso)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => router.push(`/inventario/lotes/${lote.id}`)}
-                          className="w-full inline-flex items-center justify-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                        >
-                          <EyeIcon className="h-4 w-4 mr-2" />
-                          Ver detalles
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
           </div>

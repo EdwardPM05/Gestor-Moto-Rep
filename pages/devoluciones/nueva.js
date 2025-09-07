@@ -154,7 +154,7 @@ const NuevaDevolucionPage = () => {
     }
   };
 
-  // FUNCIÓN MODIFICADA para capturar ganancia al seleccionar items para devolución
+// FUNCIÓN ACTUALIZADA en nueva.js para capturar lote original en devolución
 const toggleItemDevolucion = async (item, cantidadADevolver = null) => {
   const existe = itemsADevolver.find(i => i.id === item.id);
   
@@ -169,31 +169,35 @@ const toggleItemDevolucion = async (item, cantidadADevolver = null) => {
               ...i, 
               cantidadADevolver, 
               montoDevolucion: cantidadADevolver * item.precioVentaUnitario,
-              // CALCULAR GANANCIA PARA LA CANTIDAD DEVUELTA
               gananciaDevolucion: calcularGananciaDevolucion(i, cantidadADevolver)
             }
           : i
       ));
     }
   } else {
-    // NUEVO: Si no existe, agregar CON CAMPOS DE GANANCIA
+    // NUEVO: Capturar información del lote original desde el item de venta
     try {
       setLoading(true);
       
-      // 1. OBTENER GANANCIA DEL ITEM ORIGINAL DE LA VENTA
+      // 1. OBTENER GANANCIA Y LOTE ORIGINAL DEL ITEM
       let precioCompraUnitario = 0;
       let gananciaUnitaria = 0;
-      let gananciaTotal = 0;
+      let loteOriginalInfo = null;
       
-      // Verificar si el item ya tiene campos de ganancia (desde venta)
-      if (item.precioCompraUnitario && typeof item.precioCompraUnitario === 'number') {
-        precioCompraUnitario = item.precioCompraUnitario;
-        gananciaUnitaria = item.gananciaUnitaria || (item.precioVentaUnitario - precioCompraUnitario);
-        gananciaTotal = item.gananciaTotal || (gananciaUnitaria * item.cantidad);
-      } else {
-        // 2. SI NO TIENE CAMPOS DE GANANCIA, OBTENER DESDE PRODUCTO
-        console.log(`Obteniendo ganancia para producto: ${item.nombreProducto}`);
+      // El item ya debería tener información del lote (viene de itemsVenta)
+      if (item.loteId && item.numeroLote) {
+        loteOriginalInfo = {
+          loteId: item.loteId,
+          numeroLote: item.numeroLote,
+          precioCompraUnitario: item.precioCompraUnitario
+        };
         
+        precioCompraUnitario = parseFloat(item.precioCompraUnitario || 0);
+        gananciaUnitaria = item.gananciaUnitaria || (item.precioVentaUnitario - precioCompraUnitario);
+        
+        console.log(`✅ Lote original capturado: ${item.numeroLote} para ${item.nombreProducto}`);
+      } else {
+        // Si no tiene lote, obtener desde producto (fallback)
         const productRef = doc(db, 'productos', item.productoId);
         const productSnap = await getDoc(productRef);
         
@@ -201,64 +205,43 @@ const toggleItemDevolucion = async (item, cantidadADevolver = null) => {
           const productData = productSnap.data();
           precioCompraUnitario = parseFloat(productData.precioCompraDefault || 0);
           gananciaUnitaria = item.precioVentaUnitario - precioCompraUnitario;
-          gananciaTotal = gananciaUnitaria * item.cantidad;
-          
-          console.log(`✓ Ganancia calculada: Venta ${item.precioVentaUnitario} - Compra ${precioCompraUnitario} = ${gananciaUnitaria}`);
-        } else {
-          console.warn(`⚠️ Producto ${item.productoId} no encontrado, usando estimación`);
-          // Fallback: estimar ganancia como 40% del precio de venta
-          gananciaUnitaria = item.precioVentaUnitario * 0.4;
-          gananciaTotal = gananciaUnitaria * item.cantidad;
-          precioCompraUnitario = item.precioVentaUnitario - gananciaUnitaria;
         }
+        
+        console.warn(`⚠️ Item ${item.nombreProducto} sin información de lote original`);
       }
       
-      // 3. CALCULAR GANANCIA ESPECÍFICA PARA LA CANTIDAD A DEVOLVER
       const cantidadFinal = cantidadADevolver || item.cantidad;
       const gananciaDevolucion = gananciaUnitaria * cantidadFinal;
       
-      // 4. CREAR ITEM CON TODOS LOS CAMPOS DE GANANCIA
-      const itemConGanancia = {
+      // Crear item con información completa de lote original
+      const itemConLoteOriginal = {
         ...item,
         cantidadADevolver: cantidadFinal,
         montoDevolucion: cantidadFinal * item.precioVentaUnitario,
         
-        // CAMPOS DE GANANCIA AGREGADOS:
+        // CAMPOS DE GANANCIA:
         precioCompraUnitario: precioCompraUnitario,
         gananciaUnitaria: gananciaUnitaria,
-        gananciaTotal: gananciaTotal, // Ganancia total del item en la venta original
-        gananciaDevolucion: gananciaDevolucion, // Ganancia que se pierde con esta devolución específica
+        gananciaTotal: gananciaUnitaria * item.cantidad,
+        gananciaDevolucion: gananciaDevolucion,
+        
+        // INFORMACIÓN DEL LOTE ORIGINAL:
+        loteOriginal: loteOriginalInfo,
+        tieneLoteOriginal: !!loteOriginalInfo
       };
       
-      setItemsADevolver(prev => [...prev, itemConGanancia]);
+      setItemsADevolver(prev => [...prev, itemConLoteOriginal]);
       
-      console.log(`✅ Item agregado con ganancia:`, {
+      console.log(`✅ Item agregado con lote original:`, {
         producto: item.nombreProducto,
         cantidadADevolver: cantidadFinal,
-        precioCompraUnitario,
-        gananciaUnitaria,
+        loteOriginal: loteOriginalInfo?.numeroLote || 'No disponible',
         gananciaDevolucion
       });
       
     } catch (error) {
-      console.error('Error al obtener ganancia del producto:', error);
-      
-      // FALLBACK: Agregar item sin ganancia real (con estimación)
-      const cantidadFinal = cantidadADevolver || item.cantidad;
-      const gananciaEstimada = (item.precioVentaUnitario * 0.4) * cantidadFinal;
-      
-      setItemsADevolver(prev => [...prev, {
-        ...item,
-        cantidadADevolver: cantidadFinal,
-        montoDevolucion: cantidadFinal * item.precioVentaUnitario,
-        precioCompraUnitario: 0,
-        gananciaUnitaria: item.precioVentaUnitario * 0.4,
-        gananciaTotal: item.precioVentaUnitario * 0.4 * item.cantidad,
-        gananciaDevolucion: gananciaEstimada,
-        esEstimacion: true // Flag para indicar que es estimación
-      }]);
-      
-      alert('No se pudo obtener la ganancia exacta del producto. Se usará una estimación.');
+      console.error('Error al procesar item con lote original:', error);
+      alert('Error al procesar el producto para devolución: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -281,10 +264,6 @@ const calcularGananciaRealAfectada = () => {
     return total + (item.gananciaDevolucion || 0);
   }, 0);
 };
-
-
-
-
 
 
   // Calcular monto total de devolución
@@ -388,6 +367,8 @@ const handleSubmit = async (e) => {
           productoId: item.productoId,
           nombreProducto: item.nombreProducto,
           marca: item.marca || '',
+          medida: item.medida || '',
+          codigoProveedor: item.codigoProveedor  || '',
           codigoTienda: item.codigoTienda || '',
           color: item.color || '',
           cantidadOriginal: item.cantidad,
@@ -431,8 +412,8 @@ const handleSubmit = async (e) => {
 
   return (
     <Layout title="Nueva Devolución">
-      <div className="min-h-screen bg-gray-50 py-6">
-        <div className="max-w-full mx-auto px-6 sm:px-8 lg:px-12">
+
+        <div className="w-full px-1 sm:px-2 lg:px-3">
           {error && (
             <div className="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
               {error}
@@ -453,12 +434,12 @@ const handleSubmit = async (e) => {
               </div>
             </div>
 
-            <div className="grid grid-cols-12 gap-6 p-6">
+            <div className="grid grid-cols-12 gap-2 p-2">
               
               {/* Panel Izquierdo - Búsqueda de Venta */}
-              <div className="col-span-12 lg:col-span-5">
+              <div className="col-span-12 lg:col-span-3">
                 {!ventaSeleccionada ? (
-                  <div className="bg-gray-50 rounded-lg p-6">
+                  <div className="bg-gray-50 rounded-lg p-4">
                     <h2 className="text-lg font-semibold text-gray-800 mb-4">1. Buscar Venta</h2>
                     
                     {/* Buscador */}
@@ -653,8 +634,8 @@ const handleSubmit = async (e) => {
                 )}
               </div>
 
-              {/* Panel Derecho - Items de la Venta */}
-              <div className="col-span-12 lg:col-span-7">
+              {/* Panel Derecho - Items de la Venta en formato tabla */}
+              <div className="col-span-12 lg:col-span-9">
                 {ventaSeleccionada ? (
                   <div className="bg-white border border-gray-200 rounded-lg">
                     <div className="p-4 border-b border-gray-200">
@@ -673,91 +654,172 @@ const handleSubmit = async (e) => {
                           <p className="text-gray-500">No se encontraron productos en esta venta</p>
                         </div>
                       ) : (
-                        <div className="space-y-3">
-                          {itemsVenta.map(item => {
-                            const itemDevolucion = itemsADevolver.find(i => i.id === item.id);
-                            const isSelected = !!itemDevolucion;
-                            
-                            return (
-                              <div
-                                key={item.id}
-                                className={`border rounded-lg p-4 transition-colors ${
-                                  isSelected 
-                                    ? 'border-orange-300 bg-orange-50' 
-                                    : 'border-gray-200 hover:bg-gray-50'
-                                }`}
-                              >
-                                <div className="flex items-start space-x-4">
-                                  <div className="flex-shrink-0 pt-1">
-                                    <input
-                                      type="checkbox"
-                                      checked={isSelected}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          toggleItemDevolucion(item, item.cantidad);
-                                        } else {
-                                          toggleItemDevolucion(item, 0);
-                                        }
-                                      }}
-                                      className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                                    />
-                                  </div>
+                        <div className="bg-white rounded-lg overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse">
+                              <thead className="bg-orange-50">
+                                <tr className="border-b border-gray-300">
+                                  <th className="w-12 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SELEC.</th>
+                                  <th className="w-32 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. TIENDA</th>
+                                  <th className="w-48 px-4 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
+                                  <th className="w-28 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. PROVEEDOR</th>
+                                  <th className="w-24 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
+                                  <th className="w-20 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
+                                  <th className="w-20 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MEDIDA</th>
+                                  <th className="w-16 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT. VENDIDA</th>
+                                  <th className="w-24 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. UNITARIO</th>
+                                  <th className="w-24 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
+                                  <th className="w-20 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT. DEVOLVER</th>
+                                  <th className="w-28 px-2 py-4 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MONTO DEVOLUCIÓN</th>
+                                </tr>
+                              </thead>
+                              
+                              <tbody>
+                                {itemsVenta.map((item, index) => {
+                                  const itemDevolucion = itemsADevolver.find(i => i.id === item.id);
+                                  const isSelected = !!itemDevolucion;
+                                  
+                                  return (
+                                    <tr 
+                                      key={item.id} 
+                                      className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${
+                                        isSelected ? 'ring-2 ring-orange-200 bg-orange-25' : ''
+                                      } transition-colors`}
+                                    >
+                                      {/* Checkbox de selección */}
+                                      <td className=" w-12 px-2 py-3 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            if (e.target.checked) {
+                                              toggleItemDevolucion(item, item.cantidad);
+                                            } else {
+                                              toggleItemDevolucion(item, 0);
+                                            }
+                                          }}
+                                          className="h-5 w-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                                        />
+                                      </td>
 
-                                  <div className="flex-grow">
-                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                      <div className="lg:col-span-2">
-                                        <h4 className="font-medium text-gray-900">
+                                      {/* Código de tienda */}
+                                      <td className="w-32 px-2 py-3 text-center">
+                                        <span className="text-sm text-gray-900 font-medium">
+                                          {item.codigoTienda || 'N/A'}
+                                        </span>
+                                      </td>
+
+                                      {/* Nombre del producto */}
+                                      <td className="w-48 px-3 py-3">
+                                        <div className="font-medium text-gray-900 text-sm">
                                           {item.nombreProducto}
-                                        </h4>
-                                        <div className="mt-1 text-sm text-gray-600 space-y-1">
-                                          <p><span className="font-medium">Código:</span> {item.codigoTienda || 'N/A'}</p>
-                                          <p><span className="font-medium">Marca:</span> {item.marca || 'Sin marca'}</p>
-                                          <p><span className="font-medium">Color:</span> {item.color || 'N/A'}</p>
                                         </div>
-                                      </div>
+                                      </td>
 
-                                      <div className="space-y-2">
-                                        <div className="text-sm">
-                                          <span className="font-medium text-gray-700">Cantidad vendida:</span>
-                                          <span className="ml-2 font-semibold">{item.cantidad}</span>
-                                        </div>
-                                        <div className="text-sm">
-                                          <span className="font-medium text-gray-700">Precio unitario:</span>
-                                          <span className="ml-2 font-semibold">S/. {parseFloat(item.precioVentaUnitario).toFixed(2)}</span>
-                                        </div>
-                                        <div className="text-sm">
-                                          <span className="font-medium text-gray-700">Subtotal:</span>
-                                          <span className="ml-2 font-semibold">S/. {parseFloat(item.subtotal).toFixed(2)}</span>
-                                        </div>
+                                      {/* Código de PROVEEDOR */}
+                                      <td className="px-3 py-3 text-center">
+                                        <span className="text-sm text-gray-900 font-medium">
+                                          {item.codigoProveedor || 'N/A'}
+                                        </span>
+                                      </td>
 
-                                        {isSelected && (
-                                          <div className="mt-3 pt-3 border-t border-gray-200">
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                              Cantidad a devolver:
-                                            </label>
-                                            <input
-                                              type="number"
-                                              min="1"
-                                              max={item.cantidad}
-                                              value={itemDevolucion.cantidadADevolver}
-                                              onChange={(e) => {
-                                                const cantidad = parseInt(e.target.value) || 1;
-                                                toggleItemDevolucion(item, Math.min(cantidad, item.cantidad));
-                                              }}
-                                              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                                            />
-                                            <div className="mt-2 text-sm font-medium text-orange-700">
-                                              Monto: S/. {itemDevolucion.montoDevolucion.toFixed(2)}
-                                            </div>
-                                          </div>
+                                      {/* Lote */}
+                                      <td className="px-3 py-3 text-center">
+                                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
+                                          {item.numeroLote || 'N/A'}
+                                        </span>
+                                      </td>
+
+                                      {/* Marca */}
+                                      <td className="px-3 py-3 text-center">
+                                        <span className="text-sm text-gray-700">
+                                          {item.marca || 'Sin marca'}
+                                        </span>
+                                      </td>
+
+                                      {/* medida */}
+                                      <td className="px-3 py-3 text-center">
+                                        <span className="text-sm text-gray-700">
+                                          {item.medida || 'N/A'}
+                                        </span>
+                                      </td>
+
+                                      {/* Cantidad vendida */}
+                                      <td className="px-3 py-3 text-center">
+                                        <span className="text-sm font-medium text-gray-900">
+                                          {item.cantidad}
+                                        </span>
+                                      </td>
+
+                                      {/* Precio unitario */}
+                                      <td className="px-3 py-3 text-center">
+                                        <span className="text-sm font-medium text-gray-900">
+                                          S/. {parseFloat(item.precioVentaUnitario).toFixed(2)}
+                                        </span>
+                                      </td>
+
+                                      {/* Subtotal original */}
+                                      <td className="px-3 py-3 text-center">
+                                        <span className="text-sm font-semibold text-gray-900">
+                                          S/. {parseFloat(item.subtotal).toFixed(2)}
+                                        </span>
+                                      </td>
+
+                                      {/* Cantidad a devolver */}
+                                      <td className="px-3 py-3 text-center">
+                                        {isSelected ? (
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            max={item.cantidad}
+                                            value={itemDevolucion.cantidadADevolver}
+                                            onChange={(e) => {
+                                              const cantidad = parseInt(e.target.value) || 1;
+                                              toggleItemDevolucion(item, Math.min(cantidad, item.cantidad));
+                                            }}
+                                            className="w-16 px-2 py-1 text-sm text-center border border-gray-300 rounded focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                          />
+                                        ) : (
+                                          <span className="text-sm text-gray-400">-</span>
                                         )}
-                                      </div>
-                                    </div>
+                                      </td>
+
+                                      {/* Monto de devolución */}
+                                      <td className="px-3 py-3 text-center">
+                                        {isSelected ? (
+                                          <span className="text-sm font-bold text-orange-700">
+                                            S/. {itemDevolucion.montoDevolucion.toFixed(2)}
+                                          </span>
+                                        ) : (
+                                          <span className="text-sm text-gray-400">-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Resumen de devolución */}
+                          {itemsADevolver.length > 0 && (
+                            <div className="bg-gradient-to-r from-orange-600 to-orange-700 text-white px-6 py-4 border-t border-gray-300">
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <h3 className="text-lg font-semibold">Resumen de Devolución</h3>
+                                  <p className="text-orange-100 text-sm">
+                                    {itemsADevolver.length} producto{itemsADevolver.length !== 1 ? 's' : ''} seleccionado{itemsADevolver.length !== 1 ? 's' : ''}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-3xl font-bold">
+                                    S/. {devolucionData.montoADevolver.toFixed(2)}
                                   </div>
+                                  <p className="text-orange-100 text-sm">Total a devolver</p>
                                 </div>
                               </div>
-                            );
-                          })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -779,7 +841,7 @@ const handleSubmit = async (e) => {
             </div>
           </div>
         </div>
-      </div>
+
     </Layout>
   );
 };

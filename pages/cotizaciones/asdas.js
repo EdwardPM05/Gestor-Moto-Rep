@@ -463,7 +463,6 @@ const NuevaCotizacionPage = () => {
     setShowQuantityModal(true);
   };
 
-  const [showCotizacionDetails, setShowCotizacionDetails] = useState(false);
   // NUEVAS FUNCIONES PARA MANEJO DE LOTES FIFO EN COTIZACIONES
 
   // Función para obtener lotes disponibles ordenados por FIFO
@@ -507,12 +506,6 @@ const NuevaCotizacionPage = () => {
         marca: producto.marca || '',
         codigoTienda: producto.codigoTienda || '',
         color: producto.color || '',
-        // AGREGAR CAMPOS FALTANTES DEL PRODUCTO
-        medida: producto.medida || 'N/A',
-        precioCompraDefault: parseFloat(producto.precioCompraDefault || 0),
-        precioVentaMinimo: parseFloat(producto.precioVentaMinimo || 0),
-        descripcion: producto.descripcion || '',
-        // CAMPOS EXISTENTES
         cantidad: cantidadDelLote,
         precioVentaUnitario: precioVenta.toFixed(2),
         subtotal: (cantidadDelLote * precioVenta).toFixed(2),
@@ -849,197 +842,183 @@ const NuevaCotizacionPage = () => {
           <div className="bg-white rounded-xl shadow-lg overflow-hidden">
 
             <div className="grid grid-cols-12 gap-6 p-6">
-  {/* Panel Izquierdo - Cotizaciones Borrador - CAMBIO: de col-span-4 a col-span-3 */}
-  <div className="col-span-12 lg:col-span-3">
-    <div className="bg-gray-50 rounded-lg p-4 mb-6">
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">Cotizaciones Borrador</h2>
-      <button
-        onClick={handleNuevaCotizacion}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
-        disabled={loading}
-      >
-        <PlusIcon className="h-5 w-5 mr-2" />
-        Nueva Cotización
-      </button>
+              {/* Panel Izquierdo - Cotizaciones Borrador */}
+              <div className="col-span-12 lg:col-span-4">
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <h2 className="text-lg font-semibold mb-4 text-gray-800">Cotizaciones Borrador</h2>
+                  <button
+                    onClick={handleNuevaCotizacion}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center mb-4 transition-colors"
+                    disabled={loading}
+                  >
+                    <PlusIcon className="h-5 w-5 mr-2" />
+                    Nueva Cotización
+                  </button>
 
-      <div className="max-h-100 overflow-y-auto space-y-2">
-        {cotizacionesPendientes.length === 0 ? (
-          <p className="text-gray-500 text-center py-4">No hay cotizaciones en borrador</p>
-        ) : (
-          cotizacionesPendientes.map(cotizacion => (
-            <div
-              key={cotizacion.id}
-              className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
-                cotizacionActiva?.id === cotizacion.id
-                  ? 'bg-blue-50 border-blue-500 shadow-md'
-                  : 'bg-white hover:bg-gray-50 border-gray-200'
-              }`}
-              onClick={() => handleSelectCotizacion(cotizacion)}
-            >
-              <div className="font-medium text-sm text-gray-800">{cotizacion.numeroCotizacion}</div>
-              <div className="text-xs text-gray-600">{cotizacion.clienteNombre}</div>
-              <div className="text-xs font-semibold text-green-600">S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}</div>
-              <div className="text-xs text-gray-500">
-                {cotizacion.fechaCreacion?.toDate?.() ? 
-                  cotizacion.fechaCreacion.toDate().toLocaleDateString() : 
-                  'Fecha N/A'
-                }
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-
-    {/* Información de Cotización Activa - CON BOTÓN COLAPSABLE */}
-    {cotizacionActiva && (
-      <div className="bg-gray-50 rounded-lg overflow-hidden">
-        {/* Encabezado colapsable */}
-        <div 
-          className="p-4 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors flex items-center justify-between"
-          onClick={() => setShowCotizacionDetails(!showCotizacionDetails)}
-        >
-          <h3 className="font-semibold text-lg text-gray-800">Datos de la Cotización</h3>
-          <div className={`transform transition-transform duration-200 ${showCotizacionDetails ? 'rotate-180' : ''}`}>
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </div>
-        
-        {/* Contenido colapsable */}
-        <div className={`transition-all duration-300 overflow-hidden ${showCotizacionDetails ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'}`}>
-          <div className="p-4 space-y-4">
-            {/* Cliente */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Cliente:</label>
-              <Select
-                options={clienteOptions}
-                value={selectedCliente}
-                onChange={handleUpdateCliente}
-                placeholder="Seleccionar cliente..."
-                className="text-sm"
-                isClearable
-              />
-            </div>
-
-            {/* Empleado */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Empleado:</label>
-              <Select
-                options={empleadoOptions}
-                value={selectedEmpleado}
-                onChange={handleUpdateEmpleado}
-                placeholder="Seleccionar empleado..."
-                className="text-sm"
-                isClearable
-              />
-            </div>
-
-            {/* Placa Moto */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Placa Moto:</label>
-              <input
-                type="text"
-                value={placaMoto}
-                onChange={(e) => handleUpdatePlaca(e.target.value)}
-                placeholder="Ej: ABC-123"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Configuración de Pago */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <label className="block text-sm font-medium text-gray-700">Pago:</label>
-                <button
-                  type="button"
-                  onClick={openPaymentModal}
-                  className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200"
-                >
-                  <CreditCardIcon className="h-4 w-4 mr-1" />
-                  Configurar
-                </button>
-              </div>
-
-              <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-gray-700">Total:</span>
-                  <span className="text-lg font-bold text-gray-900">
-                    S/. {parseFloat(cotizacionActiva?.totalCotizacion || 0).toFixed(2)}
-                  </span>
-                </div>
-                
-                {paymentData.isMixedPayment ? (
-                  <div className="space-y-1">
-                    {paymentData.paymentMethods.map((pm, index) => (
-                      <div key={index} className="flex justify-between items-center text-sm">
-                        <span className="inline-flex items-center">
-                          <span className="mr-1">{pm.icon}</span>
-                          {pm.label}
-                        </span>
-                        <span>S/. {pm.amount.toFixed(2)}</span>
-                      </div>
-                    ))}
+                  <div className="max-h-64 overflow-y-auto space-y-2">
+                    {cotizacionesPendientes.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No hay cotizaciones en borrador</p>
+                    ) : (
+                      cotizacionesPendientes.map(cotizacion => (
+                        <div
+                          key={cotizacion.id}
+                          className={`p-3 border rounded-lg cursor-pointer transition-all hover:shadow-md ${
+                            cotizacionActiva?.id === cotizacion.id
+                              ? 'bg-blue-50 border-blue-500 shadow-md'
+                              : 'bg-white hover:bg-gray-50 border-gray-200'
+                          }`}
+                          onClick={() => handleSelectCotizacion(cotizacion)}
+                        >
+                          <div className="font-medium text-sm text-gray-800">{cotizacion.numeroCotizacion}</div>
+                          <div className="text-xs text-gray-600">{cotizacion.clienteNombre}</div>
+                          <div className="text-xs font-semibold text-green-600">S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}</div>
+                          <div className="text-xs text-gray-500">
+                            {cotizacion.fechaCreacion?.toDate?.() ? 
+                              cotizacion.fechaCreacion.toDate().toLocaleDateString() : 
+                              'Fecha N/A'
+                            }
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                ) : (
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="inline-flex items-center">
-                      <span className="mr-1">{paymentData.paymentMethods[0]?.icon}</span>
-                      {paymentData.paymentMethods[0]?.label}
-                    </span>
-                    <span>S/. {paymentData.paymentMethods[0]?.amount.toFixed(2)}</span>
+                </div>
+
+                {/* Información de Cotización Activa */}
+                {cotizacionActiva && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="font-semibold text-lg mb-4 text-gray-800">Datos de la Cotización</h3>
+                    
+                    <div className="space-y-4">
+                      {/* Cliente */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Cliente:</label>
+                        <Select
+                          options={clienteOptions}
+                          value={selectedCliente}
+                          onChange={handleUpdateCliente}
+                          placeholder="Seleccionar cliente..."
+                          className="text-sm"
+                          isClearable
+                        />
+                      </div>
+
+                      {/* Empleado */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Empleado:</label>
+                        <Select
+                          options={empleadoOptions}
+                          value={selectedEmpleado}
+                          onChange={handleUpdateEmpleado}
+                          placeholder="Seleccionar empleado..."
+                          className="text-sm"
+                          isClearable
+                        />
+                      </div>
+
+                      {/* Placa Moto */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Placa Moto:</label>
+                        <input
+                          type="text"
+                          value={placaMoto}
+                          onChange={(e) => handleUpdatePlaca(e.target.value)}
+                          placeholder="Ej: ABC-123"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      {/* Configuración de Pago */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="block text-sm font-medium text-gray-700">Pago:</label>
+                          <button
+                            type="button"
+                            onClick={openPaymentModal}
+                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-lg text-blue-700 bg-blue-100 hover:bg-blue-200"
+                          >
+                            <CreditCardIcon className="h-4 w-4 mr-1" />
+                            Configurar
+                          </button>
+                        </div>
+
+                        <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm font-medium text-gray-700">Total:</span>
+                            <span className="text-lg font-bold text-gray-900">
+                              S/. {parseFloat(cotizacionActiva?.totalCotizacion || 0).toFixed(2)}
+                            </span>
+                          </div>
+                          
+                          {paymentData.isMixedPayment ? (
+                            <div className="space-y-1">
+                              {paymentData.paymentMethods.map((pm, index) => (
+                                <div key={index} className="flex justify-between items-center text-sm">
+                                  <span className="inline-flex items-center">
+                                    <span className="mr-1">{pm.icon}</span>
+                                    {pm.label}
+                                  </span>
+                                  <span>S/. {pm.amount.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="inline-flex items-center">
+                                <span className="mr-1">{paymentData.paymentMethods[0]?.icon}</span>
+                                {paymentData.paymentMethods[0]?.label}
+                              </span>
+                              <span>S/. {paymentData.paymentMethods[0]?.amount.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Observaciones */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
+                        <textarea
+                          value={observaciones}
+                          onChange={(e) => handleUpdateObservaciones(e.target.value)}
+                          placeholder="Observaciones adicionales..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          rows="3"
+                        />
+                      </div>
+
+                      {/* Total */}
+                      <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+                        <div className="text-lg font-bold text-green-800">
+                          Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
+                        </div>
+                      </div>
+
+                      {/* Botones de acción */}
+                      <div className="space-y-3">
+                        <button
+                          onClick={handleGuardarCotizacion}
+                          disabled={!selectedCliente || itemsCotizacionActiva.length === 0}
+                          className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                        >
+                          <DocumentTextIcon className="h-5 w-5 mr-2" />
+                          Guardar como Pendiente
+                        </button>
+                        
+                        <button
+                          onClick={() => router.push('/cotizaciones')}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
+                        >
+                          <CheckIcon className="h-5 w-5 mr-2" />
+                          Ver Todas las Cotizaciones
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Observaciones */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Observaciones:</label>
-              <textarea
-                value={observaciones}
-                onChange={(e) => handleUpdateObservaciones(e.target.value)}
-                placeholder="Observaciones adicionales..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows="3"
-              />
-            </div>
-
-            {/* Total */}
-            <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
-              <div className="text-lg font-bold text-green-800">
-                Total: S/. {parseFloat(cotizacionActiva.totalCotizacion || 0).toFixed(2)}
-              </div>
-            </div>
-
-            {/* Botones de acción */}
-            <div className="space-y-3">
-              <button
-                onClick={handleGuardarCotizacion}
-                disabled={!selectedCliente || itemsCotizacionActiva.length === 0}
-                className="w-full bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
-              >
-                <DocumentTextIcon className="h-5 w-5 mr-2" />
-                Guardar como Pendiente
-              </button>
-              
-              <button
-                onClick={() => router.push('/cotizaciones')}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg flex items-center justify-center font-medium transition-colors"
-              >
-                <CheckIcon className="h-5 w-5 mr-2" />
-                Ver Todas las Cotizaciones
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )}
-  </div>
 
               {/* Panel Derecho - Buscador y Items */}
-              <div className="col-span-12 lg:col-span-9">
+              <div className="col-span-12 lg:col-span-8">
                 {/* Buscador de Productos */}
                 <div className="bg-white border border-gray-200 rounded-lg mb-6 relative">
                   <div className="p-4">
@@ -1070,88 +1049,69 @@ const NuevaCotizacionPage = () => {
                   </div>
 
                   {/* Dropdown de productos */}
-{searchTerm.trim() !== '' && (
-  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
-    {isSearching ? (
-      <div className="flex justify-center py-8">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-      </div>
-    ) : filteredProductos.length === 0 ? (
-      <div className="p-4 text-center text-gray-500">
-        <p>No se encontraron productos</p>
-      </div>
-    ) : (
-      <div className="max-h-80">
-        {filteredProductos.slice(0, 20).map(producto => (
-          <div
-            key={producto.id}
-            className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
-            onClick={() => {
-              handleSelectProduct(producto);
-              setSearchTerm('');
-            }}
-          >
-            <div className="flex items-center justify-between gap-6">
-              {/* Información principal del producto */}
-              <div className="flex items-center gap-6 flex-1 min-w-0">
-                {/* Nombre y código */}
-                <div className="min-w-0 flex-shrink-0">
-                  <h4 className="font-medium text-gray-900 truncate text-sm">
-                    {producto.nombre} ({producto.codigoTienda})
-                  </h4>
+                  {searchTerm.trim() !== '' && (
+                    <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-b-lg shadow-lg z-40 max-h-80 overflow-y-auto">
+                      {isSearching ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                        </div>
+                      ) : filteredProductos.length === 0 ? (
+                        <div className="p-4 text-center text-gray-500">
+                          <p>No se encontraron productos</p>
+                        </div>
+                      ) : (
+                        <div className="max-h-80">
+                          {filteredProductos.slice(0, 20).map(producto => (
+                            <div
+                              key={producto.id}
+                              className="p-4 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition-colors"
+                              onClick={() => {
+                                handleSelectProduct(producto);
+                                setSearchTerm('');
+                              }}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-medium text-gray-900 truncate">
+                                    {producto.nombre} ({producto.codigoTienda})
+                                  </h4>
+                                  <p className="text-sm text-gray-600 truncate">
+                                    <span className="font-medium">Marca:</span> {producto.marca}
+                                  </p>
+                                  <p className="text-sm text-gray-600 truncate">
+                                    <span className="font-medium">Color:</span> {producto.color || 'N/A'}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    <span className="font-medium">Stock:</span> {producto.stockActual}
+                                  </p>
+                                  {/* MOSTRAR MODELOS COMPATIBLES DESDE modelosCompatiblesTexto */}
+                                  {producto.modelosCompatiblesTexto && (
+                                    <p className="text-sm text-blue-600 truncate">
+                                      <span className="font-medium">Modelos:</span> {producto.modelosCompatiblesTexto}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right flex-shrink-0 ml-4">
+                                  <p className="font-semibold text-green-600 text-lg">
+                                    S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    Stock: {producto.stockActual || 0}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {filteredProductos.length > 20 && (
+                            <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
+                              Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                
-                {/* Marca */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Marca:</span>
-                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.marca}</span>
-                </div>
-                
-                {/* Color */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Color:</span>
-                  <span className="ml-1 text-sm text-gray-700 font-medium">{producto.color || 'N/A'}</span>
-                </div>
-                
-                {/* Stock */}
-                <div className="flex-shrink-0">
-                  <span className="text-xs text-gray-500 uppercase tracking-wide">Stock:</span>
-                  <span className="ml-1 text-sm font-semibold text-gray-900">{producto.stockActual || 0}</span>
-                </div>
-                
-                {/* Modelos compatibles */}
-                {producto.modelosCompatiblesTexto && (
-                  <div className="flex-shrink-0 max-w-xs">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">Modelos:</span>
-                    <span className="ml-1 text-sm text-blue-700 font-medium truncate" title={producto.modelosCompatiblesTexto}>
-                      {producto.modelosCompatiblesTexto}
-                    </span>
-                  </div>
-                )}
-              </div>
-              
-              {/* Precio */}
-              <div className="text-right flex-shrink-0">
-                <p className="font-bold text-green-600 text-base">
-                  S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
-                </p>
-                <p className="text-xs text-gray-500 uppercase tracking-wide">
-                  Precio Venta
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
-        {filteredProductos.length > 20 && (
-          <div className="p-3 text-center text-sm text-gray-500 bg-gray-50">
-            Mostrando 20 de {filteredProductos.length} resultados. Refina tu búsqueda para ver más.
-          </div>
-        )}
-      </div>
-    )}
-  </div>
-)}
-</div>
 
                 {/* Items de la Cotización */}
                 {!cotizacionActiva ? (
@@ -1182,42 +1142,34 @@ const NuevaCotizacionPage = () => {
                             <table className="w-full border-collapse">
                               {/* Encabezados */}
                               <thead className="bg-blue-50">
-                              <tr className="border-b border-gray-300">
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">C. TIENDA</th>
-                                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">PRODUCTO</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">LOTE</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MARCA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">MEDIDA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">COLOR</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">CANT.</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. COMPRA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">P. VENTA MIN</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">SUBTOTAL</th>
-                                <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">ACCIONES</th>
-                              </tr>
-                            </thead>
+                                <tr className="border-b border-gray-300">
+                                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600 uppercase tracking-wide w-1/4">NOMBRE</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">CÓDIGO</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">MARCA</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-16">CANT.</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">P.V. UNIT.</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">COLOR</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-20">LOTE</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-28">SUBTOTAL</th>
+                                  <th className="px-3 py-3 text-center text-sm font-semibold text-gray-600 uppercase tracking-wide w-24">ACCIONES</th>
+                                </tr>
+                              </thead>
                               
                               {/* Cuerpo de la tabla */}
                               <tbody>
                                 {itemsCotizacionActiva.map((item, index) => (
                                   <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                    {/* Código */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-900 font-medium">
-                                        {item.codigoTienda || 'N/A'}
-                                      </span>
-                                    </td>
                                     {/* Nombre */}
                                     <td className="px-4 py-3">
                                       <div className="font-medium text-gray-900 text-sm">
                                         {item.nombreProducto}
                                       </div>
                                     </td>
-                                    {/* NUEVA COLUMNA: LOTE */}
+
+                                    {/* Código */}
                                     <td className="px-3 py-3 text-center">
-                                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
-                                        {item.numeroLote || 'N/A'}
+                                      <span className="text-sm text-gray-900 font-medium">
+                                        {item.codigoTienda || 'N/A'}
                                       </span>
                                     </td>
 
@@ -1227,18 +1179,6 @@ const NuevaCotizacionPage = () => {
                                         {item.marca || 'Sin marca'}
                                       </span>
                                     </td>
-                                    {/* Medida */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-700">
-                                        {item.medida || 'N/A'}
-                                      </span>
-                                    </td>
-                                    {/* Color */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm text-gray-600" title={item.color || item.descripcion || 'N/A'}>
-                                        {item.color || item.descripcion || "N/A"}
-                                      </span>
-                                    </td>
 
                                     {/* Cantidad */}
                                     <td className="px-3 py-3 text-center">
@@ -1246,23 +1186,25 @@ const NuevaCotizacionPage = () => {
                                         {item.cantidad}
                                       </span>
                                     </td>
-                                    
-                                    {/* Precio unitario */}
-                                    <td className="px-3 py-3 text-center">
-                                      <span className="text-sm font-medium text-gray-900">
-                                        S/. {parseFloat(item.precioCompraDefault || 0).toFixed(2)}
-                                      </span>
-                                    </td>
+
                                     {/* Precio unitario */}
                                     <td className="px-3 py-3 text-center">
                                       <span className="text-sm font-medium text-gray-900">
                                         S/. {parseFloat(item.precioVentaUnitario || 0).toFixed(2)}
                                       </span>
                                     </td>
-                                    {/* Precio unitario */}
+
+                                    {/* Color */}
                                     <td className="px-3 py-3 text-center">
-                                      <span className="text-sm font-medium text-gray-900">
-                                        S/. {parseFloat(item.precioVentaMinimo || 0).toFixed(2)}
+                                      <span className="text-sm text-gray-600" title={item.color || item.descripcion || 'N/A'}>
+                                        {item.color || item.descripcion || "N/A"}
+                                      </span>
+                                    </td>
+
+                                    {/* NUEVA COLUMNA: LOTE */}
+                                    <td className="px-3 py-3 text-center">
+                                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium">
+                                        {item.numeroLote || 'N/A'}
                                       </span>
                                     </td>
 
@@ -1324,7 +1266,6 @@ const NuevaCotizacionPage = () => {
       </div>
 
      {/* Modal de Cantidad y Precio - VERSIÓN MEJORADA */}
-{/* Modal de Cantidad y Precio - VERSIÓN CORREGIDA CON PRECIO MÍNIMO */}
 <Transition.Root show={showQuantityModal} as={Fragment}>
   <Dialog as="div" className="relative z-50" onClose={setShowQuantityModal}>
     <Transition.Child
@@ -1395,20 +1336,6 @@ const NuevaCotizacionPage = () => {
                           <span className="text-gray-600">{selectedProduct.color || 'N/A'}</span>
                         </div>
                       </div>
-                      
-                      {/* AGREGAR ESTA SECCIÓN QUE FALTABA - Mostrar precio de venta mínimo */}
-                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-yellow-800">
-                            Precio Venta Mínimo:
-                          </span>
-                          <span className="text-lg font-bold text-yellow-900">
-                            S/. {parseFloat(selectedProduct.precioVentaMinimo || 0).toFixed(2)}
-                          </span>
-                        </div>
-                        <p className="text-xs text-yellow-700 mt-1">
-                        </p>
-                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-6">
@@ -1436,17 +1363,8 @@ const NuevaCotizacionPage = () => {
                           onChange={(e) => setPrecioVenta(parseFloat(e.target.value) || 0)}
                           min="0"
                           step="0.01"
-                          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent text-lg ${
-                            precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0)
-                              ? 'border-red-300 focus:ring-red-500 bg-red-50'
-                              : 'border-gray-300 focus:ring-blue-500'
-                          }`}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
                         />
-                        {precioVenta < parseFloat(selectedProduct.precioVentaMinimo || 0) && (
-                          <p className="text-red-600 text-sm mt-1 font-medium">
-                            ⚠️ Precio por debajo del mínimo permitido
-                          </p>
-                        )}
                       </div>
                     </div>
 
