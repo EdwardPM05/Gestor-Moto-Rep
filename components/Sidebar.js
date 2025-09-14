@@ -52,7 +52,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     {
       name: 'Productos',
       icon: CubeIcon,
-      adminOnly: true,
+      adminOnly: false,
       submenu: [
         { name: 'Productos', path: '/productos' },
         { name: 'Faltos', path: '/productos/faltos' }
@@ -71,43 +71,43 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     {
       name: 'Cotizaciones',
       icon: DocumentTextIcon,
-      adminOnly: true,
+      adminOnly: false,
       path: '/cotizaciones'
     },
     {
       name: 'Ventas',
       icon: BanknotesIcon,
-      adminOnly: true,
+      adminOnly: false,
       path: '/ventas' 
     },
     {
       name: 'Devoluciones',
       icon: BanknotesIcon,
-      adminOnly: true,
+      adminOnly: false,
       path: '/devoluciones' 
     },
     {
       name: 'Clientes',
       icon: UsersIcon,
-      adminOnly: true,
+      adminOnly: false,
       path: '/clientes' 
     },
     {
       name: 'Proveedores',
       icon: BuildingStorefrontIcon,
-      adminOnly: true,
+      adminOnly: false,
       path: '/proveedores'
     },
     {
       name: 'Créditos',
       icon: CreditCardIcon,
-      adminOnly: true,
+      adminOnly: false,
       path: '/creditos/activos'
     },
     {
       name: 'Empleados',
       icon: UserGroupIcon,
-      adminOnly: true,
+      adminOnly: false,
       path: '/empleados'
       /*submenu: [
         { name: 'Lista de Empleados', path: '/empleados' },

@@ -14,7 +14,7 @@ import {
   where,
   serverTimestamp
 } from 'firebase/firestore';
-import { PlusIcon, ArrowDownTrayIcon, TrashIcon, EyeIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ArrowDownTrayIcon, TrashIcon, EyeIcon, CheckCircleIcon, ExclamationCircleIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/router';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -33,8 +33,9 @@ const IngresosPage = () => {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   
-  // Estado para el selector de límite
-  const [limitPerPage, setLimitPerPage] = useState(20);
+  // Estados para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const [ingresosPerPage, setIngresosPerPage] = useState(20);
 
   useEffect(() => {
     const fetchIngresos = async () => {
@@ -186,10 +187,35 @@ const IngresosPage = () => {
     filtered = filterByDatePeriod(filtered, filterPeriod, startDate, endDate);
 
     setFilteredIngresos(filtered);
+    
+    // Resetear a la primera página cuando cambian los filtros
+    setCurrentPage(1);
   }, [searchTerm, ingresos, filterPeriod, startDate, endDate]);
 
-  // Limitar los resultados mostrados
-  const displayedIngresos = filteredIngresos.slice(0, limitPerPage);
+  // Lógica de paginación
+  const totalPages = Math.ceil(filteredIngresos.length / ingresosPerPage);
+  const indexOfLastIngreso = currentPage * ingresosPerPage;
+  const indexOfFirstIngreso = indexOfLastIngreso - ingresosPerPage;
+  const currentIngresos = filteredIngresos.slice(indexOfFirstIngreso, indexOfLastIngreso);
+
+  // Funciones de navegación de paginación
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const goToPrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  // Función para cambiar el número de elementos por página
+  const handlePageSizeChange = (newSize) => {
+    setIngresosPerPage(newSize);
+    setCurrentPage(1); // Resetear a la primera página
+  };
 
   // Función corregida para handleConfirmarRecepcion en index.js
   const handleConfirmarRecepcion = async (ingresoId) => {
@@ -389,218 +415,251 @@ const IngresosPage = () => {
             </div>
           )}
 
-          {/* Controles de búsqueda, filtros y límite */}
-          <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0">
-            {/* Barra de búsqueda y botón de nuevo ingreso */}
-            <div className="flex justify-between items-center mb-4">
-              <div className="relative flex-grow mr-4">
-                <input
-                  type="text"
-                  placeholder="Buscar por número de boleta, proveedor, observaciones, fecha o estado..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                  </svg>
-                </div>
-              </div>
-              <button
-                onClick={() => router.push('/inventario/ingresos/nuevo')}
-                className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
-              >
-                <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
-                Registrar Nueva Boleta
-              </button>
-            </div>
+          {/* Sección de Filtros y Búsqueda (Responsive - Una línea) */}
+<div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+  {/* En desktop: Una sola línea horizontal | En móvil: Stack vertical */}
+  <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+    
+    {/* Campo de Búsqueda */}
+    <div className="relative w-full lg:flex-1 lg:max-w-xl">
+      <input
+        type="text"
+        placeholder="Buscar por número de boleta, proveedor, observaciones, fecha o estado..."
+        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+      />
+      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+        </svg>
+      </div>
+    </div>
 
-            {/* Filtros de fecha y selector de límite */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              {/* Botones de Filtro */}
-              <div className="flex space-x-2 flex-wrap">
-                <button
-                  onClick={() => handleFilterChange('all')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'all'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Todas
-                </button>
-                <button
-                  onClick={() => handleFilterChange('day')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'day'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Hoy
-                </button>
-                <button
-                  onClick={() => handleFilterChange('week')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'week'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Esta Semana
-                </button>
-                <button
-                  onClick={() => handleFilterChange('month')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'month'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Este Mes
-                </button>
-              </div>
+    {/* Botones de Filtro */}
+    <div className="flex flex-wrap gap-2">
+      <button
+        onClick={() => handleFilterChange('all')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'all'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Todas
+      </button>
+      <button
+        onClick={() => handleFilterChange('day')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'day'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Hoy
+      </button>
+      <button
+        onClick={() => handleFilterChange('week')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'week'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Esta Semana
+      </button>
+      <button
+        onClick={() => handleFilterChange('month')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'month'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Este Mes
+      </button>
+    </div>
 
-              {/* Selectores de Fecha y Límite */}
-              <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-2 sm:items-center">
-                <DatePicker
-                  selected={startDate}
-                  onChange={(date) => {
-                    setStartDate(date);
-                    setFilterPeriod('custom');
-                  }}
-                  selectsStart
-                  startDate={startDate}
-                  endDate={endDate}
-                  placeholderText="Fecha de inicio"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                <DatePicker
-                  selected={endDate}
-                  onChange={(date) => {
-                    setEndDate(date);
-                    setFilterPeriod('custom');
-                  }}
-                  selectsEnd
-                  startDate={startDate}
-                  endDate={endDate}
-                  minDate={startDate}
-                  placeholderText="Fecha de fin"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                
-                {/* Selector de límite por página */}
-                <div className="flex-none min-w-[50px]">
-                  <select
-                    value={limitPerPage}
-                    onChange={(e) => setLimitPerPage(Number(e.target.value))}
-                    className="mt-0 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-[38px]"
-                  >
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                </div>
-              </div>
-            </div>
+    {/* Selectores de Fecha */}
+    <div className="flex flex-col sm:flex-row gap-2">
+      <DatePicker
+        selected={startDate}
+        onChange={(date) => {
+          setStartDate(date);
+          setFilterPeriod('custom');
+        }}
+        selectsStart
+        startDate={startDate}
+        endDate={endDate}
+        placeholderText="Fecha de inicio"
+        className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+      />
+      <DatePicker
+        selected={endDate}
+        onChange={(date) => {
+          setEndDate(date);
+          setFilterPeriod('custom');
+        }}
+        selectsEnd
+        startDate={startDate}
+        endDate={endDate}
+        minDate={startDate}
+        placeholderText="Fecha de fin"
+        className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+      />
+    </div>
 
-          </div>
+    {/* Selector de límite por página */}
+    <div className="w-full sm:w-auto">
+      <select
+        value={ingresosPerPage}
+        onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+        className="w-full sm:w-28 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+      >
+        <option value={10}>10</option>
+        <option value={20}>20</option>
+        <option value={50}>50</option>
+        <option value={100}>100</option>
+      </select>
+    </div>
+
+    {/* Botón de Acción Principal */}
+    <div className="w-full sm:w-auto">
+      <button
+        onClick={() => router.push('/inventario/ingresos/nuevo')}
+        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out whitespace-nowrap"
+      >
+        <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
+        Registrar Nueva Boleta
+      </button>
+    </div>
+
+  </div>
+</div>
 
           {loading ? (
             <div className="flex justify-center items-center h-64">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
-          ) : displayedIngresos.length === 0 ? (
+          ) : currentIngresos.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-gray-500 bg-gray-50 rounded-lg p-4 shadow-inner">
               <ArrowDownTrayIcon className="h-24 w-24 text-gray-300 mb-4" />
               <p className="text-lg font-medium">No se encontraron boletas de ingreso.</p>
               <p className="text-sm text-gray-400">¡Empieza registrando una nueva boleta de ingreso!</p>
             </div>
           ) : (
-            <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
-              <table className="min-w-full border-collapse">
-                <thead className="bg-gray-50 sticky top-0 z-10">
-                  <tr>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° BOLETA</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROVEEDOR</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE INGRESO</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">LOTES</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">STOCK</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO TOTAL</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">OBSERVACIONES</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">REGISTRADO POR</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-                  {displayedIngresos.map((ingreso, index) => (
-                    <tr key={ingreso.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900 text-left">
-                        {ingreso.numeroBoleta || 'N/A'}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.proveedorNombre}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.fechaIngreso}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-center">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {ingreso.cantidadLotes || 0} lotes
-                        </span>
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium text-center">
-                        {ingreso.totalStockIngresado || 0} 
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium text-left">
-                        S/. {parseFloat(ingreso.costoTotalIngreso || 0).toFixed(2)}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
-                        {ingreso.estado === 'recibido' ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <CheckCircleIcon className="h-4 w-4 mr-1" /> Recibido
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                            <ExclamationCircleIcon className="h-4 w-4 mr-1" /> Pendiente
-                          </span>
-                        )}
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2 text-sm text-gray-700 text-left max-w-xs truncate" title={ingreso.observaciones || 'N/A'}>
-                        {ingreso.observaciones || 'N/A'}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.empleadoId || 'Desconocido'}</td>
-                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
-                        <div className="flex items-center space-x-2 justify-center">
-                          {ingreso.estado === 'pendiente' && (
-                            <button
-                              onClick={() => handleConfirmarRecepcion(ingreso.id)}
-                              className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
-                              title="Confirmar Recepción de Mercadería"
-                            >
-                              <CheckCircleIcon className="h-5 w-5" />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleViewDetails(ingreso.id)}
-                            className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
-                            title="Ver Detalles de la Boleta"
-                          >
-                            <EyeIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteIngreso(ingreso.id, ingreso.estado)}
-                            className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
-                            title="Eliminar Boleta de Ingreso Completa"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        </div>
-                      </td>
+            <>
+              <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
+                <table className="min-w-full border-collapse">
+                  <thead className="bg-gray-50 sticky top-0 z-10">
+                    <tr>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° BOLETA</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROVEEDOR</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA DE INGRESO</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">LOTES</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">STOCK</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO TOTAL</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">OBSERVACIONES</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">REGISTRADO POR</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white">
+                    {currentIngresos.map((ingreso, index) => (
+                      <tr key={ingreso.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">
+                          {ingreso.numeroBoleta || 'N/A'}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.proveedorNombre}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.fechaIngreso}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-center">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {ingreso.cantidadLotes || 0} lotes
+                          </span>
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium text-center">
+                          {ingreso.totalStockIngresado || 0} 
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 font-medium text-left">
+                          S/. {parseFloat(ingreso.costoTotalIngreso || 0).toFixed(2)}
+                        </td> 
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                          {ingreso.estado === 'recibido' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <CheckCircleIcon className="h-4 w-4 mr-1" /> Recibido
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              <ExclamationCircleIcon className="h-4 w-4 mr-1" /> Pendiente
+                            </span>
+                          )}
+                        </td>
+                        <td className="border border-gray-300 px-3 py-2 text-sm text-gray-700 text-left max-w-xs truncate" title={ingreso.observaciones || 'N/A'}>
+                          {ingreso.observaciones || 'N/A'}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-gray-700 text-left">{ingreso.empleadoId || 'Desconocido'}</td>
+                        <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
+                          <div className="flex items-center space-x-2 justify-center">
+                            {ingreso.estado === 'pendiente' && (
+                              <button
+                                onClick={() => handleConfirmarRecepcion(ingreso.id)}
+                                className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                                title="Confirmar Recepción de Mercadería"
+                              >
+                                <CheckCircleIcon className="h-5 w-5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleViewDetails(ingreso.id)}
+                              className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
+                              title="Ver Detalles de la Boleta"
+                            >
+                              <EyeIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteIngreso(ingreso.id, ingreso.estado)}
+                              className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
+                              title="Eliminar Boleta de Ingreso Completa"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Controles de paginación */}
+              {filteredIngresos.length > ingresosPerPage && (
+                <div className="flex justify-between items-center mt-4">
+                  <p className="text-sm text-gray-700">
+                    Mostrando <span className="font-medium">{indexOfFirstIngreso + 1}</span> a <span className="font-medium">{Math.min(indexOfLastIngreso, filteredIngresos.length)}</span> de <span className="font-medium">{filteredIngresos.length}</span> resultados
+                  </p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={goToPrevPage}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeftIcon className="h-5 w-5" />
+                    </button>
+                    <span className="px-3 py-1 text-sm text-gray-700">
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <button
+                      onClick={goToNextPage}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRightIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

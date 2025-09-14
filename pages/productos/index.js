@@ -2,6 +2,7 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
+import * as XLSX from 'xlsx';
 import { db } from '../../lib/firebase';
 import {
   collection,
@@ -12,6 +13,7 @@ import {
   doc,
   updateDoc,
   where,
+  addDoc,
   serverTimestamp
 } from 'firebase/firestore';
 import {
@@ -41,19 +43,20 @@ import AlertModal from '../../components/modals/AlertModal';
 const ProductosPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const isAdmin = user?.email === 'admin@gmail.com';
   const [productos, setProductos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updatingPrices, setUpdatingPrices] = useState(false);
+  
 
   // Estados para los filtros
   const [filterNombre, setFilterNombre] = useState('');
   const [filterCodigoProveedor, setFilterCodigoProveedor] = useState('');
-  const [filterMarca, setFilterMarca] = useState('');
+  const [filterMarca, setFilterMarca] = useState(''); // Cambiado de filterColor
   const [filterCodigoTienda, setFilterCodigoTienda] = useState('');
   const [filterUbicacion, setFilterUbicacion] = useState('');
   const [filterModelosCompatibles, setFilterModelosCompatibles] = useState('');
-  const [filterColor, setFilterColor] = useState('');
   const [filterMedida, setFilterMedida] = useState('');
 
   const [filteredProductos, setFilteredProductos] = useState([]);
@@ -291,53 +294,54 @@ const ProductosPage = () => {
 
   // Lógica de filtrado combinada
   const applyFilters = () => {
-    const lowerFilterNombre = filterNombre.toLowerCase();
-    const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
-    const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
-    const lowerFilterUbicacion = filterUbicacion.toLowerCase();
-    const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
-    const lowerFilterColor = filterColor.toLowerCase();
-    const lowerFilterMedida = filterMedida.toLowerCase();
+  const lowerFilterNombre = filterNombre.toLowerCase();
+  const lowerFilterCodigoProveedor = filterCodigoProveedor.toLowerCase();
+  const lowerFilterMarca = filterMarca.toLowerCase(); // Cambiado de filterColor
+  const lowerFilterCodigoTienda = filterCodigoTienda.toLowerCase();
+  const lowerFilterUbicacion = filterUbicacion.toLowerCase();
+  const lowerFilterModelosCompatibles = filterModelosCompatibles.toLowerCase();
+  const lowerFilterMedida = filterMedida.toLowerCase();
 
-    const filtered = productos.filter(producto => {
-      const matchesNombre = producto.nombre.toLowerCase().includes(lowerFilterNombre);
-      const matchesCodigoProveedor = (producto.codigoProveedor && producto.codigoProveedor.toLowerCase().includes(lowerFilterCodigoProveedor)) || lowerFilterCodigoProveedor === '';
-      const matchesCodigoTienda = producto.codigoTienda.toLowerCase().includes(lowerFilterCodigoTienda);
-      const matchesUbicacion = (producto.ubicacion && producto.ubicacion.toLowerCase().includes(lowerFilterUbicacion)) || lowerFilterUbicacion === '';
-      const matchesModelosCompatibles = (producto.modelosCompatiblesTexto && producto.modelosCompatiblesTexto.toLowerCase().includes(lowerFilterModelosCompatibles)) || lowerFilterModelosCompatibles === '';
-      const matchesColor = (producto.color && producto.color.toLowerCase().includes(lowerFilterColor)) || lowerFilterColor === '';
-      const matchesMedida = (producto.medida && producto.medida.toLowerCase().includes(lowerFilterMedida)) || lowerFilterMedida === '';
+  const filtered = productos.filter(producto => {
+    const matchesNombre = producto.nombre.toLowerCase().includes(lowerFilterNombre);
+    const matchesCodigoProveedor = (producto.codigoProveedor && producto.codigoProveedor.toLowerCase().includes(lowerFilterCodigoProveedor)) || lowerFilterCodigoProveedor === '';
+    const matchesMarca = (producto.marca && producto.marca.toLowerCase().includes(lowerFilterMarca)) || lowerFilterMarca === ''; // Cambiado de matchesColor
+    const matchesCodigoTienda = producto.codigoTienda.toLowerCase().includes(lowerFilterCodigoTienda);
+    const matchesUbicacion = (producto.ubicacion && producto.ubicacion.toLowerCase().includes(lowerFilterUbicacion)) || lowerFilterUbicacion === '';
+    const matchesModelosCompatibles = (producto.modelosCompatiblesTexto && producto.modelosCompatiblesTexto.toLowerCase().includes(lowerFilterModelosCompatibles)) || lowerFilterModelosCompatibles === '';
+    const matchesMedida = (producto.medida && producto.medida.toLowerCase().includes(lowerFilterMedida)) || lowerFilterMedida === '';
 
-      return matchesNombre && matchesCodigoTienda && matchesCodigoProveedor && matchesUbicacion && matchesModelosCompatibles && matchesColor && matchesMedida;
-    });
-    
-    setFilteredProductos(filtered);
-    setCurrentPage(1); // Resetear a la primera página al aplicar filtros
-    
-    // Limpiar el ordenamiento al aplicar filtros
-    setSortColumn(null);
-    setSortDirection('asc');
-  };
+    return matchesNombre && matchesCodigoTienda && matchesCodigoProveedor && matchesUbicacion && matchesModelosCompatibles && matchesMarca && matchesMedida; // Cambiado matchesColor por matchesMarca
+  });
+  
+  setFilteredProductos(filtered);
+  setCurrentPage(1); // Resetear a la primera página al aplicar filtros
+  
+  // Limpiar el ordenamiento al aplicar filtros
+  setSortColumn(null);
+  setSortDirection('asc');
+};
 
   const handleSearchClick = () => {
     applyFilters();
   };
 
   const handleClearFilters = () => {
-    setFilterNombre('');
-    setFilterCodigoProveedor('');
-    setFilterCodigoTienda('');
-    setFilterUbicacion('');
-    setFilterModelosCompatibles('');
-    setFilterColor('');
-    setFilterMedida('');
-    setFilteredProductos(productos);
-    setCurrentPage(1);
-    
-    // Limpiar el ordenamiento
-    setSortColumn(null);
-    setSortDirection('asc');
-  };
+  setFilterNombre('');
+  setFilterCodigoProveedor('');
+  setFilterCodigoTienda('');
+  setFilterUbicacion('');
+  setFilterModelosCompatibles('');
+  setFilterMarca(''); // Cambiado de setFilterColor
+  setFilterMedida('');
+  setFilteredProductos(productos);
+  setCurrentPage(1);
+  
+  // Limpiar el ordenamiento
+  setSortColumn(null);
+  setSortDirection('asc');
+};
+
 
   const handleDelete = async (productId) => {
     try {
@@ -421,6 +425,381 @@ const ProductosPage = () => {
     }
   };
 
+
+  // Agrega estos estados adicionales en el componente ProductosPage
+const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+const [importFile, setImportFile] = useState(null);
+const [isImporting, setIsImporting] = useState(false);
+const [importResults, setImportResults] = useState(null);
+const [previewData, setPreviewData] = useState([]);
+
+// Función para procesar el archivo Excel
+const handleFileSelect = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  setImportFile(file);
+  
+  // Leer y previsualizar el archivo
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      
+      // Mostrar solo los primeros 5 registros para previsualización
+      setPreviewData(jsonData.slice(0, 5));
+    } catch (error) {
+      console.error('Error al leer el archivo:', error);
+      setAlertMessage('Error al leer el archivo Excel. Verifique que el formato sea correcto.');
+      setIsAlertModalOpen(true);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
+
+// Función para validar los datos del Excel
+const validateExcelData = (data) => {
+  const errors = [];
+  // Campos que NO pueden estar vacíos (pero sí pueden ser 0)
+  const requiredTextFields = ['nombre', 'marca'];
+  // Campos que deben estar presentes y ser números (pueden ser 0)
+  const requiredNumericFields = ['precioCompraDefault', 'precioVentaDefault', 'precioVentaMinimo', 'stockActual'];
+  
+  data.forEach((row, index) => {
+    const rowNumber = index + 1;
+    
+    // Validar campos de texto obligatorios
+    requiredTextFields.forEach(field => {
+      if (!row[field] || row[field].toString().trim() === '') {
+        errors.push(`Fila ${rowNumber}: El campo '${field}' es obligatorio`);
+      }
+    });
+    
+    // Validar campos numéricos obligatorios (pueden ser 0 pero no vacíos)
+    requiredNumericFields.forEach(field => {
+      if (row[field] === undefined || row[field] === null || row[field] === '') {
+        errors.push(`Fila ${rowNumber}: El campo '${field}' es obligatorio`);
+      } else if (isNaN(parseFloat(row[field]))) {
+        errors.push(`Fila ${rowNumber}: El campo '${field}' debe ser un número válido`);
+      } else if (parseFloat(row[field]) < 0) {
+        errors.push(`Fila ${rowNumber}: El campo '${field}' no puede ser negativo`);
+      }
+    });
+    
+    // Validar campos numéricos opcionales
+    const optionalNumericFields = ['stockReferencialUmbral'];
+    optionalNumericFields.forEach(field => {
+      if (row[field] && row[field] !== '' && isNaN(parseFloat(row[field]))) {
+        errors.push(`Fila ${rowNumber}: El campo '${field}' debe ser un número válido`);
+      }
+      if (row[field] && parseFloat(row[field]) < 0) {
+        errors.push(`Fila ${rowNumber}: El campo '${field}' no puede ser negativo`);
+      }
+    });
+    
+    // Validar que el precio mínimo no sea mayor al precio de venta (solo si ambos son > 0)
+    const precioVenta = parseFloat(row.precioVentaDefault || 0);
+    const precioMinimo = parseFloat(row.precioVentaMinimo || 0);
+    if (precioVenta > 0 && precioMinimo > precioVenta) {
+      errors.push(`Fila ${rowNumber}: El precio de venta mínimo no puede ser mayor al precio de venta default`);
+    }
+    
+    // Validar URLs de imágenes
+    if (row.imageUrls && row.imageUrls.toString().trim() !== '') {
+      const urls = row.imageUrls.toString().split(',').map(url => url.trim()).filter(url => url);
+      if (urls.length > 3) {
+        errors.push(`Fila ${rowNumber}: Máximo 3 URLs de imágenes permitidas`);
+      }
+    }
+  });
+  
+  return errors;
+};
+
+// Función para procesar e importar los datos
+const processExcelImport = async () => {
+  if (!importFile) return;
+  
+  setIsImporting(true);
+  
+  try {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        
+        // Validar datos
+        const validationErrors = validateExcelData(jsonData);
+        if (validationErrors.length > 0) {
+          setAlertMessage(`Errores de validación:\n${validationErrors.slice(0, 10).join('\n')}${validationErrors.length > 10 ? '\n... y más errores.' : ''}`);
+          setIsAlertModalOpen(true);
+          setIsImporting(false);
+          return;
+        }
+        
+        let successCount = 0;
+        let errorCount = 0;
+        const errorDetails = [];
+        
+        // Procesar cada producto
+        for (const [index, row] of jsonData.entries()) {
+          try {
+            // Procesar URLs de imágenes
+            const imageUrls = row.imageUrls 
+              ? row.imageUrls.split(',').map(url => url.trim()).filter(url => url)
+              : [];
+            
+            const productData = {
+              nombre: row.nombre?.toString().trim(),
+              descripcion: row.descripcionPuntos?.toString().trim() || '',
+              descripcionPuntos: row.descripcionPuntos?.toString().trim() || '',
+              medida: row.medida?.toString().trim() || '',
+              marca: row.marca?.toString().trim(),
+              codigoTienda: row.codigoTienda?.toString().trim() || '',
+              codigoProveedor: row.codigoProveedor?.toString().trim() || '',
+              precioCompraDefault: parseFloat(row.precioCompraDefault || 0),
+              precioVentaDefault: parseFloat(row.precioVentaDefault || 0),
+              precioVentaMinimo: parseFloat(row.precioVentaMinimo || 0),
+              stockActual: parseInt(row.stockActual || 0),
+              stockReferencialUmbral: parseInt(row.stockReferencialUmbral || 4),
+              ubicacion: row.ubicacion?.toString().trim() || '',
+              imageUrls: imageUrls,
+              imageUrl: imageUrls.length > 0 ? imageUrls[0] : '', // Compatibilidad con campo anterior
+              modelosCompatiblesTexto: row.modelosCompatiblesTexto?.toString().trim() || '',
+              modelosCompatiblesIds: [],
+              color: row.color?.toString().trim() || '',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            };
+            
+            await addDoc(collection(db, 'productos'), productData);
+            successCount++;
+          } catch (error) {
+            errorCount++;
+            errorDetails.push(`Fila ${index + 1}: ${error.message}`);
+            console.error(`Error al importar fila ${index + 1}:`, error);
+          }
+        }
+        
+        // Actualizar lista de productos
+        await fetchProductos();
+        
+        // Mostrar resultados
+        const resultMessage = `Importación completada:\n✅ ${successCount} productos importados exitosamente\n${errorCount > 0 ? `❌ ${errorCount} errores` : ''}${errorDetails.length > 0 ? '\n\nPrimeros errores:\n' + errorDetails.slice(0, 5).join('\n') : ''}`;
+        
+        setImportResults({
+          success: successCount,
+          errors: errorCount,
+          details: errorDetails
+        });
+        
+        setAlertMessage(resultMessage);
+        setIsAlertModalOpen(true);
+        setIsImportModalOpen(false);
+        
+      } catch (error) {
+        console.error('Error al procesar el archivo:', error);
+        setAlertMessage('Error al procesar el archivo Excel. Verifique que el formato sea correcto.');
+        setIsAlertModalOpen(true);
+      } finally {
+        setIsImporting(false);
+      }
+    };
+    reader.readAsArrayBuffer(importFile);
+    
+  } catch (error) {
+    console.error('Error en la importación:', error);
+    setAlertMessage('Error durante la importación. Intente de nuevo.');
+    setIsAlertModalOpen(true);
+    setIsImporting(false);
+  }
+};
+
+// Función para descargar la plantilla Excel
+const downloadExcelTemplate = () => {
+  const templateData = [
+    {
+      nombre: 'Ejemplo Producto 1',
+      descripcionPuntos: '- Característica 1\n- Característica 2\n- Característica 3',
+      medida: '1.2m',
+      marca: 'YAMAHA',
+      codigoTienda: 'PROD001',
+      codigoProveedor: 'YAM-001',
+      precioCompraDefault: 25.50,
+      precioVentaDefault: 45.00,
+      precioVentaMinimo: 35.00,
+      stockActual: 50,
+      stockReferencialUmbral: 5,
+      ubicacion: 'A-1-3',
+      imageUrls: 'https://ejemplo.com/img1.jpg,https://ejemplo.com/img2.jpg',
+      modelosCompatiblesTexto: 'YBR 125, FZ-16, XTZ 125',
+      color: 'Negro'
+    }
+  ];
+
+  // Crear plantilla vacía
+  const emptyTemplate = [{
+    nombre: '',
+    descripcionPuntos: '',
+    medida: '',
+    marca: '',
+    codigoTienda: '',
+    codigoProveedor: '',
+    precioCompraDefault: '',
+    precioVentaDefault: '',
+    precioVentaMinimo: '',
+    stockActual: '',
+    stockReferencialUmbral: '',
+    ubicacion: '',
+    imageUrls: '',
+    modelosCompatiblesTexto: '',
+    color: ''
+  }];
+
+  const wb = XLSX.utils.book_new();
+  
+  // Hoja para llenar
+  const ws1 = XLSX.utils.json_to_sheet(emptyTemplate);
+  XLSX.utils.book_append_sheet(wb, ws1, 'Plantilla');
+  
+  // Hoja de ejemplos
+  const ws2 = XLSX.utils.json_to_sheet(templateData);
+  XLSX.utils.book_append_sheet(wb, ws2, 'Ejemplos');
+
+  XLSX.writeFile(wb, 'plantilla_productos.xlsx');
+};
+
+  const ImportExcelModal = ({ isOpen, onClose }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+      <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div className="relative inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+            <div className="sm:flex sm:items-start">
+              <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-title">
+                  Importar Productos desde Excel
+                </h3>
+                
+                <div className="space-y-4">
+                  {/* Botón para descargar plantilla */}
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-blue-900 mb-2">Paso 1: Descargar Plantilla</h4>
+                    <p className="text-blue-700 mb-3">Primero descarga la plantilla Excel con el formato correcto:</p>
+                    <button
+                      onClick={downloadExcelTemplate}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      📥 Descargar Plantilla Excel
+                    </button>
+                  </div>
+
+                  {/* Seleccionar archivo */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-gray-900 mb-2">Paso 2: Seleccionar Archivo</h4>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleFileSelect}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    />
+                  </div>
+
+                  {/* Previsualización */}
+                  {previewData.length > 0 && (
+                    <div className="bg-green-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-green-900 mb-2">Vista Previa (primeros 5 registros):</h4>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-xs">
+                          <thead>
+                            <tr className="bg-gray-200">
+                              <th className="px-2 py-1 text-left">Nombre</th>
+                              <th className="px-2 py-1 text-left">Marca</th>
+                              <th className="px-2 py-1 text-left">Precio Compra</th>
+                              <th className="px-2 py-1 text-left">Precio Venta</th>
+                              <th className="px-2 py-1 text-left">Stock</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {previewData.map((row, index) => (
+                              <tr key={index} className="border-b">
+                                <td className="px-2 py-1">{row.nombre || 'N/A'}</td>
+                                <td className="px-2 py-1">{row.marca || 'N/A'}</td>
+                                <td className="px-2 py-1">{row.precioCompraDefault || 'N/A'}</td>
+                                <td className="px-2 py-1">{row.precioVentaDefault || 'N/A'}</td>
+                                <td className="px-2 py-1">{row.stockActual || 'N/A'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-green-700 text-sm mt-2">
+                        Se encontraron {previewData.length} registros. ¿Los datos se ven correctos?
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Instrucciones */}
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <h4 className="font-semibold text-yellow-900 mb-2">Instrucciones importantes:</h4>
+                    <ul className="text-yellow-800 text-sm space-y-1">
+                      <li>• Los campos obligatorios son: nombre, marca, precioCompraDefault, precioVentaDefault, precioVentaMinimo, stockActual</li>
+                      <li>• Los precios deben ser números decimales (ej: 25.50)</li>
+                      <li>• El stock debe ser un número entero</li>
+                      <li>• Para múltiples imágenes, separe las URLs con comas (máximo 3)</li>
+                      <li>• El precio mínimo no puede ser mayor al precio de venta</li>
+                      <li>• Esta operación no se puede deshacer</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+            <button
+              type="button"
+              className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
+              onClick={processExcelImport}
+              disabled={!importFile || isImporting}
+            >
+              {isImporting ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Importando...
+                </>
+              ) : (
+                'Importar Productos'
+              )}
+            </button>
+            <button
+              type="button"
+              className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+              onClick={onClose}
+              disabled={isImporting}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
   if (!user) {
     return null;
   }
@@ -436,159 +815,187 @@ const ProductosPage = () => {
           )}
 
           {/* Sección de Filtros y Botones */}
-          <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0">
-            <div className="flex flex-wrap items-end gap-3 md:gap-4">
-              <div className="flex flex-wrap items-end gap-3 md:gap-4 flex-grow">
-                {/* Nombre */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterNombre" className="block text-sm font-medium text-gray-700">NOMBRE</label>
-                  <input
-                    type="text"
-                    id="filterNombre"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterNombre}
-                    onChange={(e) => setFilterNombre(e.target.value)}
-                    placeholder="Nombre..."
-                  />
-                </div>
-                {/* Código Tienda */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterCodigoTienda" className="block text-sm font-medium text-gray-700">C. TIENDA</label>
-                  <input
-                    type="text"
-                    id="filterCodigoTienda"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterCodigoTienda}
-                    onChange={(e) => setFilterCodigoTienda(e.target.value)}
-                    placeholder="Cód. Tienda..."
-                  />
-                </div>
-                {/* PROVEEDOR */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterCodigoProveedor" className="block text-sm font-medium text-gray-700">C. PROVEEDOR</label>
-                  <input
-                    type="text"
-                    id="filterCodigoProveedor"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterCodigoProveedor}
-                    onChange={(e) => setFilterCodigoProveedor(e.target.value)}
-                    placeholder="CodigoProveedor..."
-                  />
-                </div>
-                
-                {/* Color */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterColor" className="block text-sm font-medium text-gray-700">COLOR</label>
-                  <input
-                    type="text"
-                    id="filterColor"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterColor}
-                    onChange={(e) => setFilterColor(e.target.value)}
-                    placeholder="Color..."
-                  />
-                </div>
-                {/* Medida */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterMedida" className="block text-sm font-medium text-gray-700">MEDIDA</label>
-                  <input
-                    type="text"
-                    id="filterMedida"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterMedida}
-                    onChange={(e) => setFilterMedida(e.target.value)}
-                    placeholder="Medida..."
-                  />
-                </div>
-                {/* Ubicación */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterUbicacion" className="block text-sm font-medium text-gray-700">UBICACION</label>
-                  <input
-                    type="text"
-                    id="filterUbicacion"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterUbicacion}
-                    onChange={(e) => setFilterUbicacion(e.target.value)}
-                    placeholder="Ubicación..."
-                  />
-                </div>
-                {/* Modelos Compatibles (Texto Libre como input) */}
-                <div className="flex-1 min-w-[140px]">
-                  <label htmlFor="filterModelosCompatibles" className="block text-sm font-medium text-gray-700">MODELOS COMPATIBLES</label>
-                  <input
-                    type="text"
-                    id="filterModelosCompatibles"
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    value={filterModelosCompatibles}
-                    onChange={(e) => setFilterModelosCompatibles(e.target.value)}
-                    placeholder="Ej: Yamaha, Honda..."
-                  />
-                </div>
-              </div>
-              {/* Selector de productos por página */}
-              <div className="flex-none min-w-[120px]">
-                <label htmlFor="products-per-page" className="block text-sm font-medium text-gray-700">Mostrar:</label>
-                <select
-                  id="products-per-page"
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-[42px]"
-                  value={productsPerPage}
-                  onChange={(e) => {
-                    setProductsPerPage(Number(e.target.value));
-                    setCurrentPage(1); // Resetear a la primera página al cambiar el tamaño de la página
-                  }}
-                >
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
+<div className="mb-4 border border-gray-200 rounded-lg p-3 lg:p-4 bg-gray-50 flex-shrink-0">
+  {/* Primera línea - Filtros de búsqueda */}
+  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 2xl:grid-cols-8 gap-3 mb-4">
+    {/* Nombre */}
+    <div className="col-span-1">
+      <label htmlFor="filterNombre" className="block text-xs font-medium text-gray-700 mb-1">NOMBRE</label>
+      <input
+        type="text"
+        id="filterNombre"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterNombre}
+        onChange={(e) => setFilterNombre(e.target.value)}
+        placeholder="Nombre..."
+      />
+    </div>
 
-              {/* Botones de acción */}
-              <div className="flex-none flex items-end space-x-2">
-                <button
-                  onClick={handleSearchClick}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 h-[42px]"
-                  title="Buscar"
-                >
-                  <MagnifyingGlassIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                  Buscar
-                </button>
-                <button
-                  onClick={handleClearFilters}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 h-[42px]"
-                  title="Limpiar Filtros"
-                >
-                  <ArrowPathIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                  Limpiar Filtros
-                </button>
-                <button
-                  onClick={actualizarTodosLosPrecios}
-                  disabled={updatingPrices}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 h-[42px] disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  title="Recalcular todos los precios basado en lotes FIFO"
-                >
-                  {updatingPrices ? (
-                    <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                    </svg>
-                  ) : (
-                    <CurrencyDollarIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                  )}
-                  {updatingPrices ? 'Actualizando...' : 'Actualizar Precios'}
-                </button>
-                <button
-                  onClick={() => router.push('/productos/nuevo')}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 h-[42px]"
-                  title="Agregar Producto"
-                >
-                  <PlusIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                  Agregar Producto
-                </button>
-              </div>
-            </div>
-          </div>
+    {/* Código Tienda */}
+    <div className="col-span-1">
+      <label htmlFor="filterCodigoTienda" className="block text-xs font-medium text-gray-700 mb-1">C. TIENDA</label>
+      <input
+        type="text"
+        id="filterCodigoTienda"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterCodigoTienda}
+        onChange={(e) => setFilterCodigoTienda(e.target.value)}
+        placeholder="Cód. Tienda..."
+      />
+    </div>
+
+    {/* Código Proveedor */}
+    <div className="col-span-1">
+      <label htmlFor="filterCodigoProveedor" className="block text-xs font-medium text-gray-700 mb-1">C. PROVEEDOR</label>
+      <input
+        type="text"
+        id="filterCodigoProveedor"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterCodigoProveedor}
+        onChange={(e) => setFilterCodigoProveedor(e.target.value)}
+        placeholder="Cód. Proveedor..."
+      />
+    </div>
+
+    {/* Marca */}
+    <div className="col-span-1">
+      <label htmlFor="filterMarca" className="block text-xs font-medium text-gray-700 mb-1">MARCA</label>
+      <input
+        type="text"
+        id="filterMarca"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterMarca}
+        onChange={(e) => setFilterMarca(e.target.value)}
+        placeholder="Marca..."
+      />
+    </div>
+
+    {/* Medida */}
+    <div className="col-span-1">
+      <label htmlFor="filterMedida" className="block text-xs font-medium text-gray-700 mb-1">MEDIDA</label>
+      <input
+        type="text"
+        id="filterMedida"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterMedida}
+        onChange={(e) => setFilterMedida(e.target.value)}
+        placeholder="Medida..."
+      />
+    </div>
+
+    {/* Ubicación */}
+    <div className="col-span-1">
+      <label htmlFor="filterUbicacion" className="block text-xs font-medium text-gray-700 mb-1">UBICACION</label>
+      <input
+        type="text"
+        id="filterUbicacion"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterUbicacion}
+        onChange={(e) => setFilterUbicacion(e.target.value)}
+        placeholder="Ubicación..."
+      />
+    </div>
+
+    {/* Modelos Compatibles */}
+    <div className="col-span-1 sm:col-span-2 md:col-span-1 lg:col-span-1 xl:col-span-1 2xl:col-span-1">
+      <label htmlFor="filterModelosCompatibles" className="block text-xs font-medium text-gray-700 mb-1">MODELOS COMPATIBLES</label>
+      <input
+        type="text"
+        id="filterModelosCompatibles"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={filterModelosCompatibles}
+        onChange={(e) => setFilterModelosCompatibles(e.target.value)}
+        placeholder="Ej: Yamaha, Honda..."
+      />
+    </div>
+
+    {/* Selector de productos por página */}
+    <div className="col-span-1 2xl:col-span-1">
+      <label htmlFor="products-per-page" className="block text-xs font-medium text-gray-700 mb-1">MOSTRAR:</label>
+      <select
+        id="products-per-page"
+        className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={productsPerPage}
+        onChange={(e) => {
+          setProductsPerPage(Number(e.target.value));
+          setCurrentPage(1);
+        }}
+      >
+        <option value={10}>10</option>
+        <option value={20}>20</option>
+        <option value={50}>50</option>
+        <option value={100}>100</option>
+      </select>
+    </div>
+  </div>
+
+  {/* Segunda línea - Botones de acción */}
+  <div className="flex flex-wrap items-center gap-2 lg:gap-3">
+    <button
+      onClick={handleSearchClick}
+      className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+      title="Buscar"
+    >
+      <MagnifyingGlassIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
+      <span className="hidden sm:inline">Buscar</span>
+      <span className="sm:hidden">Buscar</span>
+    </button>
+
+    <button
+      onClick={handleClearFilters}
+      className="inline-flex items-center px-3 lg:px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      title="Limpiar Filtros"
+    >
+      <ArrowPathIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
+      <span className="hidden md:inline">Limpiar Filtros</span>
+      <span className="md:hidden">Limpiar</span>
+    </button>
+
+    <button
+      onClick={actualizarTodosLosPrecios}
+      disabled={updatingPrices}
+      className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+      title="Recalcular todos los precios basado en lotes FIFO"
+    >
+      {updatingPrices ? (
+        <svg className="animate-spin h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+        </svg>
+      ) : (
+        <CurrencyDollarIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
+      )}
+      <span className="hidden md:inline">{updatingPrices ? 'Actualizando...' : 'Actualizar Precios'}</span>
+      <span className="md:hidden">{updatingPrices ? 'Actualizando...' : 'Precios'}</span>
+    </button>
+
+    {isAdmin && (
+      <>
+        <button
+          onClick={() => setIsImportModalOpen(true)}
+          className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+          title="Importar productos desde Excel"
+        >
+          <svg className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span className="hidden lg:inline">Importar Excel</span>
+          <span className="lg:hidden">Import</span>
+        </button>
+
+        <button
+          onClick={() => router.push('/productos/nuevo')}
+          className="inline-flex items-center px-3 lg:px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          title="Agregar Producto"
+        >
+          <PlusIcon className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" aria-hidden="true" />
+          <span className="hidden md:inline">Agregar Producto</span>
+          <span className="md:hidden">Agregar</span>
+        </button>
+      </>
+    )}
+  </div>
+</div>
 
           {/* Tabla de Productos */}
           {loading ? (
@@ -629,7 +1036,7 @@ const ProductosPage = () => {
                       STOCK
                       {getSortIcon('stockActual')}
                     </th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO (S/.)</th>
+                    {isAdmin && (<> <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">COSTO (S/.)</th></>)}
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">VENTA MIN (S/.)</th>
                     <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
@@ -669,7 +1076,7 @@ const ProductosPage = () => {
                           {producto.stockActual}
                           {lowStock && <span className="ml-1 text-red-500">⚠</span>}
                         </td>
-                        <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass} relative`}>
+                        {isAdmin && (<> <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass} relative`}>
                           <div className="flex items-center justify-center">
                             <span>S/. {parseFloat(producto.precioCompraDefault || 0).toFixed(2)}</span>
                             {priceNeedsUpdate && (
@@ -679,7 +1086,7 @@ const ProductosPage = () => {
                               />
                             )}
                           </div>
-                        </td>
+                        </td></>)}
                         <td className={`border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center ${textColorClass}`}>
                           S/. {parseFloat(producto.precioVentaDefault || 0).toFixed(2)}
                         </td>
@@ -711,20 +1118,24 @@ const ProductosPage = () => {
                             >
                               <EyeIcon className="h-5 w-5" />
                             </button>
-                            <button
-                              onClick={() => router.push(`/productos/${producto.id}`)}
-                              className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-gray-100"
-                              title="Editar Producto"
-                            >
-                              <PencilIcon className="h-5 w-5" />
-                            </button>
-                            <button
-                              onClick={() => confirmDelete(producto.id)}
-                              className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
-                              title="Eliminar Producto"
-                            >
-                              <TrashIcon className="h-5 w-5" />
-                            </button>
+                            {isAdmin && (
+                              <>
+                                <button
+                                  onClick={() => router.push(`/productos/${producto.id}`)}
+                                  className="text-blue-600 hover:text-blue-900 p-1 rounded-full hover:bg-gray-100"
+                                  title="Editar Producto"
+                                >
+                                  <PencilIcon className="h-5 w-5" />
+                                </button>
+                                <button
+                                  onClick={() => confirmDelete(producto.id)}
+                                  className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
+                                  title="Eliminar Producto"
+                                >
+                                  <TrashIcon className="h-5 w-5" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -749,6 +1160,9 @@ const ProductosPage = () => {
                 >
                   <ChevronLeftIcon className="h-5 w-5" />
                 </button>
+                <span className="px-3 py-1 text-sm text-gray-700">
+                      Página {currentPage} de {totalPages}
+                    </span>
                 <button
                   onClick={goToNextPage}
                   disabled={currentPage === totalPages}
@@ -768,6 +1182,16 @@ const ProductosPage = () => {
           imageUrl={selectedProductForDetails?.imageUrl} 
           imageUrls={selectedProductForDetails?.imageUrls} 
           onClose={closeImageModal} 
+        />
+      )}
+      {isAdmin && (
+        <ImportExcelModal 
+          isOpen={isImportModalOpen} 
+          onClose={() => {
+            setIsImportModalOpen(false);
+            setImportFile(null);
+            setPreviewData([]);
+          }} 
         />
       )}
       <ProductDetailsModal isOpen={isProductDetailsModalOpen} onClose={closeProductDetailsModal} product={selectedProductForDetails} />

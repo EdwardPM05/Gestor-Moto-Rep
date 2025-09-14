@@ -114,7 +114,7 @@ const ClienteCreditoDetalle = () => {
       
       console.log("Créditos activos encontrados para clienteId", clienteId, ":", creditosSnapshot.docs.length);
 
-      let totalAdeudadoCalculado = 0;
+      let totalDeudaItems = 0; // Total de todos los items
       const loadedCreditosConItems = [];
       for (const creditoDoc of creditosSnapshot.docs) {
         const creditoData = { id: creditoDoc.id, ...creditoDoc.data(), items: [] };
@@ -135,7 +135,7 @@ const ClienteCreditoDetalle = () => {
             ...itemDoc.data()
           };
           creditoData.items.push(itemData);
-          totalAdeudadoCalculado += (itemData.subtotal || 0);
+          totalDeudaItems += (itemData.subtotal || 0);
         });
         loadedCreditosConItems.push(creditoData);
       }
@@ -143,6 +143,7 @@ const ClienteCreditoDetalle = () => {
       setCreditosConItems(loadedCreditosConItems);
 
       // 3. Fetch Abonos del cliente SOLO si hay créditos activos
+      let totalAbonos = 0;
       if (loadedCreditosConItems.length > 0) {
         // Solo mostrar abonos si hay créditos activos
         const abonosQuery = query(
@@ -157,20 +158,32 @@ const ClienteCreditoDetalle = () => {
           ...doc.data()
         }));
         setAbonos(loadedAbonos);
+        
+        // Calcular total de abonos realizados
+        totalAbonos = loadedAbonos.reduce((sum, abono) => sum + (abono.monto || 0), 0);
+        
         console.log("Abonos activos cargados:", loadedAbonos);
+        console.log("Total abonos realizados:", totalAbonos);
       } else {
         // Si no hay créditos activos, no mostrar abonos
         setAbonos([]);
         console.log("No hay créditos activos, ocultando abonos");
       }
 
-      // Actualizar el estado del cliente con el monto calculado
+      // 4. CALCULAR EL SALDO REAL QUE DEBE (Items - Abonos)
+      const saldoRealQueDebe = Math.max(0, totalDeudaItems - totalAbonos);
+
+      // Actualizar el estado del cliente con el saldo correcto
       setCliente(prevCliente => ({
           ...prevCliente,
-          montoCreditoActual: totalAdeudadoCalculado
+          montoCreditoActual: saldoRealQueDebe
       }));
+
+      console.log("=== CÁLCULO DEL SALDO ===");
+      console.log("Total items de crédito:", totalDeudaItems);
+      console.log("Total abonos realizados:", totalAbonos);
+      console.log("Saldo real que debe:", saldoRealQueDebe);
       console.log("Todos los créditos con sus ítems cargados:", loadedCreditosConItems);
-      console.log("Total adeudado calculado desde ítems:", totalAdeudadoCalculado);
 
     } catch (err) {
       console.error('Error al cargar datos del cliente y créditos:', err);
@@ -310,26 +323,18 @@ const procesarAbono = async () => {
         console.log("Producto agregado a itemsVenta:", itemRef.id, "-", producto.nombreProducto);
       }
 
-      // 6. Obtener el saldo actual más reciente del cliente y actualizarlo
-      const clientDocRef = doc(db, 'cliente', cliente.id);
-      const clientDocSnap = await getDoc(clientDocRef);
-      if (!clientDocSnap.exists()) {
-        showAlert("Error: Cliente no encontrado para actualizar saldo.");
-        return;
-      }
+      // 6. Calcular el nuevo saldo
+      const nuevoSaldo = Math.max(0, cliente.montoCreditoActual - monto);
       
-      const currentClientData = clientDocSnap.data();
-      const saldoActualReal = currentClientData.montoCreditoActual || 0;
-      const nuevoSaldo = Math.max(0, saldoActualReal - monto);
-      
+      // 7. Actualizar el saldo en la base de datos
       await updateDoc(doc(db, 'cliente', cliente.id), {
         montoCreditoActual: nuevoSaldo,
         updatedAt: new Date()
       });
       
-      console.log(`Saldo anterior: S/. ${saldoActualReal.toFixed(2)}, Abono: S/. ${monto.toFixed(2)}, Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
+      console.log(`Saldo anterior: S/. ${cliente.montoCreditoActual.toFixed(2)}, Abono: S/. ${monto.toFixed(2)}, Nuevo saldo: S/. ${nuevoSaldo.toFixed(2)}`);
 
-      // 7. Si el saldo llega a 0, marcar todos los items como saldados Y PROCESAR ABONOS
+      // 8. Si el saldo llega a 0, marcar todos los items como saldados Y PROCESAR ABONOS
     if (nuevoSaldo === 0) {
       console.log("Saldo llegó a 0, marcando productos como saldados y procesando abonos");
       
@@ -459,8 +464,10 @@ const procesarAbono = async () => {
 
   const totalProductosEnCredito = creditosConItems.reduce((count, credito) => count + credito.items.length, 0);
   const totalAbonos = abonos.reduce((sum, abono) => sum + (abono.monto || 0), 0);
-  const saldoQueDebe = cliente.montoCreditoActual || 0; // Total que debe
-  const montoOriginalCredito = creditosConItems.reduce((sum, credito) => sum + (credito.totalCredito || 0), 0);
+  const saldoQueDebe = cliente.montoCreditoActual || 0; // Ya calculado correctamente
+  const montoOriginalCredito = creditosConItems.reduce((sum, credito) => 
+    sum + credito.items.reduce((itemSum, item) => itemSum + (item.subtotal || 0), 0), 0
+  );
 
   return (
     <Layout title={`Crédito - ${cliente.nombre}`}>
@@ -489,6 +496,12 @@ const procesarAbono = async () => {
                 <p className="text-sm text-gray-600">Monto Original</p>
                 <p className="text-lg font-semibold text-blue-600">
                   S/. {montoOriginalCredito.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Total Abonado</p>
+                <p className="text-lg font-semibold text-green-600">
+                  S/. {totalAbonos.toFixed(2)}
                 </p>
               </div>
               <div>
@@ -684,9 +697,9 @@ const procesarAbono = async () => {
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-gray-600">Monto Original</p>
+                        <p className="text-sm text-gray-600">Monto de este Crédito</p>
                         <p className="text-xl font-bold text-blue-600">
-                            S/. {credito.totalCredito?.toFixed(2) || '0.00'}
+                            S/. {credito.items.reduce((sum, item) => sum + (item.subtotal || 0), 0).toFixed(2)}
                         </p>
                       </div>
                     </div>
@@ -729,6 +742,18 @@ const procesarAbono = async () => {
               </div>
             )}
           </div>
+
+          {/* Resumen final */}
+          {(saldoQueDebe === 0 && creditosConItems.length > 0) && (
+            <div className="bg-green-100 border border-green-300 rounded-lg p-4 text-center">
+              <h3 className="text-lg font-bold text-green-800 mb-2">¡Crédito Saldado!</h3>
+              <p className="text-green-700">
+                Este cliente ha pagado completamente su deuda. 
+                Monto original: S/. {montoOriginalCredito.toFixed(2)} | 
+                Total abonado: S/. {totalAbonos.toFixed(2)}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </Layout>

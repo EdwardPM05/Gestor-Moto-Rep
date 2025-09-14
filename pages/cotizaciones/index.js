@@ -30,7 +30,9 @@ import {
   PlusIcon,
   MagnifyingGlassIcon,
   PencilIcon,
-  PrinterIcon
+  PrinterIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon
 } from '@heroicons/react/24/outline';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -43,6 +45,10 @@ const CotizacionesIndexPage = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredCotizaciones, setFilteredCotizaciones] = useState([]);
+
+  // Estados para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const [cotizacionesPerPage] = useState(10); // Puedes cambiar esto según necesites
 
   // Función para consumir stock de lotes según FIFO (AGREGAR AL INICIO DEL ARCHIVO)
 const consumirStockFIFO = async (productoId, cantidadVendida, transaction) => {
@@ -140,6 +146,21 @@ const recalcularPrecioCompraProducto = async (productoId, transaction) => {
 
   // Nuevo estado para el limitador de registros
   const [limitPerPage, setLimitPerPage] = useState(20);
+
+  // Cálculos de paginación
+  const indexOfLastCotizacion = currentPage * cotizacionesPerPage;
+  const indexOfFirstCotizacion = indexOfLastCotizacion - cotizacionesPerPage;
+  const currentCotizaciones = filteredCotizaciones.slice(indexOfFirstCotizacion, indexOfLastCotizacion);
+  const totalPages = Math.ceil(filteredCotizaciones.length / cotizacionesPerPage);
+
+  // Funciones de paginación
+  const goToNextPage = () => {
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+  };
+
+  const goToPrevPage = () => {
+    setCurrentPage((prev) => Math.max(prev - 1, 1));
+  };
 
   // useEffect para obtener las cotizaciones
   useEffect(() => {
@@ -277,6 +298,8 @@ const recalcularPrecioCompraProducto = async (productoId, transaction) => {
       );
     });
     setFilteredCotizaciones(filtered);
+    // Reset página al cambiar los filtros
+    setCurrentPage(1);
   }, [searchTerm, cotizaciones]);
 
 // FUNCIÓN PRINCIPAL ACTUALIZADA - handleConfirmarCotizacion CON MANEJO DE ITEMS YA SEPARADOS
@@ -888,135 +911,137 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
           )}
 
           {/* Sección de Filtros y Búsqueda (Responsive) */}
-          <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50 flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0 md:space-x-4">
-            
-            {/* Campo de Búsqueda */}
-            <div className="relative w-full md:w-auto md:flex-grow">
-              <input
-                type="text"
-                placeholder="Buscar por número, cliente, observaciones, estado..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
-              </div>
-            </div>
+<div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+  {/* En desktop: Una sola línea horizontal | En móvil: Stack vertical */}
+  <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+    
+    {/* Campo de Búsqueda */}
+    <div className="relative w-full lg:flex-1 lg:max-w-xl">
+      <input
+        type="text"
+        placeholder="Buscar por número, cliente, observaciones, estado..."
+        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-base placeholder-gray-400"
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+      />
+      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" aria-hidden="true" />
+      </div>
+    </div>
 
-            {/* Contenedor de Botones, Fechas y Limitador */}
-            <div className="flex flex-wrap items-center gap-2 md:gap-4 justify-center md:justify-start">
-              
-              {/* Botones de Filtro */}
-              <div className="flex space-x-2 flex-wrap">
-                <button
-                  onClick={() => handleFilterChange('all')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'all'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Todas
-                </button>
-                <button
-                  onClick={() => handleFilterChange('day')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'day'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Hoy
-                </button>
-                <button
-                  onClick={() => handleFilterChange('week')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'week'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Esta Semana
-                </button>
-                <button
-                  onClick={() => handleFilterChange('month')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                    filterPeriod === 'month'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                  }`}
-                >
-                  Este Mes
-                </button>
-              </div>
+    {/* Botones de Filtro */}
+    <div className="flex flex-wrap gap-2">
+      <button
+        onClick={() => handleFilterChange('all')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'all'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Todas
+      </button>
+      <button
+        onClick={() => handleFilterChange('day')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'day'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Hoy
+      </button>
+      <button
+        onClick={() => handleFilterChange('week')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'week'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Esta Semana
+      </button>
+      <button
+        onClick={() => handleFilterChange('month')}
+        className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+          filterPeriod === 'month'
+            ? 'bg-blue-600 text-white'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+        }`}
+      >
+        Este Mes
+      </button>
+    </div>
 
-              {/* Selectores de Fecha */}
-              <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-2 mt-2 md:mt-0">
-                <DatePicker
-                  selected={startDate}
-                  onChange={(date) => {
-                    setStartDate(date);
-                    setFilterPeriod('custom');
-                  }}
-                  selectsStart
-                  startDate={startDate}
-                  endDate={endDate}
-                  placeholderText="Fecha de inicio"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-                <DatePicker
-                  selected={endDate}
-                  onChange={(date) => {
-                    setEndDate(date);
-                    setFilterPeriod('custom');
-                  }}
-                  selectsEnd
-                  startDate={startDate}
-                  endDate={endDate}
-                  minDate={startDate}
-                  placeholderText="Fecha de fin"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                />
-              </div>  
+    {/* Selectores de Fecha */}
+    <div className="flex flex-col sm:flex-row gap-2">
+      <DatePicker
+        selected={startDate}
+        onChange={(date) => {
+          setStartDate(date);
+          setFilterPeriod('custom');
+        }}
+        selectsStart
+        startDate={startDate}
+        endDate={endDate}
+        placeholderText="Fecha de inicio"
+        className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+      />
+      <DatePicker
+        selected={endDate}
+        onChange={(date) => {
+          setEndDate(date);
+          setFilterPeriod('custom');
+        }}
+        selectsEnd
+        startDate={startDate}
+        endDate={endDate}
+        minDate={startDate}
+        placeholderText="Fecha de fin"
+        className="w-full sm:w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+      />
+    </div>
 
-              {/* Selector de límite por página */}
-              <div className="flex-none min-w-[50px]">
-                <select
-                  id="limit-per-page"
-                  className="mt-0 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-[38px]"
-                  value={limitPerPage}
-                  onChange={(e) => {
-                    setLimitPerPage(Number(e.target.value));
-                  }}
-                >
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
+    {/* Selector de límite */}
+    <div className="w-full sm:w-auto">
+      <select
+        id="limit-per-page"
+        className="w-full sm:w-28 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        value={limitPerPage}
+        onChange={(e) => {
+          setLimitPerPage(Number(e.target.value));
+        }}
+      >
+        <option value={10}>10</option>
+        <option value={20}>20</option>
+        <option value={50}>50</option>
+        <option value={100}>100</option>
+      </select>
+    </div>
 
-              {/* Botón de Nueva Cotización */}
-              <button
-                onClick={() => router.push('/cotizaciones/nueva')}
-                className="w-full md:w-auto inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out mt-4 md:mt-0"
-              >
-                <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
-                Nueva Cotización
-              </button>
-              {selectedCotizaciones.size > 0 && (
-                <button
-                  onClick={handleImprimirSeleccionadas}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out ml-2"
-                >
-                  <PrinterIcon className="-ml-1 mr-2 h-4 w-4" aria-hidden="true" />
-                  Imprimir Seleccionadas ({selectedCotizaciones.size})
-                </button>
-              )}
+    {/* Botones de Acción */}
+    <div className="flex flex-col sm:flex-row gap-2">
+      <button
+        onClick={() => router.push('/cotizaciones/nueva')}
+        className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out whitespace-nowrap"
+      >
+        <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
+        Nueva Cotización
+      </button>
+      
+      {selectedCotizaciones.size > 0 && (
+        <button
+          onClick={handleImprimirSeleccionadas}
+          className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out whitespace-nowrap"
+        >
+          <PrinterIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
+          Imprimir ({selectedCotizaciones.size})
+        </button>
+      )}
+    </div>
 
-            </div>
-          </div>
+  </div>
+</div>
           {/* Fin de la Sección de Filtros y Búsqueda */}
 
           {loading ? (
@@ -1030,175 +1055,205 @@ const handleConfirmarCotizacion = async (cotizacionId) => {
               <p className="text-sm text-gray-400">¡Empieza creando una nueva cotización!</p>
             </div>
           ) : (
-            <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
-              <table className="min-w-full border-collapse">
-                <thead className="bg-gray-50 sticky top-0 z-10">
-                  <tr>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedCotizaciones.size === filteredCotizaciones.length && filteredCotizaciones.length > 0}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedCotizaciones(new Set(filteredCotizaciones.map(c => c.id)));
-                          } else {
-                            setSelectedCotizaciones(new Set());
-                          }
-                        }}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      N° COTIZACIÓN
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      CLIENTE
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      FECHA CREACIÓN
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      TOTAL
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      ESTADO
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      MÉTODO DE PAGO
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      REGISTRADO POR
-                    </th>
-                    <th
-                      scope="col"
-                      className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
-                    >
-                      ACCIONES
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-                  {filteredCotizaciones.map((cotizacion, index) => (
-                    <tr key={cotizacion.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+            <div>
+              <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
+                <table className="min-w-full border-collapse">
+                  <thead className="bg-gray-50 sticky top-0 z-10">
+                    <tr>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">
                         <input
                           type="checkbox"
-                          checked={selectedCotizaciones.has(cotizacion.id)}
-                          onChange={() => handleSelectCotizacion(cotizacion.id)}
+                          checked={selectedCotizaciones.size === currentCotizaciones.length && currentCotizaciones.length > 0}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCotizaciones(new Set(currentCotizaciones.map(c => c.id)));
+                            } else {
+                              setSelectedCotizaciones(new Set());
+                            }
+                          }}
                           className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                         />
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">
-                        {cotizacion.numeroCotizacion || 'N/A'}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                        {cotizacion.clienteNombre}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                        {cotizacion.fechaCreacion}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black font-medium text-left">
-                        S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
-                        {cotizacion.estado === 'confirmada' ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <CheckCircleIcon className="h-4 w-4 mr-1" /> Confirmada
-                          </span>
-                        ) : cotizacion.estado === 'cancelada' ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            <XCircleIcon className="h-4 w-4 mr-1" /> Cancelada
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                            <DocumentTextIcon className="h-4 w-4 mr-1" /> Pendiente
-                          </span>
-                        )}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                        {cotizacion.metodoPago || 'N/A'}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                        {cotizacion.empleadoId || 'Desconocido'}
-                      </td>
-                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
-                        <div className="flex items-center space-x-2 justify-center">
-                          {(cotizacion.estado === 'pendiente' ||
-                            cotizacion.estado === 'borrador') && (
-                            <>
-                              <button
-                                onClick={() => handleConfirmarCotizacion(cotizacion.id)}
-                                className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
-                                title="Confirmar Cotización (Convertir a Venta)"
-                              >
-                                <CheckCircleIcon className="h-5 w-5" />
-                              </button>
-                              <button
-                                onClick={() => handleCancelarCotizacion(cotizacion.id)}
-                                className="text-orange-600 hover:text-orange-800 p-2 rounded-full hover:bg-orange-50 transition duration-150 ease-in-out"
-                                title="Cancelar Cotización"
-                              >
-                                <XCircleIcon className="h-5 w-5" />
-                              </button>
-                              <button
-                                onClick={() => handleEditCotizacion(cotizacion.id)}
-                                className="text-purple-600 hover:text-purple-800 p-2 rounded-full hover:bg-purple-50 transition duration-150 ease-in-out"
-                                title="Editar Cotización"
-                              >
-                                <PencilIcon className="h-5 w-5" />
-                              </button>
-                            </>
-                          )}
-                          <button
-                            onClick={() => handleViewDetails(cotizacion.id)}
-                            className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
-                            title="Ver Detalles de la Cotización"
-                          >
-                            <EyeIcon className="h-5 w-5" />
-                          </button>
-                          {/* NUEVO BOTÓN - Imprimir PDF */}
-                          <button
-                            onClick={() => handleImprimirCotizacion(cotizacion)}
-                            className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
-                            title="Generar PDF de Cotización"
-                            disabled={false} // Las cotizaciones siempre pueden imprimirse
-                          >
-                            <PrinterIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCotizacion(cotizacion.id, cotizacion.estado)}
-                            className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
-                            title="Eliminar Cotización"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        </div>
-                      </td>
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        N° COTIZACIÓN
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        CLIENTE
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        FECHA CREACIÓN
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        TOTAL
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        ESTADO
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        MÉTODO DE PAGO
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        REGISTRADO POR
+                      </th>
+                      <th
+                        scope="col"
+                        className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center"
+                      >
+                        ACCIONES
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="bg-white">
+                    {currentCotizaciones.map((cotizacion, index) => (
+                      <tr key={cotizacion.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedCotizaciones.has(cotizacion.id)}
+                            onChange={() => handleSelectCotizacion(cotizacion.id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">
+                          {cotizacion.numeroCotizacion || 'N/A'}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                          {cotizacion.clienteNombre}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                          {cotizacion.fechaCreacion}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black font-medium text-left">
+                          S/. {parseFloat(cotizacion.totalCotizacion || 0).toFixed(2)}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                          {cotizacion.estado === 'confirmada' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <CheckCircleIcon className="h-4 w-4 mr-1" /> Confirmada
+                            </span>
+                          ) : cotizacion.estado === 'cancelada' ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <XCircleIcon className="h-4 w-4 mr-1" /> Cancelada
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              <DocumentTextIcon className="h-4 w-4 mr-1" /> Pendiente
+                            </span>
+                          )}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                          {cotizacion.metodoPago || 'N/A'}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                          {cotizacion.empleadoId || 'Desconocido'}
+                        </td>
+                        <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
+                          <div className="flex items-center space-x-2 justify-center">
+                            {(cotizacion.estado === 'pendiente' ||
+                              cotizacion.estado === 'borrador') && (
+                              <>
+                                <button
+                                  onClick={() => handleConfirmarCotizacion(cotizacion.id)}
+                                  className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                                  title="Confirmar Cotización (Convertir a Venta)"
+                                >
+                                  <CheckCircleIcon className="h-5 w-5" />
+                                </button>
+                                <button
+                                  onClick={() => handleCancelarCotizacion(cotizacion.id)}
+                                  className="text-orange-600 hover:text-orange-800 p-2 rounded-full hover:bg-orange-50 transition duration-150 ease-in-out"
+                                  title="Cancelar Cotización"
+                                >
+                                  <XCircleIcon className="h-5 w-5" />
+                                </button>
+                                <button
+                                  onClick={() => handleEditCotizacion(cotizacion.id)}
+                                  className="text-purple-600 hover:text-purple-800 p-2 rounded-full hover:bg-purple-50 transition duration-150 ease-in-out"
+                                  title="Editar Cotización"
+                                >
+                                  <PencilIcon className="h-5 w-5" />
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => handleViewDetails(cotizacion.id)}
+                              className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
+                              title="Ver Detalles de la Cotización"
+                            >
+                              <EyeIcon className="h-5 w-5" />
+                            </button>
+                            {/* NUEVO BOTÓN - Imprimir PDF */}
+                            <button
+                              onClick={() => handleImprimirCotizacion(cotizacion)}
+                              className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                              title="Generar PDF de Cotización"
+                              disabled={false} // Las cotizaciones siempre pueden imprimirse
+                            >
+                              <PrinterIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCotizacion(cotizacion.id, cotizacion.estado)}
+                              className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out ml-1"
+                              title="Eliminar Cotización"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Controles de paginación */}
+              {filteredCotizaciones.length > cotizacionesPerPage && (
+                <div className="flex justify-between items-center mt-4">
+                  <p className="text-sm text-gray-700">
+                    Mostrando <span className="font-medium">{indexOfFirstCotizacion + 1}</span> a <span className="font-medium">{Math.min(indexOfLastCotizacion, filteredCotizaciones.length)}</span> de <span className="font-medium">{filteredCotizaciones.length}</span> resultados
+                  </p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={goToPrevPage}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeftIcon className="h-5 w-5" />
+                    </button>
+                    <span className="px-3 py-1 text-sm text-gray-700">
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <button
+                      onClick={goToNextPage}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRightIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

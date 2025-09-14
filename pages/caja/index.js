@@ -1800,72 +1800,82 @@ const mostrarDetalleGanancia = async (venta) => {
       <div className="flex flex-col mx-4 py-4 space-y-6">
         
         {/* Header con selector de fecha */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex flex-col sm:flex-row justify-between items-center">
-            <div className="flex items-center space-x-3 mb-4 sm:mb-0">
-              <BuildingStorefrontIcon className="h-8 w-8 text-green-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Caja del Día</h1>
-              {cajaCerrada && (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
-                  <LockClosedIcon className="h-4 w-4 mr-1" />
-                  Cerrada
-                </span>
-              )}
-            </div>
+<div className="bg-white rounded-lg shadow-md p-4 lg:p-6">
+  <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4">
+    {/* Título y estado */}
+    <div className="flex items-center justify-center lg:justify-start space-x-3">
+      <BuildingStorefrontIcon className="h-6 w-6 lg:h-8 lg:w-8 text-green-600" />
+      <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Caja del Día</h1>
+      {cajaCerrada && (
+        <span className="inline-flex items-center px-2 py-1 lg:px-3 lg:py-1 rounded-full text-xs lg:text-sm font-medium bg-red-100 text-red-800">
+          <LockClosedIcon className="h-3 w-3 lg:h-4 lg:w-4 mr-1" />
+          Cerrada
+        </span>
+      )}
+    </div>
+    
+    {/* Controles */}
+    <div className="flex flex-col sm:flex-row lg:flex-row items-stretch lg:items-center gap-3 lg:gap-4">
+      {/* Selector de fecha */}
+      <div className="flex items-center justify-center space-x-2">
+        <CalendarIcon className="h-4 w-4 lg:h-5 lg:w-5 text-gray-500" />
+        <DatePicker
+          selected={selectedDate}
+          onChange={(date) => setSelectedDate(date)}
+          dateFormat="dd/MM/yyyy"
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm lg:text-base w-full sm:w-auto"
+          maxDate={new Date()}
+          disabled={false}
+        />
+      </div>
+      
+      {/* Botones de acción */}
+      <div className="flex flex-col sm:flex-row lg:flex-row gap-2 lg:gap-3">
+        {isAdmin && !cajaCerrada && (
+          <>
+            <button
+              onClick={() => setShowDineroInicialModal(true)}
+              className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors text-sm lg:text-base"
+            >
+              <BanknotesIcon className="h-4 w-4 lg:h-5 lg:w-5" />
+              <span className="hidden sm:inline lg:inline">Dinero Inicial</span>
+              <span className="sm:hidden lg:hidden">Inicial</span>
+            </button>
             
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <CalendarIcon className="h-5 w-5 text-gray-500" />
-                <DatePicker
-                  selected={selectedDate}
-                  onChange={(date) => setSelectedDate(date)}
-                  dateFormat="dd/MM/yyyy"
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  maxDate={new Date()}
-                  disabled={false}
-                />
-              </div>
-              
-              {isAdmin && !cajaCerrada && (
-                <>
-                  <button
-                    onClick={() => setShowDineroInicialModal(true)}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors"
-                  >
-                    <BanknotesIcon className="h-5 w-5" />
-                    <span>Dinero Inicial</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => setShowRetiroModal(true)}
-                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors"
-                  >
-                    <MinusCircleIcon className="h-5 w-5" />
-                    <span>Retirar Dinero</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => setShowCierreModal(true)}
-                    className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors"
-                  >
-                    <LockClosedIcon className="h-5 w-5" />
-                    <span>Cerrar Caja</span>
-                  </button>
-                </>
-              )}
-              
-              {cajaCerrada && (
-                <button
-                  onClick={generarReportePDF}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors"
-                >
-                  <DocumentTextIcon className="h-5 w-5" />
-                  <span>Generar Reporte</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+            <button
+              onClick={() => setShowRetiroModal(true)}
+              className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors text-sm lg:text-base"
+            >
+              <MinusCircleIcon className="h-4 w-4 lg:h-5 lg:w-5" />
+              <span className="hidden sm:inline lg:inline">Retirar Dinero</span>
+              <span className="sm:hidden lg:hidden">Retirar</span>
+            </button>
+            
+            <button
+              onClick={() => setShowCierreModal(true)}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors text-sm lg:text-base"
+            >
+              <LockClosedIcon className="h-4 w-4 lg:h-5 lg:w-5" />
+              <span className="hidden sm:inline lg:inline">Cerrar Caja</span>
+              <span className="sm:hidden lg:hidden">Cerrar</span>
+            </button>
+          </>
+        )}
+        
+        {cajaCerrada && (
+          <button
+            onClick={generarReportePDF}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 lg:px-4 lg:py-2 rounded-lg font-medium flex items-center justify-center space-x-2 transition-colors text-sm lg:text-base"
+          >
+            <DocumentTextIcon className="h-4 w-4 lg:h-5 lg:w-5" />
+            <span className="hidden sm:inline lg:inline">Generar Reporte</span>
+            <span className="sm:hidden lg:hidden">Reporte</span>
+          </button>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
 
         {error && (
           <div className="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded-lg">

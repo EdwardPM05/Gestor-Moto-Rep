@@ -27,6 +27,7 @@ import {
     PlusIcon
 } from '@heroicons/react/24/outline';
 
+
 // Modal de alerta personalizado
 const CustomAlert = ({ message, onClose }) => {
     if (!message) return null;
@@ -124,6 +125,7 @@ const ClientePDFModal = ({ isOpen, onClose, clientes, onGeneratePDF, loading }) 
 const ClientesConCreditoActivos = () => {
     const router = useRouter();
     const { user } = useAuth();
+    const isAdmin = user?.email === 'admin@gmail.com';
     const [clientes, setClientes] = useState([]);
     const [clientesFiltrados, setClientesFiltrados] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -605,13 +607,13 @@ const ClientesConCreditoActivos = () => {
                                             </td>
                                             <td className="border border-gray-300 px-3 py-2 text-sm text-center">
                                                 <div className="flex items-center justify-center gap-2">
-                                                    <button
+                                                    {isAdmin && (<> <button
                                                         onClick={() => router.push(`/creditos/${cliente.id}`)}
                                                         className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs flex items-center"
                                                     >
                                                         <CreditCardIcon className="h-3 w-3 mr-1" />
                                                         Ver Detalle
-                                                    </button>
+                                                    </button></>)}
                                                     {cliente.montoCreditoActual > 0 && (
                                                         <button
                                                             onClick={() => generarPDFClienteHandler(cliente)}

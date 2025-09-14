@@ -102,15 +102,37 @@ export const NotificationProvider = ({ children }) => {
           title = '🚨 Stock Crítico';
         }
 
+        // Construir información adicional de códigos
+        const codigoProveedor = producto.codigoProveedor || 'N/A';
+        const codigoTienda = producto.codigoTienda || 'N/A';
+        
+        // Construir el mensaje con los códigos
+        let message = `${producto.nombre || 'Producto'} tiene ${currentStock} unidades`;
+        
+        // Agregar información de códigos si están disponibles
+        const codigoInfo = [];
+        if (codigoProveedor !== 'N/A') {
+          codigoInfo.push(`C.Prov: ${codigoProveedor}`);
+        }
+        if (codigoTienda !== 'N/A') {
+          codigoInfo.push(`C.Tienda: ${codigoTienda}`);
+        }
+        
+        if (codigoInfo.length > 0) {
+          message += ` • ${codigoInfo.join(' • ')}`;
+        }
+
         lowStockNotifications.push({
           id: `low-stock-${producto.id}`,
           type: 'low_stock',
           title: title,
-          message: `${producto.nombre || 'Producto'} tiene  ${currentStock} unidades`,
+          message: message,
           productoId: producto.id,
           productoName: producto.nombre || 'Producto sin nombre',
           currentStock: currentStock,
           thresholdStock: thresholdStock,
+          codigoProveedor: codigoProveedor,
+          codigoTienda: codigoTienda,
           date: today.toISOString(),
           read: false,
           priority: priority

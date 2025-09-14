@@ -4,17 +4,41 @@ import { useAuth } from '../../contexts/AuthContext';
 import Layout from '../../components/Layout';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, query, deleteDoc, doc } from 'firebase/firestore'; // Importamos `query` y `getDocs`
-import { PlusIcon, PencilIcon, TrashIcon, GiftIcon, ShoppingBagIcon,UserGroupIcon } from '@heroicons/react/24/outline'; // Añadido ShoppingBagIcon para la nueva acción
+import { PlusIcon, PencilIcon, TrashIcon, GiftIcon, ShoppingBagIcon, UserGroupIcon, ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'; // Añadido ShoppingBagIcon para la nueva acción
 import { useRouter } from 'next/router';
 
 const ClientesPage = () => {
   const router = useRouter();
   const { user } = useAuth();
+  const isAdmin = user?.email === 'admin@gmail.com';
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredClientes, setFilteredClientes] = useState([]);
+  
+  // Estados para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const clientesPerPage = 10; // Número de clientes por página
+
+  // Calcular paginación
+  const indexOfLastCliente = currentPage * clientesPerPage;
+  const indexOfFirstCliente = indexOfLastCliente - clientesPerPage;
+  const currentClientes = filteredClientes.slice(indexOfFirstCliente, indexOfLastCliente);
+  const totalPages = Math.ceil(filteredClientes.length / clientesPerPage);
+
+  // Funciones de navegación de páginas
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const goToPrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
 
   useEffect(() => {
     const fetchClientes = async () => {
@@ -62,6 +86,7 @@ const ClientesPage = () => {
       (cliente.direccion && cliente.direccion.toLowerCase().includes(lowerCaseSearchTerm))
     );
     setFilteredClientes(filtered);
+    setCurrentPage(1); // Resetear a la primera página cuando se filtra
   }, [searchTerm, clientes]);
 
   // Función para formatear la fecha de cumpleaños (solo día y mes)
@@ -102,7 +127,7 @@ const ClientesPage = () => {
       <div className="flex flex-col mx-4 py-4">
         {/* Contenedor del card blanco */}
         <div className="w-full p-4 bg-white rounded-lg shadow-md flex flex-col">
-          {/* Título de la página, similar al de Productos/Proveedores */}
+          {/* Título de la página */}
           <div className="flex items-center mb-4">
             <UserGroupIcon className="h-8 w-8 text-green-600 mr-2" />
             <h1 className="text-xl font-bold text-gray-700">Gestión de Clientes</h1>
@@ -114,22 +139,34 @@ const ClientesPage = () => {
             </div>
           )}
 
-          {/* Sección de Búsqueda y Botón Agregar, con estilo de card */}
-          <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0 flex justify-between items-center">
-            <input
-              type="text"
-              placeholder="Buscar por nombre, DNI, teléfono, email o dirección..." 
-              className="flex-grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <button
-              onClick={() => router.push('/clientes/nuevo')}
-              className="ml-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-            >
-              <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
-              Agregar Cliente
-            </button>
+         {/* Sección de Búsqueda y Botón Agregar, con estilo de card responsive */}
+          <div className="mb-4 border border-gray-200 rounded-lg p-4 bg-gray-50 flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div className="relative flex-grow">
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, DNI, teléfono, email o dirección..." 
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 text-base placeholder-gray-400"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              
+              {isAdmin && (
+                <button
+                  onClick={() => router.push('/clientes/nuevo')}
+                  className="inline-flex items-center justify-center px-6 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out whitespace-nowrap"
+                >
+                  <PlusIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
+                  Agregar Cliente
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -139,71 +176,103 @@ const ClientesPage = () => {
           ) : filteredClientes.length === 0 ? (
             <p className="p-4 text-center text-gray-500">No se encontraron clientes que coincidan con la búsqueda.</p>
           ) : (
-            <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto">
-              <table className="min-w-full border-collapse">
-                <thead className="bg-gray-50 sticky top-0 z-10">
-                  <tr>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">NOMBRE COMPLETO</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">DNI</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TELEFONO</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">EMAIL</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CUMPLEAÑOS</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CREDITO ACTUAL</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-                  {filteredClientes.map((cliente, index) => (
-                    <tr key={cliente.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">{cliente.nombre} {cliente.apellido}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.dni || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.telefono || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.email || 'N/A'}</td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                        {formatBirthday(cliente.fechaNacimiento)}
-                      </td>
-                      <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                        {cliente.tieneCredito ? (
-                          <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
-                            S/. {parseFloat(cliente.montoCreditoActual || 0).toFixed(2)}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
-                            No
-                          </span>
-                        )}
-                      </td>
-                      <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium">
-                        <div className="flex items-center space-x-2 justify-center">
-                          {/* Nuevo botón de acción para ver las compras del cliente */}
-                          <button
-                            onClick={() => router.push(`/clientes/${cliente.id}/compras`)}
-                            className="text-indigo-600 hover:text-indigo-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Ver Compras"
-                          >
-                            <ShoppingBagIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => router.push(`/clientes/${cliente.id}`)}
-                            className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Editar Cliente"
-                          >
-                            <PencilIcon className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(cliente.id)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
-                            title="Eliminar Cliente"
-                          >
-                            <TrashIcon className="h-5 w-5" />
-                          </button>
-                        </div>
-                      </td>
+            <>
+              <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg overflow-y-auto">
+                <table className="min-w-full border-collapse">
+                  <thead className="bg-gray-50 sticky top-0 z-10">
+                    <tr>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">NOMBRE COMPLETO</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">DNI</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">TELEFONO</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">EMAIL</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CUMPLEAÑOS</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CREDITO ACTUAL</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white">
+                    {currentClientes.map((cliente, index) => (
+                      <tr key={cliente.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-black text-left">{cliente.nombre} {cliente.apellido}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.dni || 'N/A'}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.telefono || 'N/A'}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">{cliente.email || 'N/A'}</td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                          {formatBirthday(cliente.fechaNacimiento)}
+                        </td>
+                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                          {cliente.tieneCredito ? (
+                            <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
+                              S/. {parseFloat(cliente.montoCreditoActual || 0).toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800">
+                              No
+                            </span>
+                          )}
+                        </td>
+                        <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium">
+                          <div className="flex items-center space-x-2 justify-center">
+                            {/* Nuevo botón de acción para ver las compras del cliente */}
+                            <button
+                              onClick={() => router.push(`/clientes/${cliente.id}/compras`)}
+                              className="text-indigo-600 hover:text-indigo-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Ver Compras"
+                            >
+                              <ShoppingBagIcon className="h-5 w-5" />
+                            </button>
+                            {isAdmin && (<> 
+                            <button
+                              onClick={() => router.push(`/clientes/${cliente.id}`)}
+                              className="text-green-600 hover:text-green-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Editar Cliente"
+                            >
+                              <PencilIcon className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(cliente.id)}
+                              className="text-red-600 hover:text-red-900 p-1 rounded-full hover:bg-gray-100"
+                              title="Eliminar Cliente"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
+                            </>)}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Controles de paginación */}
+              {filteredClientes.length > clientesPerPage && (
+                <div className="flex justify-between items-center mt-4">
+                  <p className="text-sm text-gray-700">
+                    Mostrando <span className="font-medium">{indexOfFirstCliente + 1}</span> a <span className="font-medium">{Math.min(indexOfLastCliente, filteredClientes.length)}</span> de <span className="font-medium">{filteredClientes.length}</span> resultados
+                  </p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={goToPrevPage}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeftIcon className="h-5 w-5" />
+                    </button>
+                    <span className="px-3 py-1 text-sm text-gray-700">
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <button
+                      onClick={goToNextPage}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRightIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

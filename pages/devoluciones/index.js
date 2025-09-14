@@ -1,4 +1,4 @@
-  import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
   import { useRouter } from 'next/router';
   import { useAuth } from '../../contexts/AuthContext';
   import Layout from '../../components/Layout';
@@ -16,7 +16,7 @@
     getDoc,
     where,
     getDocs,
-    runTransaction, // ← AGREGAR ESTA LÍNEA
+    runTransaction,
     limit
   } from 'firebase/firestore';
   import {
@@ -30,7 +30,9 @@
     XMarkIcon, 
     CurrencyDollarIcon,
     FunnelIcon,
-    ExclamationTriangleIcon
+    ExclamationTriangleIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon
   } from '@heroicons/react/24/outline';
 
   const DevolucionesIndexPage = () => {
@@ -50,6 +52,25 @@
     const [limitPerPage, setLimitPerPage] = useState(20);
     const [selectedEstado, setSelectedEstado] = useState('all');
     const [selectedMotivo, setSelectedMotivo] = useState('all');
+
+    // Estados para paginación
+    const [currentPage, setCurrentPage] = useState(1);
+    const [devolucionesPerPage] = useState(10);
+
+    // Cálculos de paginación
+    const indexOfLastDevolucion = currentPage * devolucionesPerPage;
+    const indexOfFirstDevolucion = indexOfLastDevolucion - devolucionesPerPage;
+    const currentDevoluciones = filteredDevoluciones.slice(indexOfFirstDevolucion, indexOfLastDevolucion);
+    const totalPages = Math.ceil(filteredDevoluciones.length / devolucionesPerPage);
+
+    // Funciones de paginación
+    const goToNextPage = () => {
+      setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+    };
+
+    const goToPrevPage = () => {
+      setCurrentPage((prev) => Math.max(prev - 1, 1));
+    };
 
     useEffect(() => {
       if (!user) {
@@ -195,10 +216,9 @@
         filtered = filtered.filter(devolucion => devolucion.motivo === selectedMotivo);
       }
 
-      // Limitar cantidad por página
-      const limitedFiltered = filtered.slice(0, limitPerPage);
-      
-      setFilteredDevoluciones(limitedFiltered);
+      setFilteredDevoluciones(filtered);
+      // Reset página al cambiar los filtros
+      setCurrentPage(1);
     }, [searchTerm, devoluciones, startDate, endDate, selectedEstado, selectedMotivo, limitPerPage]);
 
     const handleViewDetails = (id) => {
@@ -773,40 +793,40 @@ const handleAprobarDevolucion = async (devolucionId) => {
               </div>
             )}
 
-{/* Panel de filtros reorganizado */}
-          <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
-            {/* Barra de búsqueda y botones principales */}
-            <div className="flex justify-between items-center mb-4">
-              <div className="relative flex-grow mr-4">
-                <input
-                  type="text"
-                  placeholder="Buscar por número de devolución, venta, cliente..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 text-base placeholder-gray-400"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" fill="currentColor" />
+            {/* Panel de filtros reorganizado */}
+            <div className="mb-6 border border-gray-200 rounded-lg p-4 bg-gray-50">
+              {/* Primera línea: Búsqueda y botón Nueva Devolución */}
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
+                <div className="relative flex-grow sm:mr-4">
+                  <input
+                    type="text"
+                    placeholder="Buscar por número de devolución, venta, cliente..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 text-base placeholder-gray-400"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" fill="currentColor" />
+                  </div>
                 </div>
+                
+                <button
+                  onClick={() => router.push('/devoluciones/nueva')}
+                  className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition duration-150 ease-in-out"
+                >
+                  <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
+                  Nueva Devolución
+                </button>
               </div>
-              
-              <button
-                onClick={() => router.push('/devoluciones/nueva')}
-                className="inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition duration-150 ease-in-out"
-              >
-                <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
-                Nueva Devolución
-              </button>
-            </div>
 
-            {/* Línea de filtros compactos */}
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <div className="flex items-center space-x-4 flex-wrap">
-                {/* Botones de período */}
-                <div className="flex space-x-2">
+              {/* Segunda línea: TODOS los filtros en una sola línea */}
+              <div className="flex flex-wrap items-center gap-2 justify-between">
+                {/* Filtros del lado izquierdo */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Botones de período */}
                   <button
                     onClick={() => handleFilterChange('all')}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
+                    className={`px-3 py-1 rounded text-sm font-medium whitespace-nowrap ${
                       filterPeriod === 'all'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
@@ -816,7 +836,7 @@ const handleAprobarDevolucion = async (devolucionId) => {
                   </button>
                   <button
                     onClick={() => handleFilterChange('day')}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
+                    className={`px-3 py-1 rounded text-sm font-medium whitespace-nowrap ${
                       filterPeriod === 'day'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
@@ -826,7 +846,7 @@ const handleAprobarDevolucion = async (devolucionId) => {
                   </button>
                   <button
                     onClick={() => handleFilterChange('week')}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
+                    className={`px-3 py-1 rounded text-sm font-medium whitespace-nowrap ${
                       filterPeriod === 'week'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
@@ -836,7 +856,7 @@ const handleAprobarDevolucion = async (devolucionId) => {
                   </button>
                   <button
                     onClick={() => handleFilterChange('month')}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
+                    className={`px-3 py-1 rounded text-sm font-medium whitespace-nowrap ${
                       filterPeriod === 'month'
                         ? 'bg-blue-600 text-white'
                         : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
@@ -844,10 +864,8 @@ const handleAprobarDevolucion = async (devolucionId) => {
                   >
                     Este Mes
                   </button>
-                </div>
 
-                {/* Selectores de fecha */}
-                <div className="flex space-x-2">
+                  {/* Selectores de fecha */}
                   <DatePicker
                     selected={startDate}
                     onChange={(date) => {
@@ -873,56 +891,56 @@ const handleAprobarDevolucion = async (devolucionId) => {
                     placeholderText="Fecha fin"
                     className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm w-32"
                   />
+
+                  {/* Selector de límite */}
+                  <select
+                    className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    value={limitPerPage}
+                    onChange={(e) => setLimitPerPage(Number(e.target.value))}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+
+                  {/* Filtros específicos de devoluciones */}
+                  <select
+                    value={selectedEstado}
+                    onChange={(e) => setSelectedEstado(e.target.value)}
+                    className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  >
+                    <option value="all">Estado</option>
+                    <option value="solicitada">Solicitada</option>
+                    <option value="en_revision">En Revisión</option>
+                    <option value="aprobada">Aprobada</option>
+                    <option value="rechazada">Rechazada</option>
+                  </select>
+
+                  <select
+                    value={selectedMotivo}
+                    onChange={(e) => setSelectedMotivo(e.target.value)}
+                    className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  >
+                    <option value="all">Motivo</option>
+                    <option value="no_quiere">No le gustó</option>
+                    <option value="defectuoso">Producto defectuoso</option>
+                    <option value="empaque_abierto">Empaque abierto</option>
+                    <option value="descripcion_incorrecta">Descripción incorrecta</option>
+                    <option value="otro">Otro motivo</option>
+                  </select>
                 </div>
 
-                {/* Limitador por página */}
-                <select
-                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  value={limitPerPage}
-                  onChange={(e) => setLimitPerPage(Number(e.target.value))}
+                {/* Botón Limpiar del lado derecho */}
+                <button 
+                  onClick={clearFilters}
+                  className="inline-flex items-center px-3 py-1 bg-red-50 text-red-700 rounded text-sm font-medium hover:bg-red-100 hover:text-red-800 transition-colors border border-red-200 whitespace-nowrap"
                 >
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-
-                {/* Filtros adicionales en la misma línea */}
-                <select
-                  value={selectedEstado}
-                  onChange={(e) => setSelectedEstado(e.target.value)}
-                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">Estado</option>
-                  <option value="solicitada">Solicitada</option>
-                  <option value="en_revision">En Revisión</option>
-                  <option value="aprobada">Aprobada</option>
-                  <option value="rechazada">Rechazada</option>
-                </select>
-
-                <select
-                  value={selectedMotivo}
-                  onChange={(e) => setSelectedMotivo(e.target.value)}
-                  className="px-3 py-1 border border-gray-300 rounded shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">Motivo</option>
-                  <option value="no_quiere">No le gustó</option>
-                  <option value="defectuoso">Producto defectuoso</option>
-                  <option value="empaque_abierto">Empaque abierto</option>
-                  <option value="descripcion_incorrecta">Descripción incorrecta</option>
-                  <option value="otro">Otro motivo</option>
-                </select>
+                  <XMarkIcon className="h-4 w-4 mr-1" />
+                  Limpiar
+                </button>
               </div>
-
-              <button 
-                onClick={clearFilters}
-                className="inline-flex items-center px-3 py-1 bg-red-50 text-red-700 rounded text-sm font-medium hover:bg-red-100 hover:text-red-800 transition-colors border border-red-200"
-              >
-                <XMarkIcon className="h-4 w-4 mr-1" />
-                Limpiar
-              </button>
             </div>
-          </div>
 
           
             {loading ? (
@@ -934,81 +952,111 @@ const handleAprobarDevolucion = async (devolucionId) => {
                 No hay devoluciones registradas que coincidan con los filtros aplicados.
               </div>
             ) : (
-              <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
-                <table className="min-w-full border-collapse">
-                  <thead className="bg-gray-50 sticky top-0 z-10">
-                  <tr>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° DEVOLUCIÓN</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° VENTA ORIGINAL</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CLIENTE</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA SOLICITUD</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MONTO A DEVOLVER</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MOTIVO</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROCESADO POR</th>
-                    <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
-                  </tr>
-                  </thead>
-                  <tbody className="bg-white">
-                  {filteredDevoluciones.map((devolucion, index) => (
-                      <tr key={devolucion.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900 text-left">
-                          {devolucion.numeroDevolucion || 'N/A'}
-                        </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                          {devolucion.numeroVentaOriginal}
-                        </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                          {devolucion.clienteNombre}
-                        </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                          {devolucion.fechaSolicitudFormatted}
-                        </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black font-medium text-left">
-                          S/. {parseFloat(devolucion.montoADevolver || 0).toFixed(2)}
-                        </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
-                          {getMotivoBadge(devolucion.motivo)}
-                        </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
-                          {getEstadoBadge(devolucion.estado)}
-                        </td>
-                        <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
-                          {devolucion.procesadoPor || devolucion.solicitadoPor || 'N/A'}
-                        </td>
-                        <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
-                          <div className="flex items-center space-x-2 justify-center">
-                            <button
-                              onClick={() => handleViewDetails(devolucion.id)}
-                              className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
-                              title="Ver Detalles"
-                            >
-                              <EyeIcon className="h-5 w-5" />
-                            </button>
-                            {devolucion.estado === 'solicitada' && (
-                              <>
-                                <button
-                                  onClick={() => handleAprobarDevolucion(devolucion.id)}
-                                  className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
-                                  title="Aprobar Devolución"
-                                >
-                                  <CheckCircleIcon className="h-5 w-5" />
-                                </button>
-                                <button
-                                  onClick={() => handleRechazarDevolucion(devolucion.id)}
-                                  className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out"
-                                  title="Rechazar Devolución"
-                                >
-                                  <XCircleIcon className="h-5 w-5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                <div className="overflow-x-auto shadow-lg ring-1 ring-black ring-opacity-5 rounded-lg overflow-y-auto max-h-[60vh]">
+                  <table className="min-w-full border-collapse">
+                    <thead className="bg-gray-50 sticky top-0 z-10">
+                    <tr>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° DEVOLUCIÓN</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">N° VENTA ORIGINAL</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">CLIENTE</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">FECHA SOLICITUD</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MONTO A DEVOLVER</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">MOTIVO</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ESTADO</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">PROCESADO POR</th>
+                      <th scope="col" className="border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-600 text-center">ACCIONES</th>
+                    </tr>
+                    </thead>
+                    <tbody className="bg-white">
+                    {currentDevoluciones.map((devolucion, index) => (
+                        <tr key={devolucion.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm font-medium text-gray-900 text-left">
+                            {devolucion.numeroDevolucion || 'N/A'}
+                          </td>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                            {devolucion.numeroVentaOriginal}
+                          </td>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                            {devolucion.clienteNombre}
+                          </td>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                            {devolucion.fechaSolicitudFormatted}
+                          </td>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black font-medium text-left">
+                            S/. {parseFloat(devolucion.montoADevolver || 0).toFixed(2)}
+                          </td>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                            {getMotivoBadge(devolucion.motivo)}
+                          </td>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-center">
+                            {getEstadoBadge(devolucion.estado)}
+                          </td>
+                          <td className="border border-gray-300 whitespace-nowrap px-3 py-2 text-sm text-black text-left">
+                            {devolucion.procesadoPor || devolucion.solicitadoPor || 'N/A'}
+                          </td>
+                          <td className="border border-gray-300 relative whitespace-nowrap px-3 py-2 text-sm font-medium text-center">
+                            <div className="flex items-center space-x-2 justify-center">
+                              <button
+                                onClick={() => handleViewDetails(devolucion.id)}
+                                className="text-blue-600 hover:text-blue-800 p-2 rounded-full hover:bg-blue-50 transition duration-150 ease-in-out"
+                                title="Ver Detalles"
+                              >
+                                <EyeIcon className="h-5 w-5" />
+                              </button>
+                              {devolucion.estado === 'solicitada' && (
+                                <>
+                                  <button
+                                    onClick={() => handleAprobarDevolucion(devolucion.id)}
+                                    className="text-green-600 hover:text-green-800 p-2 rounded-full hover:bg-green-50 transition duration-150 ease-in-out"
+                                    title="Aprobar Devolución"
+                                  >
+                                    <CheckCircleIcon className="h-5 w-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleRechazarDevolucion(devolucion.id)}
+                                    className="text-red-600 hover:text-red-800 p-2 rounded-full hover:bg-red-50 transition duration-150 ease-in-out"
+                                    title="Rechazar Devolución"
+                                  >
+                                    <XCircleIcon className="h-5 w-5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Controles de paginación */}
+                {filteredDevoluciones.length > devolucionesPerPage && (
+                  <div className="flex justify-between items-center mt-4">
+                    <p className="text-sm text-gray-700">
+                      Mostrando <span className="font-medium">{indexOfFirstDevolucion + 1}</span> a <span className="font-medium">{Math.min(indexOfLastDevolucion, filteredDevoluciones.length)}</span> de <span className="font-medium">{filteredDevoluciones.length}</span> resultados
+                    </p>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={goToPrevPage}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ChevronLeftIcon className="h-5 w-5" />
+                      </button>
+                      <span className="px-3 py-1 text-sm text-gray-700">
+                        Página {currentPage} de {totalPages}
+                      </span>
+                      <button
+                        onClick={goToNextPage}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRightIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
