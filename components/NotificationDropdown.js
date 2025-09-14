@@ -89,9 +89,9 @@ const NotificationDropdown = () => {
         )}
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown - CENTRADO Y RESPONSIVO */}
       {isOpen && (
-        <div className="absolute left-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 flex flex-col">
+        <div className="absolute left-1/2 transform -translate-x-1/2 mt-2 w-80 max-w-[95vw] bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200">
             <h3 className="text-lg font-semibold text-gray-900">Notificaciones</h3>
@@ -133,40 +133,42 @@ const NotificationDropdown = () => {
                     key={notification.id}
                     className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
                       !notification.read ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                    }`}
+                    } group`}
                     onClick={() => handleNotificationClick(notification)}
                   >
                     <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0">
+                      <div className="flex-shrink-0 mt-1">
                         {getNotificationIcon(notification.type)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm font-medium ${
                           !notification.read ? 'text-gray-900' : 'text-gray-600'
-                        }`}>
+                        } pr-6`}>
                           {notification.title}
                         </p>
-                        <p className="text-sm text-gray-500 mt-1">
+                        <p className="text-sm text-gray-500 mt-1 break-words">
                           {notification.message}
                         </p>
                         <p className="text-xs text-gray-400 mt-2">
                           {formatNotificationTime(notification.date)}
                         </p>
                       </div>
-                      <div className="flex-shrink-0 flex items-center space-x-1">
-                        {!notification.read && (
-                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeNotification(notification.id);
-                          }}
-                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Eliminar notificación"
-                        >
-                          <XMarkIcon className="h-4 w-4" />
-                        </button>
+                      <div className="flex-shrink-0 flex items-start pt-1">
+                        <div className="flex flex-col items-center space-y-2">
+                          {!notification.read && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeNotification(notification.id);
+                            }}
+                            className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                            title="Eliminar notificación"
+                          >
+                            <XMarkIcon className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -189,4 +191,4 @@ const NotificationDropdown = () => {
   );
 };
 
-export default NotificationDropdown;    
+export default NotificationDropdown;

@@ -1,5 +1,4 @@
-// components/Sidebar.js
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationDropdown from './NotificationDropdown';
@@ -30,6 +29,25 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
 
   const isAdmin = user?.email === 'admin@gmail.com';
 
+  // Bloquear el scroll del body cuando el sidebar está abierto en mobile
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+    };
+  }, [isOpen]);
+
   const handleLogout = async () => {
     await logout();
     router.push('/auth');
@@ -58,7 +76,6 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         { name: 'Faltos', path: '/productos/faltos' }
       ]
     },
-    //{ name: 'Dashboard', icon: HomeIcon, path: '/dashboard', adminOnly: false },
     {
       name: 'Ingresos',
       icon: ClipboardDocumentListIcon,
@@ -109,144 +126,155 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
       icon: UserGroupIcon,
       adminOnly: false,
       path: '/empleados'
-      /*submenu: [
-        { name: 'Lista de Empleados', path: '/empleados' },
-        { name: 'Rendimiento', path: '/empleados/rendimiento' }
-      ]*/
     },
     {
       name: 'Caja',
       icon: ChartBarIcon,
       adminOnly: true,
-      path:'/caja'
-    },
-      /* {
-         name: 'Reportes',
-         icon: PrinterIcon,
-         adminOnly: true,
-         submenu: [
-           { name: 'Reporte de Ventas', path: '/reportes/ventas' },
-           { name: 'Reporte de Inventory', path: '/reportes/inventario' },
-           { name: 'Reporte de Cotizaciones', path: '/reportes/cotizaciones' },
-           { name: 'Reporte de Empleados', path: '/reportes/empleados' }
-         ]
-       }*/
+      path: '/caja'
+    }
   ];
 
   return (
     <>
-      {/* Overlay: aparece cuando el sidebar está abierto, cubre todo excepto el sidebar */}
+      {/* Overlay: aparece cuando el sidebar está abierto */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40" // Z-index 40 para estar debajo del sidebar (z-50)
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 touch-none"
           onClick={toggleSidebar}
+          style={{ 
+            WebkitTouchCallout: 'none',
+            WebkitUserSelect: 'none',
+            KhtmlUserSelect: 'none',
+            MozUserSelect: 'none',
+            MsUserSelect: 'none',
+            userSelect: 'none'
+          }}
         />
       )}
 
-      {/* Sidebar: Siempre fijo y se superpone */}
+      {/* Sidebar Container */}
       <div className={`
         fixed inset-y-0 left-0
-        z-50                          /* Alto z-index para que siempre esté encima */
-        w-64 bg-gray-900 text-white
+        z-50
+        w-64 
         transform transition-transform duration-300 ease-in-out
-        ${isOpen ? 'translate-x-0' : '-translate-x-full'} /* Controla si está visible o fuera de pantalla */
-      `}>
-        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-700">
-          <h1 className="text-xl font-bold text-blue-400">GestorMoto</h1>
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        touch-none
+      `}
+      style={{ 
+        WebkitTouchCallout: 'none',
+        WebkitUserSelect: 'none',
+        KhtmlUserSelect: 'none',
+        MozUserSelect: 'none',
+        MsUserSelect: 'none',
+        userSelect: 'none'
+      }}>
+        
+        {/* Sidebar Content - Flex container que ocupa toda la altura */}
+        <div className="flex flex-col h-full bg-gray-900 text-white">
           
-          {/* Contenedor para notificaciones y botón cerrar */}
-          <div className="flex items-center space-x-2">
-            {/* Componente de notificaciones - solo visible para admin */}
-            {isAdmin && <NotificationDropdown />}
+          {/* Header - Fixed height */}
+          <div className="flex items-center justify-between h-16 px-4 border-b border-gray-700 flex-shrink-0">
+            <h1 className="text-xl font-bold text-blue-400">GestorMoto</h1>
             
-            {/* Botón para cerrar el sidebar */}
+            {/* Contenedor para notificaciones y botón cerrar */}
+            <div className="flex items-center space-x-2">
+              {/* Componente de notificaciones - solo visible para admin */}
+              {isAdmin && <NotificationDropdown />}
+              
+              {/* Botón para cerrar el sidebar */}
+              <button
+                onClick={toggleSidebar}
+                className="p-2 rounded-md hover:bg-gray-800 touch-manipulation"
+                title="Cerrar Menú"
+              >
+                <ArrowLeftOnRectangleIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* User Info - Fixed height */}
+          <div className="p-4 border-b border-gray-700 flex-shrink-0">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                <span className="text-sm font-medium">
+                  {user?.displayName ? user.displayName.charAt(0).toUpperCase() : user?.email.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="text-sm font-medium">{user?.displayName || 'Usuario'}</p>
+                <p className="text-xs text-gray-400">{isAdmin ? 'Administrador' : 'Empleado'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation - Scrollable area */}
+          <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto overflow-x-hidden min-h-0 overscroll-contain">
+            <div className="space-y-2">
+              {menuItems.map((item) => {
+                if (item.adminOnly && !isAdmin) return null;
+
+                return (
+                  <div key={item.name}>
+                    {item.submenu ? (
+                      <div>
+                        <button
+                          onClick={() => toggleSubmenu(item.name)}
+                          className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-800 transition-colors touch-manipulation"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <item.icon className="h-5 w-5 flex-shrink-0" />
+                            <span>{item.name}</span>
+                          </div>
+                          {openSubmenu === item.name ? (
+                            <ChevronDownIcon className="h-4 w-4 flex-shrink-0" />
+                          ) : (
+                            <ChevronRightIcon className="h-4 w-4 flex-shrink-0" />
+                          )}
+                        </button>
+
+                        <div className={`mt-2 ml-8 space-y-1 overflow-hidden transition-all duration-200 ${openSubmenu === item.name ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                          {item.submenu.map((subItem) => {
+                            if (subItem.adminOnly && !isAdmin) return null;
+
+                            return (
+                              <button
+                                key={subItem.name}
+                                onClick={() => navigateTo(subItem.path)}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-800 rounded-md transition-colors touch-manipulation"
+                              >
+                                {subItem.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => navigateTo(item.path)}
+                        className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-800 transition-colors touch-manipulation"
+                      >
+                        <item.icon className="h-5 w-5 flex-shrink-0" />
+                        <span>{item.name}</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* Logout - Fixed at bottom */}
+          <div className="p-4 border-t border-gray-700 flex-shrink-0">
             <button
-              onClick={toggleSidebar}
-              className="p-2 rounded-md hover:bg-gray-800"
-              title="Cerrar Menú"
+              onClick={handleLogout}
+              className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-gray-800 rounded-md transition-colors touch-manipulation"
             >
-              <ArrowLeftOnRectangleIcon className="h-5 w-5" />
+              <ArrowRightOnRectangleIcon className="h-5 w-5 flex-shrink-0" />
+              <span>Cerrar Sesión</span>
             </button>
           </div>
-        </div>
-
-        {/* User Info and Navigation */}
-        <div className="p-4 border-b border-gray-700">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-              <span className="text-sm font-medium">
-                {user?.displayName ? user.displayName.charAt(0).toUpperCase() : user?.email.charAt(0).toUpperCase()}
-              </span>
-            </div>
-            <div>
-              <p className="text-sm font-medium">{user?.displayName || 'Usuario'}</p>
-              <p className="text-xs text-gray-400">{isAdmin ? 'Administrador' : 'Empleado'}</p>
-            </div>
-          </div>
-        </div>
-
-        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-          {menuItems.map((item) => {
-            if (item.adminOnly && !isAdmin) return null;
-
-            return (
-              <div key={item.name}>
-                {item.submenu ? (
-                  <div>
-                    <button
-                      onClick={() => toggleSubmenu(item.name)}
-                      className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-800 transition-colors"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <item.icon className="h-5 w-5" />
-                        <span>{item.name}</span>
-                      </div>
-                      {openSubmenu === item.name ? (
-                        <ChevronDownIcon className="h-4 w-4" />
-                      ) : (
-                        <ChevronRightIcon className="h-4 w-4" />
-                      )}
-                    </button>
-
-                    <div className={`mt-2 ml-8 space-y-1 overflow-hidden transition-all duration-200 ${openSubmenu === item.name ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-                      {item.submenu.map((subItem) => {
-                        if (subItem.adminOnly && !isAdmin) return null;
-
-                        return (
-                          <button
-                            key={subItem.name}
-                            onClick={() => navigateTo(subItem.path)}
-                            className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-800 rounded-md transition-colors"
-                          >
-                            {subItem.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => navigateTo(item.path)}
-                    className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-800 transition-colors"
-                  >
-                    <item.icon className="h-5 w-5" />
-                    <span>{item.name}</span>
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* Logout */}
-        <div className="p-4 border-t border-gray-700">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-gray-800 rounded-md transition-colors"
-          >
-            <ArrowRightOnRectangleIcon className="h-5 w-5" />
-            <span>Cerrar Sesión</span>
-          </button>
         </div>
       </div>
     </>

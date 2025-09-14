@@ -165,12 +165,6 @@ const LoginForm = () => {
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="text-center">
-          <p className="text-xs text-gray-500">
-            Sistema seguro para gestión de inventario
-          </p>
-        </div>
       </div>
 
       {/* Decorative text */}

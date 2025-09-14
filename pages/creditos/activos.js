@@ -405,130 +405,123 @@ const ClientesConCreditoActivos = () => {
             <div className="flex flex-col mx-4 py-4">
                 <div className="w-full p-4 bg-white rounded-lg shadow-md flex flex-col">
 
-                    {/* Header principal con botón Nueva Cotización */}
-                    <div className="flex flex-col md:flex-row items-center justify-between mb-6 pb-4 border-b border-gray-200">
-                        <div className="flex items-center mb-4 md:mb-0">
-                            <UsersIcon className="h-8 w-8 text-blue-600 mr-2" />
-                            <h1 className="text-xl font-bold text-gray-700">Sistema de Créditos Activos</h1>
-                        </div>
 
-                        {/* Botón Nueva Cotización */}
-                        <div className="flex flex-col sm:flex-row items-center gap-3">
-                            <button
-                                onClick={() => router.push('/creditos/nueva')}
-                                className="w-full md:w-auto inline-flex items-center px-6 py-2 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition duration-150 ease-in-out"
-                            >
-                                <PlusIcon className="-ml-1 mr-3 h-5 w-5" aria-hidden="true" />
-                                Nuevo Credito
-                            </button>
-                        </div>
-                    </div>
+                   {/* Contenedor de Botones, Fechas y Limitador - RESPONSIVE AGRUPADO */}
+<div className="flex flex-col space-y-3 lg:flex-row lg:items-center lg:gap-3 lg:space-y-0 mb-6">
+    
+    {/* Botones de Filtro */}
+    <div className="flex flex-wrap gap-2 lg:space-x-2 lg:flex-shrink-0">
+        <button
+            onClick={() => handleFilterChange('all')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                filterPeriod === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+            }`}
+        >
+            Todas
+        </button>
+        <button
+            onClick={() => handleFilterChange('day')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                filterPeriod === 'day'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+            }`}
+        >
+            Hoy
+        </button>
+        <button
+            onClick={() => handleFilterChange('week')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                filterPeriod === 'week'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+            }`}
+        >
+            Esta Semana
+        </button>
+        <button
+            onClick={() => handleFilterChange('month')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                filterPeriod === 'month'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+            }`}
+        >
+            Este Mes
+        </button>
+    </div>
 
-                    {/* Contenedor de Botones, Fechas y Limitador */}
-                    <div className="flex flex-wrap items-center gap-2 md:gap-4 justify-center md:justify-start mb-6">
-                        
-                        {/* Botones de Filtro */}
-                        <div className="flex space-x-2 flex-wrap">
-                            <button
-                                onClick={() => handleFilterChange('all')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                                    filterPeriod === 'all'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                                }`}
-                            >
-                                Todas
-                            </button>
-                            <button
-                                onClick={() => handleFilterChange('day')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                                    filterPeriod === 'day'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                                }`}
-                            >
-                                Hoy
-                            </button>
-                            <button
-                                onClick={() => handleFilterChange('week')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                                    filterPeriod === 'week'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                                }`}
-                            >
-                                Esta Semana
-                            </button>
-                            <button
-                                onClick={() => handleFilterChange('month')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                                    filterPeriod === 'month'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
-                                }`}
-                            >
-                                Este Mes
-                            </button>
-                        </div>
+    {/* Selectores de Fecha */}
+    <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-2 lg:flex-shrink-0">
+        <DatePicker
+            selected={startDate}
+            onChange={(date) => {
+                setStartDate(date);
+                setFilterPeriod('custom');
+            }}
+            selectsStart
+            startDate={startDate}
+            endDate={endDate}
+            placeholderText="Fecha de inicio"
+            className="w-full sm:w-40 lg:w-36 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        />
+        <DatePicker
+            selected={endDate}
+            onChange={(date) => {
+                setEndDate(date);
+                setFilterPeriod('custom');
+            }}
+            selectsEnd
+            startDate={startDate}
+            endDate={endDate}
+            minDate={startDate}
+            placeholderText="Fecha de fin"
+            className="w-full sm:w-40 lg:w-36 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
+        />
+    </div>
 
-                        {/* Selectores de Fecha */}
-                        <div className="flex flex-col space-y-2 sm:space-y-0 sm:flex-row sm:space-x-2 mt-2 md:mt-0">
-                            <DatePicker
-                                selected={startDate}
-                                onChange={(date) => {
-                                    setStartDate(date);
-                                    setFilterPeriod('custom');
-                                }}
-                                selectsStart
-                                startDate={startDate}
-                                endDate={endDate}
-                                placeholderText="Fecha de inicio"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                            />
-                            <DatePicker
-                                selected={endDate}
-                                onChange={(date) => {
-                                    setEndDate(date);
-                                    setFilterPeriod('custom');
-                                }}
-                                selectsEnd
-                                startDate={startDate}
-                                endDate={endDate}
-                                minDate={startDate}
-                                placeholderText="Fecha de fin"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                            />
-                        </div>
+    {/* Fila inferior en móvil - horizontal en desktop */}
+    <div className="flex flex-wrap gap-2 lg:flex-nowrap lg:items-center lg:space-x-2">
+        
+        {/* Selector de límite por página */}
+        <div className="flex-shrink-0">
+            <select
+                id="limit-per-page"
+                className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm h-[38px]"
+                value={limitPerPage}
+                onChange={(e) => {
+                    setLimitPerPage(Number(e.target.value));
+                }}
+            >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+            </select>
+        </div>
 
-                        {/* Selector de límite por página */}
-                        <div className="flex-none min-w-[50px]">
-                            <select
-                                id="limit-per-page"
-                                className="mt-0 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm h-[38px]"
-                                value={limitPerPage}
-                                onChange={(e) => {
-                                    setLimitPerPage(Number(e.target.value));
-                                }}
-                            >
-                                <option value={10}>10</option>
-                                <option value={20}>20</option>
-                                <option value={50}>50</option>
-                                <option value={100}>100</option>
-                            </select>
-                        </div>
+        {/* Botón de Reporte por Período */}
+        <button
+            onClick={generarPDFPorPeriodoHandler}
+            disabled={clientesFiltrados.length === 0 || generatingPDF}
+            className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+            <DocumentTextIcon className="h-4 w-4 mr-2" />
+            {generatingPDF ? 'Generando...' : 'Reporte PDF'}
+        </button>
 
-                        {/* Botón de Reporte por Período */}
-                        <div className="flex-none">
-                            <button
-                                onClick={generarPDFPorPeriodoHandler}
-                                disabled={clientesFiltrados.length === 0 || generatingPDF}
-                                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
-                            >
-                                <DocumentTextIcon className="h-4 w-4 mr-2" />
-                                {generatingPDF ? 'Generando...' : 'Reporte PDF'}
-                            </button>
-                        </div>
-                    </div>
+        {/* Botón Nueva Cotización */}
+        <button
+            onClick={() => router.push('/creditos/nueva')}
+            className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition duration-150 ease-in-out"
+        >
+            <PlusIcon className="h-5 w-5 mr-3" aria-hidden="true" />
+            Nuevo Credito
+        </button>
+    </div>
+</div>
 
                     {/* Estadísticas - Solo Total Adeudado y Clientes con Crédito */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
